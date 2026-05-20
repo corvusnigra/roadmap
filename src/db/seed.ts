@@ -3,11 +3,11 @@ import { config as loadDotenv } from "dotenv";
 loadDotenv({ path: ".env.local" });
 loadDotenv();
 
-import "server-only";
-
+import { drizzle } from "drizzle-orm/postgres-js";
 import { eq } from "drizzle-orm";
+import postgres from "postgres";
 
-import { db } from "@/lib/db";
+import * as schema from "@/db/schema";
 import { nodePrerequisites, nodes, roles } from "@/db/schema";
 
 const FRONTEND_ROLE = {
@@ -67,6 +67,14 @@ const PLACEHOLDER_NODES = [
 ] as const;
 
 async function seed() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required to run the seed script.");
+  }
+
+  const client = postgres(databaseUrl, { max: 1, prepare: false });
+  const db = drizzle(client, { schema });
+
   console.log("→ seeding role and placeholder nodes…");
 
   const [role] = await db
@@ -143,6 +151,8 @@ async function seed() {
   }
 
   console.log(`✓ seeded role '${role.slug}' with ${PLACEHOLDER_NODES.length} nodes`);
+
+  await client.end();
 }
 
 seed()

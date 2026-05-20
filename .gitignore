@@ -53,3 +53,9 @@ Thumbs.db
 # Local tooling state
 .omc/
 .claude/
+.tools/
+
+# Supabase local state (config.toml is checked in; runtime files are not)
+supabase/.temp/
+supabase/.branches/
+
