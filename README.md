@@ -112,9 +112,26 @@ tests/
   e2e/                    # Playwright
 ```
 
+## Auth flow
+
+- All routes except `/login` and `/auth/*` require a signed-in user; `middleware.ts`
+  redirects unauthenticated requests to `/login` and refreshes session cookies on
+  every request via `@supabase/ssr`.
+- Sign-in is email magic-link (`signInWithOtp`). Locally, mail is delivered to
+  Inbucket at <http://127.0.0.1:54324> — open it, copy the magic link, paste it
+  into the browser to authenticate.
+- A Postgres trigger on `auth.users` (`migrations/0002_profile_on_signup_trigger.sql`)
+  creates a matching `public.profiles` row on first signup, so the app never has
+  an authenticated user without a profile.
+
 ## Notes
 
 - pnpm is aliased in some local shells (`_lc pnpm`); inside scripts call `command pnpm`
   to bypass aliases if you hit a `_lc: not found` error.
 - A warning about `${NPM_VER_TOKEN}` in `~/.npmrc` is harmless — it refers to a private
   registry that this project does not use.
+- **Shell-env precedence gotcha.** Next.js prefers process-level env vars over `.env.local`.
+  If you have an empty `ANTHROPIC_API_KEY=""` exported in your shell profile (the
+  Claude Desktop app sets this on macOS), `pnpm build` fails env validation. Either
+  `unset ANTHROPIC_API_KEY` in the shell before building or run with an explicit
+  override: `ANTHROPIC_API_KEY=stub pnpm build`.
