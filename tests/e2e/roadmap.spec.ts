@@ -1,6 +1,14 @@
 import { test, expect } from "@playwright/test";
 
+import { resetUserState } from "./helpers/reset-user";
+
+const TEST_EMAIL = "e2e-tester@example.com";
+
 test.describe("/roles/frontend-developer", () => {
+  test.beforeEach(async () => {
+    await resetUserState(TEST_EMAIL);
+  });
+
   test("renders the canvas with the seeded nodes", async ({ page }) => {
     await page.goto("/roles/frontend-developer");
     await expect(page.getByTestId("roadmap-canvas")).toBeVisible();

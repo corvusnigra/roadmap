@@ -1,0 +1,162 @@
+---
+schemaVersion: 1
+slug: how-the-web-works
+title: How the Web Works
+summary: Requests, responses, DNS, HTTP basics — the plumbing under every web page.
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - Trace what happens between typing a URL and seeing pixels on screen.
+  - Explain the role of DNS, TCP, and HTTP in fetching a page.
+  - Read the structure of an HTTP request and response.
+practice:
+  - kind: mcq
+    prompt: Which protocol carries the page's HTML from server to browser?
+    options:
+      - DNS
+      - HTTP
+      - SMTP
+      - SSH
+    answerIndex: 1
+    explanation: >-
+      HTTP (HyperText Transfer Protocol) is the request/response protocol for the
+      web. DNS resolves names to IPs, SMTP carries email, SSH is for remote
+      shells.
+  - kind: code
+    prompt: Inspect a minimal HTTP response and identify the status line.
+    starterFile: starters/01-http-response.txt
+    solutionFile: solutions/01-http-response.txt
+    language: html
+flashcards:
+  - front: What does DNS resolve?
+    back: A hostname (e.g. `example.com`) into an IP address the OS can route to.
+  - front: What does an HTTP status of `200` mean?
+    back: OK — the request succeeded and the response body is the requested resource.
+  - front: What's the difference between a URL's `path` and its `query string`?
+    back: The path identifies a resource; the query string (`?k=v&...`) parametrizes the request.
+  - front: Which port does HTTPS use by default?
+    back: "443. HTTP uses 80."
+  - front: What does TCP guarantee that UDP doesn't?
+    back: Ordered, reliable, connection-oriented delivery of bytes.
+  - front: What's a `Content-Type` header for?
+    back: Tells the client how to interpret the response body (e.g. `text/html; charset=utf-8`).
+masteryQuiz:
+  - kind: mcq
+    prompt: When you type `example.com` in the browser, which step happens FIRST?
+    options:
+      - The browser opens a TCP connection.
+      - The browser issues a DNS lookup.
+      - The browser sends an HTTP GET.
+      - The server returns 200 OK.
+    answerIndex: 1
+    explanation: DNS must resolve the hostname before any TCP/HTTP can happen.
+  - kind: mcq
+    prompt: Which HTTP method is idempotent AND has no request body by convention?
+    options:
+      - POST
+      - GET
+      - PATCH
+      - PUT
+    answerIndex: 1
+    explanation: GET is safe and idempotent; POST/PATCH/PUT carry bodies.
+  - kind: mcq
+    prompt: A response with status `301` means…
+    options:
+      - The resource has moved permanently — clients should update their links.
+      - The resource is temporarily redirected for this one request.
+      - The request was malformed.
+      - The server is overloaded.
+    answerIndex: 0
+    explanation: 301 = Moved Permanently; 302/307 are temporary.
+  - kind: mcq
+    prompt: Which of these is the FIRST line of an HTTP request?
+    options:
+      - "Host: example.com"
+      - "Content-Type: text/html"
+      - "GET /index.html HTTP/1.1"
+      - "200 OK"
+    answerIndex: 2
+    explanation: The request line is `METHOD PATH VERSION`.
+  - kind: mcq
+    prompt: What's the purpose of HTTPS over HTTP?
+    options:
+      - Faster transfers via compression.
+      - End-to-end encryption and server authentication via TLS.
+      - Cache invalidation.
+      - Avoiding DNS lookups.
+    answerIndex: 1
+    explanation: HTTPS wraps HTTP in TLS, providing confidentiality and integrity.
+  - kind: mcq
+    prompt: Which HTTP status family signals a server error?
+    options:
+      - 2xx
+      - 3xx
+      - 4xx
+      - 5xx
+    answerIndex: 3
+    explanation: 5xx = server error; 4xx = client error; 3xx = redirect; 2xx = success.
+---
+
+## What happens when you press Enter
+
+When you type `https://example.com/articles` into the address bar and hit Enter, your
+browser doesn't magically reach the server. It runs a multi-step pipeline that's
+useful to picture as one mental model:
+
+1. **DNS** — the browser asks "what's the IP of `example.com`?" Operating system caches the answer
+   for a while, otherwise queries a DNS resolver (often your ISP's, or `1.1.1.1`/`8.8.8.8`).
+2. **TCP** — the browser opens a reliable connection to that IP on port 443 (HTTPS) or 80 (HTTP).
+3. **TLS** — for HTTPS the browser and server perform a TLS handshake, agreeing on encryption
+   keys and verifying the server's certificate.
+4. **HTTP** — the browser sends an HTTP request like:
+   ```
+   GET /articles HTTP/1.1
+   Host: example.com
+   Accept: text/html
+   ```
+5. **Response** — the server sends back a status line, headers, and a body:
+   ```
+   HTTP/1.1 200 OK
+   Content-Type: text/html; charset=utf-8
+   Content-Length: 12048
+
+   <!doctype html>...
+   ```
+6. **Render** — the browser parses the HTML, requests every linked asset (CSS, JS, images,
+   fonts), and progressively paints the page.
+
+## Why the layering matters
+
+Each layer has a single job:
+
+- **DNS** is a phonebook — only maps names to addresses.
+- **TCP** delivers bytes in order, retransmitting what got lost.
+- **TLS** wraps a TCP connection in encryption.
+- **HTTP** speaks structured request/response on top of that.
+
+You can mostly forget about TCP and TLS day to day — but knowing they're there explains a lot
+of behaviour: why opening a slow site feels "stuck" before any pixels appear (TCP/TLS handshake),
+why mixed-content warnings exist (an HTTPS page must not load HTTP subresources), why
+keep-alive matters (re-using a connection for several requests avoids redoing TCP+TLS).
+
+## Reading a status code at a glance
+
+| Code | Meaning |
+|---|---|
+| 200 | OK — body is what you asked for. |
+| 301 / 308 | Permanent redirect. |
+| 302 / 307 | Temporary redirect. |
+| 304 | Not Modified — your cached copy is fine. |
+| 400 | Client error — the request was malformed. |
+| 401 / 403 | Unauthenticated / Forbidden. |
+| 404 | Not Found. |
+| 500 / 502 / 503 | Server-side breakage. |
+
+When something's broken, the status family (`2xx`/`3xx`/`4xx`/`5xx`) usually points you at
+the right side of the line — your code or theirs.
+
+## Try this
+
+Open the network tab in your browser devtools, refresh this page, and look at the first
+request. Find the status code, `Content-Type`, and `Content-Length`. That's HTTP — there's
+nothing else behind the curtain.
