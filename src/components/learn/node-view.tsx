@@ -11,10 +11,12 @@ import { Theory } from "@/components/learn/theory";
 import { PracticeMcq } from "@/components/learn/practice-mcq";
 import { PracticeCodeStub } from "@/components/learn/practice-code-stub";
 import { MasteryQuiz } from "@/components/learn/mastery-quiz";
-import { Reinforcement } from "@/components/learn/reinforcement";
+import {
+  Reinforcement,
+  type ReinforcementCard,
+} from "@/components/learn/reinforcement";
 
 import type {
-  FlashcardInput,
   NodeFrontmatter,
   PracticeCode as CodeItem,
   PracticeMcq as McqItem,
@@ -31,6 +33,7 @@ interface NodeViewProps {
   frontmatter: NodeFrontmatter;
   initialProgress: InitialProgress;
   theoryContent: ReactNode;
+  reinforcementCards: ReinforcementCard[];
 }
 
 export function NodeView({
@@ -38,6 +41,7 @@ export function NodeView({
   frontmatter,
   initialProgress,
   theoryContent,
+  reinforcementCards,
 }: NodeViewProps) {
   const [status, setStatus] = useState(initialProgress.status);
   const [correctMcqs, setCorrectMcqs] = useState<Set<string>>(new Set());
@@ -198,15 +202,13 @@ export function NodeView({
 
         <TabsContent value="reinforcement">
           <Reinforcement
-            roleSlug={roleSlug}
-            nodeSlug={frontmatter.slug}
-            cards={frontmatter.flashcards as FlashcardInput[]}
+            cards={reinforcementCards}
             enabled={
               masteryPassed ||
               status === "mastered" ||
               (initialProgress.masteryScore ?? 0) >= 0.8
             }
-            onGraded={() => setStatus("mastered")}
+            onMastered={() => setStatus("mastered")}
           />
         </TabsContent>
       </Tabs>

@@ -1,16 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, count, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
 import {
   nodePrerequisites,
   nodes as nodesTable,
-  userEvents,
   userNodeProgress,
 } from "@/db/schema";
+import {
+  logEvent,
+  maybeFlipMastered,
+  upsertProgress,
+} from "@/lib/progress/transitions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const ServerActionInputs = {
@@ -28,12 +32,6 @@ const ServerActionInputs = {
     nodeSlug: z.string().regex(/^[a-z0-9-]+$/),
     score: z.number().int().nonnegative(),
     total: z.number().int().positive(),
-  }),
-  gradeReinforcementCard: z.object({
-    roleSlug: z.string().regex(/^[a-z0-9-]+$/),
-    nodeSlug: z.string().regex(/^[a-z0-9-]+$/),
-    cardKey: z.string().min(1),
-    rating: z.number().int().min(1).max(4),
   }),
 } as const;
 
@@ -58,7 +56,6 @@ async function requireUserAndNode(input: { roleSlug: string; nodeSlug: string })
   return { userId: user.id, nodeId: node.id };
 }
 
-/** Are all of this node's prerequisites already mastered by this user? */
 async function arePrereqsSatisfied(
   userId: string,
   nodeId: string,
@@ -84,44 +81,6 @@ async function arePrereqsSatisfied(
     if (row?.status !== "mastered") return false;
   }
   return true;
-}
-
-async function logEvent(
-  userId: string,
-  verb: string,
-  objectType: string,
-  objectId: string,
-  payload: Record<string, unknown> = {},
-): Promise<void> {
-  await db.insert(userEvents).values({
-    userId,
-    verb,
-    objectType,
-    objectId,
-    payload,
-  });
-}
-
-async function upsertProgress(
-  userId: string,
-  nodeId: string,
-  patch: Partial<typeof userNodeProgress.$inferInsert>,
-): Promise<void> {
-  await db
-    .insert(userNodeProgress)
-    .values({
-      userId,
-      nodeId,
-      status: patch.status ?? "in_progress",
-      startedAt: patch.startedAt,
-      masteryScore: patch.masteryScore,
-      masteredAt: patch.masteredAt,
-      updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: [userNodeProgress.userId, userNodeProgress.nodeId],
-      set: { ...patch, updatedAt: new Date() },
-    });
 }
 
 export async function markTheoryRead(
@@ -169,58 +128,6 @@ export async function recordPracticeCorrect(
   });
 }
 
-async function countMasteryPasses(
-  userId: string,
-  nodeId: string,
-): Promise<number> {
-  const row = await db
-    .select({ n: count() })
-    .from(userEvents)
-    .where(
-      and(
-        eq(userEvents.userId, userId),
-        eq(userEvents.verb, "mastery_passed"),
-        eq(userEvents.objectId, nodeId),
-      ),
-    );
-  return row[0]?.n ?? 0;
-}
-
-async function countCardReviews(
-  userId: string,
-  nodeId: string,
-): Promise<number> {
-  const row = await db
-    .select({ n: count() })
-    .from(userEvents)
-    .where(
-      and(
-        eq(userEvents.userId, userId),
-        eq(userEvents.verb, "card_reviewed"),
-        eq(userEvents.objectId, nodeId),
-      ),
-    );
-  return row[0]?.n ?? 0;
-}
-
-async function maybeFlipMastered(
-  userId: string,
-  nodeId: string,
-): Promise<boolean> {
-  const [passes, reviews] = await Promise.all([
-    countMasteryPasses(userId, nodeId),
-    countCardReviews(userId, nodeId),
-  ]);
-  if (passes > 0 && reviews > 0) {
-    await upsertProgress(userId, nodeId, {
-      status: "mastered",
-      masteredAt: new Date(),
-    });
-    return true;
-  }
-  return false;
-}
-
 export async function submitMasteryQuiz(
   raw: z.input<typeof ServerActionInputs.submitMasteryQuiz>,
 ) {
@@ -239,8 +146,6 @@ export async function submitMasteryQuiz(
   );
 
   if (passed) {
-    // Persist the score on the progress row so we don't lose it if a later
-    // attempt scores worse.
     await upsertProgress(userId, nodeId, {
       status: "in_progress",
       masteryScore: ratio,
@@ -252,23 +157,4 @@ export async function submitMasteryQuiz(
   }
 
   return { passed: false, mastered: false, score: input.score };
-}
-
-export async function gradeReinforcementCard(
-  raw: z.input<typeof ServerActionInputs.gradeReinforcementCard>,
-) {
-  const input = ServerActionInputs.gradeReinforcementCard.parse(raw);
-  const { userId, nodeId } = await requireUserAndNode(input);
-
-  await logEvent(userId, "card_reviewed", "node", nodeId, {
-    cardKey: input.cardKey,
-    rating: input.rating,
-  });
-
-  const flipped = await maybeFlipMastered(userId, nodeId);
-  if (flipped) {
-    revalidatePath(`/roles/${input.roleSlug}/nodes/${input.nodeSlug}`);
-    revalidatePath(`/roles/${input.roleSlug}`);
-  }
-  return { mastered: flipped };
 }

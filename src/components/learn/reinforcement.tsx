@@ -1,20 +1,23 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
-import { gradeReinforcementCard } from "@/app/roles/[slug]/nodes/[nodeSlug]/actions";
+import { gradeCard } from "@/app/review/actions";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import type { FlashcardInput } from "@/lib/content/schema";
+export interface ReinforcementCard {
+  cardId: string;
+  prompt: string;
+  answerMarkdown: string;
+}
 
 interface ReinforcementProps {
-  roleSlug: string;
-  nodeSlug: string;
-  cards: FlashcardInput[];
-  /** When true, grading any card calls onMastered() so the page reflects the status flip. */
+  cards: ReinforcementCard[];
+  /** Whether the user is past the mastery gate and can grade cards. */
   enabled: boolean;
-  onGraded: () => void;
+  /** Called when the server reports the node flipped to `mastered`. */
+  onMastered: () => void;
 }
 
 const RATINGS = [
@@ -25,54 +28,56 @@ const RATINGS = [
 ] as const;
 
 export function Reinforcement({
-  roleSlug,
-  nodeSlug,
   cards,
   enabled,
-  onGraded,
+  onMastered,
 }: ReinforcementProps) {
-  const [index, setIndex] = useState(0);
+  // Local queue lets us optimistically remove a card after grading without
+  // waiting for a server-side revalidate. Re-derive from `cards` prop when it
+  // changes (page revalidated, new server data).
+  const [queue, setQueue] = useState(cards);
+  useEffect(() => setQueue(cards), [cards]);
+
   const [revealed, setRevealed] = useState(false);
   const [pending, startTransition] = useTransition();
   const [gradedCount, setGradedCount] = useState(0);
-
-  if (cards.length === 0) {
-    return (
-      <p className="rounded-md border bg-card p-4 text-sm text-muted-foreground">
-        This node has no flashcards yet.
-      </p>
-    );
-  }
 
   if (!enabled) {
     return (
       <div className="rounded-md border bg-card p-4 text-sm">
         <p className="font-medium">Reinforcement is gated</p>
         <p className="mt-1 text-muted-foreground">
-          Pass the mastery quiz to unlock flashcard review. Phase 5 will wire
-          these up to a real FSRS scheduler — for now grading a single card is
-          enough to flip the node to mastered.
+          Pass the mastery quiz to unlock flashcard review. Grading one card
+          flips the node to mastered; subsequent grades go through the FSRS
+          scheduler.
         </p>
       </div>
     );
   }
 
-  const card = cards[index % cards.length];
-  if (!card) return null;
+  const card = queue[0];
 
-  const handleGrade = (rating: number) => {
+  if (!card) {
+    return (
+      <div
+        className="rounded-md border bg-card p-4 text-sm text-muted-foreground"
+        data-testid="reinforcement-empty"
+      >
+        {gradedCount > 0
+          ? "All cards graded for this node — they'll resurface when the FSRS scheduler says so."
+          : "No flashcards due for this node right now."}
+      </div>
+    );
+  }
+
+  const handleGrade = (rating: 1 | 2 | 3 | 4) => {
     startTransition(async () => {
       try {
-        await gradeReinforcementCard({
-          roleSlug,
-          nodeSlug,
-          cardKey: `${nodeSlug}:${index % cards.length}`,
-          rating,
-        });
+        const result = await gradeCard({ cardId: card.cardId, rating });
         setGradedCount((n) => n + 1);
-        onGraded();
+        if (result.mastered) onMastered();
         setRevealed(false);
-        setIndex((i) => i + 1);
+        setQueue((q) => q.slice(1));
       } catch {
         /* best-effort UI */
       }
@@ -83,7 +88,7 @@ export function Reinforcement({
     <section className="space-y-4">
       <header className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          Card {((index % cards.length) + 1)} of {cards.length}
+          {queue.length} card{queue.length === 1 ? "" : "s"} due
         </span>
         <span data-testid="reinforcement-graded-count">
           Graded this session: {gradedCount}
@@ -93,11 +98,12 @@ export function Reinforcement({
       <article
         className="space-y-3 rounded-lg border bg-card p-4"
         data-testid="reinforcement-card"
+        data-card-id={card.cardId}
       >
-        <p className="text-sm font-medium leading-snug">{card.front}</p>
+        <p className="text-sm font-medium leading-snug">{card.prompt}</p>
         {revealed ? (
           <p className="rounded-md border-l-2 border-primary bg-primary/5 p-3 text-sm">
-            {card.back}
+            {card.answerMarkdown}
           </p>
         ) : (
           <Button

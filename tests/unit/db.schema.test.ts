@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getTableColumns, getTableName } from "drizzle-orm";
 
 import {
+  cardStateEnum,
   nodePrerequisites,
   nodeProgressStatusEnum,
   nodes,
@@ -41,6 +42,15 @@ describe("db schema enums", () => {
       "user",
       "assistant",
       "system",
+    ]);
+  });
+
+  it("card_state mirrors ts-fsrs's State enum", () => {
+    expect(cardStateEnum.enumValues).toEqual([
+      "new",
+      "learning",
+      "review",
+      "relearning",
     ]);
   });
 
@@ -136,6 +146,7 @@ describe("db schema tables", () => {
       "reps",
       "lapses",
       "lastReviewAt",
+      "state",
     ]) {
       expect(cols).toHaveProperty(key);
     }

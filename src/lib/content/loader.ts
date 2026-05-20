@@ -1,4 +1,8 @@
-import "server-only";
+// No `import "server-only"` here: the loader is also used by the sync script
+// (`pnpm content:sync`) which runs in raw Node via tsx — `server-only` throws
+// in that environment by design. Implicit server-only safety comes from the
+// `node:fs/promises` import below: the Next bundler can't ship that to a
+// client component.
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";

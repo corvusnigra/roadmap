@@ -10,6 +10,7 @@ import {
   userNodeProgress,
 } from "@/db/schema";
 import { ContentNotFoundError, loadNode } from "@/lib/content/loader";
+import { getDueCardsForNode } from "@/lib/fsrs/queries";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { NodeView, type InitialProgress } from "@/components/learn/node-view";
 
@@ -50,7 +51,7 @@ export default async function NodePage({ params }: PageProps) {
   } = await supabase.auth.getUser();
   if (!user) notFound();
 
-  const [progressRow, theoryReadRows] = await Promise.all([
+  const [progressRow, theoryReadRows, dueCards] = await Promise.all([
     db
       .select({
         status: userNodeProgress.status,
@@ -75,6 +76,7 @@ export default async function NodePage({ params }: PageProps) {
         ),
       )
       .limit(1),
+    getDueCardsForNode(user.id, node.id, 10),
   ]);
 
   const initialProgress: InitialProgress = {
@@ -97,12 +99,19 @@ export default async function NodePage({ params }: PageProps) {
     />
   );
 
+  const reinforcementCards = dueCards.map((c) => ({
+    cardId: c.cardId,
+    prompt: c.prompt,
+    answerMarkdown: c.answerMarkdown,
+  }));
+
   return (
     <NodeView
       roleSlug={slug}
       frontmatter={loaded.frontmatter}
       initialProgress={initialProgress}
       theoryContent={theoryContent}
+      reinforcementCards={reinforcementCards}
     />
   );
 }

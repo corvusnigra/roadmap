@@ -11,10 +11,14 @@ const STORAGE_STATE = "tests/e2e/.auth/user.json";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  fullyParallel: true,
+  // All e2e specs share a single seed user. Parallel workers race over
+  // `user_node_progress` / `user_card_state` and produce flaky failures
+  // ("1 of 5 mastered" instead of "0 of 5", etc.). Serializing is fine —
+  // the whole suite still runs in ~20s.
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
   reporter: "html",
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",

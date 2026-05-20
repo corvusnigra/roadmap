@@ -54,6 +54,14 @@ export const subscriptionStatusEnum = pgEnum("subscription_status", [
   "paused",
 ]);
 
+// FSRS scheduler card states (ts-fsrs's State enum mirrored as Postgres enum).
+export const cardStateEnum = pgEnum("card_state", [
+  "new",
+  "learning",
+  "review",
+  "relearning",
+]);
+
 // ---------- Tables ----------
 
 export const profiles = pgTable("profiles", {
@@ -155,6 +163,7 @@ export const userCardState = pgTable(
     reps: integer("reps").notNull().default(0),
     lapses: integer("lapses").notNull().default(0),
     lastReviewAt: timestamp("last_review_at", { withTimezone: true }),
+    state: cardStateEnum("state").notNull().default("new"),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.userId, table.cardId] }),
