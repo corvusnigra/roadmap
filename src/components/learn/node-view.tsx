@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Theory } from "@/components/learn/theory";
 import { PracticeMcq } from "@/components/learn/practice-mcq";
-import { PracticeCodeStub } from "@/components/learn/practice-code-stub";
+import { CodeExercise } from "@/components/practice/code-exercise";
 import { MasteryQuiz } from "@/components/learn/mastery-quiz";
 import {
   Reinforcement,
@@ -18,7 +18,6 @@ import {
 
 import type {
   NodeFrontmatter,
-  PracticeCode as CodeItem,
   PracticeMcq as McqItem,
 } from "@/lib/content/schema";
 
@@ -28,12 +27,27 @@ export interface InitialProgress {
   theoryRead: boolean;
 }
 
+/**
+ * Pre-loaded exercise files for a single `kind: 'code'` practice item.
+ * `practiceIndex` is the position inside `frontmatter.practice[]` so we can
+ * render the exercise in the right spot relative to MCQs.
+ */
+export interface LoadedCodeExercise {
+  itemKey: string;
+  practiceIndex: number;
+  prompt: string;
+  language: "html" | "css" | "js" | "ts";
+  starterCode: string;
+  testsCode: string;
+}
+
 interface NodeViewProps {
   roleSlug: string;
   frontmatter: NodeFrontmatter;
   initialProgress: InitialProgress;
   theoryContent: ReactNode;
   reinforcementCards: ReinforcementCard[];
+  codeExercises: LoadedCodeExercise[];
 }
 
 export function NodeView({
@@ -42,25 +56,30 @@ export function NodeView({
   initialProgress,
   theoryContent,
   reinforcementCards,
+  codeExercises,
 }: NodeViewProps) {
   const [status, setStatus] = useState(initialProgress.status);
   const [correctMcqs, setCorrectMcqs] = useState<Set<string>>(new Set());
+  const [passedCodeKeys, setPassedCodeKeys] = useState<Set<string>>(new Set());
   const [masteryPassed, setMasteryPassed] = useState(false);
   const [masteryOpen, setMasteryOpen] = useState(false);
 
   const mcqItems = frontmatter.practice.filter(
     (item): item is McqItem => item.kind === "mcq",
   );
-  const codeItems = frontmatter.practice.filter(
-    (item): item is CodeItem => item.kind === "code",
-  );
 
   const allMcqsCorrect =
     mcqItems.length === 0 ||
     mcqItems.every((_, i) => correctMcqs.has(`mcq:${i}`));
 
+  const allCodeExercisesPassed =
+    codeExercises.length === 0 ||
+    codeExercises.every((ex) => passedCodeKeys.has(ex.itemKey));
+
   const masteryReady =
-    allMcqsCorrect && (frontmatter.masteryQuiz?.length ?? 0) >= 5;
+    allMcqsCorrect &&
+    allCodeExercisesPassed &&
+    (frontmatter.masteryQuiz?.length ?? 0) >= 5;
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6">
@@ -141,7 +160,7 @@ export function NodeView({
         </TabsContent>
 
         <TabsContent value="practice" className="space-y-4">
-          {mcqItems.length === 0 && codeItems.length === 0 ? (
+          {mcqItems.length === 0 && codeExercises.length === 0 ? (
             <p className="rounded-md border bg-card p-4 text-sm text-muted-foreground">
               This node has no practice items yet.
             </p>
@@ -162,11 +181,20 @@ export function NodeView({
             />
           ))}
 
-          {codeItems.map((item, i) => (
-            <PracticeCodeStub
-              key={`code-${i}`}
-              index={mcqItems.length + i}
-              item={item}
+          {codeExercises.map((ex) => (
+            <CodeExercise
+              key={ex.itemKey}
+              roleSlug={roleSlug}
+              nodeSlug={frontmatter.slug}
+              itemKey={ex.itemKey}
+              index={ex.practiceIndex}
+              prompt={ex.prompt}
+              starterCode={ex.starterCode}
+              testsCode={ex.testsCode}
+              language={ex.language}
+              onPass={() =>
+                setPassedCodeKeys((prev) => new Set(prev).add(ex.itemKey))
+              }
             />
           ))}
 
@@ -175,9 +203,11 @@ export function NodeView({
               <div>
                 <p className="text-sm font-medium">Take the mastery quiz</p>
                 <p className="text-xs text-muted-foreground">
-                  {allMcqsCorrect
-                    ? "All practice MCQs done. Pass 4 of 5 to clear the gate."
-                    : "Answer every practice MCQ correctly to unlock."}
+                  {masteryReady
+                    ? "All practice items done. Pass 4 of 5 to clear the gate."
+                    : codeExercises.length > 0 && !allCodeExercisesPassed
+                      ? "Pass every code exercise to unlock."
+                      : "Answer every practice MCQ correctly to unlock."}
                 </p>
               </div>
               <Button

@@ -10,9 +10,15 @@ import {
   userNodeProgress,
 } from "@/db/schema";
 import { ContentNotFoundError, loadNode } from "@/lib/content/loader";
+import { loadExercise } from "@/lib/content/exercise-loader";
 import { getDueCardsForNode } from "@/lib/fsrs/queries";
+import type { PracticeCode } from "@/lib/content/schema";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { NodeView, type InitialProgress } from "@/components/learn/node-view";
+import {
+  NodeView,
+  type InitialProgress,
+  type LoadedCodeExercise,
+} from "@/components/learn/node-view";
 
 interface PageProps {
   params: Promise<{ slug: string; nodeSlug: string }>;
@@ -105,6 +111,30 @@ export default async function NodePage({ params }: PageProps) {
     answerMarkdown: c.answerMarkdown,
   }));
 
+  // Load starter/tests for each `kind: 'code'` practice item so the Sandpack
+  // component can render without any client-side fetches.
+  const codeItems = loaded.frontmatter.practice
+    .map((item, idx) => ({ item, idx }))
+    .filter(
+      (
+        x,
+      ): x is { item: PracticeCode; idx: number } =>
+        x.item.kind === "code",
+    );
+  const codeExercises: LoadedCodeExercise[] = await Promise.all(
+    codeItems.map(async ({ item, idx }) => {
+      const ex = await loadExercise(slug, `code:${idx}`, item);
+      return {
+        itemKey: ex.itemKey,
+        practiceIndex: idx,
+        prompt: ex.prompt,
+        language: ex.language,
+        starterCode: ex.starterCode,
+        testsCode: ex.testsCode,
+      };
+    }),
+  );
+
   return (
     <NodeView
       roleSlug={slug}
@@ -112,6 +142,7 @@ export default async function NodePage({ params }: PageProps) {
       initialProgress={initialProgress}
       theoryContent={theoryContent}
       reinforcementCards={reinforcementCards}
+      codeExercises={codeExercises}
     />
   );
 }
