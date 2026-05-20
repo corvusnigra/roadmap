@@ -41,7 +41,10 @@ export default defineConfig({
   ],
   webServer: {
     command: "pnpm dev",
-    url: "http://localhost:3000",
+    // Poll /login directly: the root `/` redirects (307) and Playwright's
+    // readiness check only accepts 2xx, so polling `/` would never see the
+    // server as ready.
+    url: "http://localhost:3000/login",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     // The dev shell has an empty ANTHROPIC_API_KEY exported by Claude Desktop

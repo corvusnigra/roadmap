@@ -14,6 +14,7 @@ import type { TutorTurn } from "@/app/api/tutor/types";
 import { ContentNotFoundError, loadNode } from "@/lib/content/loader";
 import { loadExercise } from "@/lib/content/exercise-loader";
 import { getDueCardsForNode } from "@/lib/fsrs/queries";
+import { logEvent } from "@/lib/progress/transitions";
 import type { PracticeCode } from "@/lib/content/schema";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -58,6 +59,11 @@ export default async function NodePage({ params }: PageProps) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) notFound();
+
+  await logEvent(user.id, "node_opened", "node", node.id, {
+    roleSlug: slug,
+    nodeSlug,
+  });
 
   const [progressRow, theoryReadRows, dueCards, tutorRows] = await Promise.all([
     db

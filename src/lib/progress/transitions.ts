@@ -8,6 +8,7 @@ import {
   userNodeProgress,
   type NewUserNodeProgress,
 } from "@/db/schema";
+import { captureEvent } from "@/lib/analytics/posthog";
 
 /**
  * Insert a userEvents row. Verb naming is consistent across the codebase —
@@ -28,6 +29,9 @@ export async function logEvent(
     objectId,
     payload,
   });
+  // Fire-and-forget mirror to PostHog. The wrapper is a no-op when the
+  // public key is the placeholder, so local dev doesn't network-call out.
+  captureEvent(userId, verb, { objectType, objectId, ...payload });
 }
 
 /** Upsert into user_node_progress with the timestamp set to now. */
