@@ -15,11 +15,13 @@ import {
   Reinforcement,
   type ReinforcementCard,
 } from "@/components/learn/reinforcement";
+import { TutorPanel } from "@/components/tutor/tutor-panel";
 
 import type {
   NodeFrontmatter,
   PracticeMcq as McqItem,
 } from "@/lib/content/schema";
+import type { TutorTurn } from "@/app/api/tutor/types";
 
 export interface InitialProgress {
   status: "locked" | "in_progress" | "mastered";
@@ -48,6 +50,7 @@ interface NodeViewProps {
   theoryContent: ReactNode;
   reinforcementCards: ReinforcementCard[];
   codeExercises: LoadedCodeExercise[];
+  tutorHistory: TutorTurn[];
 }
 
 export function NodeView({
@@ -57,6 +60,7 @@ export function NodeView({
   theoryContent,
   reinforcementCards,
   codeExercises,
+  tutorHistory,
 }: NodeViewProps) {
   const [status, setStatus] = useState(initialProgress.status);
   const [correctMcqs, setCorrectMcqs] = useState<Set<string>>(new Set());
@@ -97,26 +101,34 @@ export function NodeView({
           <h1 className="text-2xl font-semibold tracking-tight">
             {frontmatter.title}
           </h1>
-          <Badge
-            variant={
-              status === "mastered"
-                ? "success"
-                : status === "in_progress"
-                  ? "secondary"
-                  : "muted"
-            }
-            data-testid="node-status-badge"
-          >
-            {status === "mastered" ? (
-              <>
-                <Check className="mr-1 h-3 w-3" /> Mastered
-              </>
-            ) : status === "in_progress" ? (
-              "In progress"
-            ) : (
-              "Available"
-            )}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <TutorPanel
+              roleSlug={roleSlug}
+              nodeSlug={frontmatter.slug}
+              nodeTitle={frontmatter.title}
+              initialHistory={tutorHistory}
+            />
+            <Badge
+              variant={
+                status === "mastered"
+                  ? "success"
+                  : status === "in_progress"
+                    ? "secondary"
+                    : "muted"
+              }
+              data-testid="node-status-badge"
+            >
+              {status === "mastered" ? (
+                <>
+                  <Check className="mr-1 h-3 w-3" /> Mastered
+                </>
+              ) : status === "in_progress" ? (
+                "In progress"
+              ) : (
+                "Available"
+              )}
+            </Badge>
+          </div>
         </div>
         <p className="text-muted-foreground">{frontmatter.summary}</p>
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">

@@ -1,14 +1,16 @@
 import { notFound } from "next/navigation";
 import { MDXRemote } from "next-mdx-remote/rsc";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
   nodes as nodesTable,
   roles as rolesTable,
+  tutorMessages,
   userEvents,
   userNodeProgress,
 } from "@/db/schema";
+import type { TutorTurn } from "@/app/api/tutor/types";
 import { ContentNotFoundError, loadNode } from "@/lib/content/loader";
 import { loadExercise } from "@/lib/content/exercise-loader";
 import { getDueCardsForNode } from "@/lib/fsrs/queries";
@@ -57,7 +59,7 @@ export default async function NodePage({ params }: PageProps) {
   } = await supabase.auth.getUser();
   if (!user) notFound();
 
-  const [progressRow, theoryReadRows, dueCards] = await Promise.all([
+  const [progressRow, theoryReadRows, dueCards, tutorRows] = await Promise.all([
     db
       .select({
         status: userNodeProgress.status,
@@ -83,7 +85,30 @@ export default async function NodePage({ params }: PageProps) {
       )
       .limit(1),
     getDueCardsForNode(user.id, node.id, 10),
+    db
+      .select({
+        id: tutorMessages.id,
+        role: tutorMessages.role,
+        content: tutorMessages.content,
+        createdAt: tutorMessages.createdAt,
+      })
+      .from(tutorMessages)
+      .where(
+        and(
+          eq(tutorMessages.userId, user.id),
+          eq(tutorMessages.nodeId, node.id),
+        ),
+      )
+      .orderBy(asc(tutorMessages.createdAt))
+      .limit(50),
   ]);
+
+  const tutorHistory: TutorTurn[] = tutorRows.map((row) => ({
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    createdAt: row.createdAt.toISOString(),
+  }));
 
   const initialProgress: InitialProgress = {
     status: progressRow[0]?.status ?? "locked",
@@ -143,6 +168,7 @@ export default async function NodePage({ params }: PageProps) {
       theoryContent={theoryContent}
       reinforcementCards={reinforcementCards}
       codeExercises={codeExercises}
+      tutorHistory={tutorHistory}
     />
   );
 }
