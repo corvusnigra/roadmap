@@ -1,0 +1,80 @@
+name: Migrate Prod DB
+
+# Прогоняет drizzle migrations против prod Postgres ДО того, как Vercel
+# начнёт деплой. Защищает от schema-drift: если миграция падает, deploy
+# не происходит, и старая (но рабочая) версия продолжает обслуживать
+# трафик.
+#
+# Требует один repo secret: PROD_DATABASE_URL (pooled connection string
+# из Supabase, порт 6543).
+#
+# Vercel auto-deploy сработает только после успешного завершения этого
+# workflow, если в Vercel Project → Git → Production Branch и
+# "Ignored Build Step" настроены правильно. Альтернативно — отключить
+# Vercel auto-deploy и триггерить деплой из этого же workflow через
+# Vercel CLI (см. опциональный шаг в конце).
+
+on:
+  push:
+    branches: [main]
+
+# Запрещаем параллельные миграции (если кто-то быстро мерджит два PR
+# подряд — второй ждёт первого).
+concurrency:
+  group: prod-db-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # PROD_DATABASE_URL должен быть в repo secrets:
+    # Settings → Secrets and variables → Actions → New repository secret
+    env:
+      DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.7.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sanity-check DATABASE_URL is set
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::error::PROD_DATABASE_URL secret is missing"
+            exit 1
+          fi
+          # Маскируем URL в логах на всякий случай.
+          echo "::add-mask::${DATABASE_URL}"
+
+      - name: Apply migrations
+        # drizzle-kit migrate идемпотентен — повторный прогон без новых
+        # миграций просто ничего не делает.
+        run: pnpm db:migrate
+
+  # Опциональный шаг: если не хочешь полагаться на Vercel auto-deploy,
+  # можно явно триггерить деплой здесь после успешной миграции.
+  # Закомментировано по умолчанию.
+  #
+  # deploy:
+  #   needs: migrate
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Deploy to Vercel
+  #       env:
+  #         VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  #         VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  #         VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  #       run: npx vercel --prod --token "$VERCEL_TOKEN"

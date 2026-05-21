@@ -95,6 +95,8 @@ ts-fsrs · Anthropic SDK · pgvector · Stripe · PostHog · Vitest · Playwrigh
 
 For full conventions and non-negotiable rules see [`CLAUDE.md`](./CLAUDE.md).
 For the phased build plan see [`ROADMAP.md`](./ROADMAP.md).
+For deploying to production (Vercel + Supabase Cloud + Resend) see
+[`DEPLOY.md`](./DEPLOY.md).
 
 ## Project layout
 
