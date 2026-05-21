@@ -249,17 +249,42 @@ Stripe (если включаем оплату) — 2.9% + $0.30 с транза
 
 ---
 
-## CI/CD автоматизация
+## Деплой через CLI (без Git auto-deploy)
 
-Этот репо содержит два GitHub Action workflow:
+GitHub auto-deploy не настроен (см. ниже). Деплой вручную одной
+командой:
 
-- `.github/workflows/ci.yml` — на каждый PR прогоняет
-  `pnpm typecheck && pnpm lint && pnpm test`.
-- `.github/workflows/migrate-prod.yml` — на push в `main` прогоняет
-  `pnpm db:migrate` против prod DATABASE_URL **до** того, как Vercel
-  начнёт деплой. Защищает от schema-drift между кодом и БД.
+```bash
+# Однократно: залогинься в Vercel и привяжи проект.
+vercel login
+vercel link --project=roleroadmap
 
-Для последнего нужно добавить в **GitHub repo → Settings → Secrets and
-variables → Actions** один secret:
+# Дальше — деплой одной командой:
+pnpm deploy
 
-- `PROD_DATABASE_URL` — та же строка, что выложена в Vercel
+# Или с применением миграций к prod БД перед деплоем:
+PROD_DATABASE_URL='postgresql://...:6543/postgres' pnpm deploy:migrate
+```
+
+Скрипт `scripts/deploy.sh` делает:
+
+1. **Pre-flight**: проверяет, что vercel CLI / pnpm установлены и
+   проект слинкован (`.vercel/project.json` существует).
+2. **Локальные проверки** (можно пропустить флагом `--skip-checks`):
+   `typecheck` → `lint` → `test` → `content:check` → локальный
+   `build` как sanity-проверка перед удалённым билдом.
+3. **Опционально миграции** (флаг `--migrate` или `pnpm deploy:migrate`):
+   `pnpm db:migrate` против `PROD_DATABASE_URL`.
+4. **Deploy**: `vercel --prod --yes` → выводит production URL.
+
+### GitHub auto-deploy не подключён
+
+GitHub-аккаунт текущего владельца помечен флагом «Trade controls
+restricted», блокирующим создание репозиториев. Реальный auto-deploy
+через `git push` потребует подключить альтернативный провайдер
+(GitLab/Bitbucket) и связать его с Vercel через
+**Project → Settings → Git**.
+
+Workflow `.github/workflows/ci.yml` и `.github/workflows/migrate-prod.yml`
+оставлены в репо на будущее — они активируются автоматически, как
+только репо окажется на GitHub-подобном хосте с поддержкой Actions.

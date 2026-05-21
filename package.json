@@ -21,7 +21,9 @@
     "db:seed": "tsx src/db/seed.ts && tsx src/scripts/content-sync.ts",
     "content:sync": "tsx src/scripts/content-sync.ts",
     "content:check": "tsx src/scripts/content-check.ts",
-    "new:node": "tsx src/scripts/new-node.ts"
+    "new:node": "tsx src/scripts/new-node.ts",
+    "deploy": "./scripts/deploy.sh",
+    "deploy:migrate": "./scripts/deploy.sh --migrate"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
