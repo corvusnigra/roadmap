@@ -36,11 +36,22 @@ const Flashcard = z.object({
   back: z.string().min(1),
 });
 
+/**
+ * Node lifecycle stage:
+ *  - `draft`     — work in progress. Scaffolder writes this by default;
+ *                  `content:check` may flag remaining TODOs.
+ *  - `published` — ready for learners. CI gating should refuse to ship
+ *                  drafts; for MVP we just store the field.
+ */
+export const NodeStatus = z.enum(["draft", "published"]);
+export type NodeStatusValue = z.infer<typeof NodeStatus>;
+
 const BaseFrontmatter = z.object({
   schemaVersion: z.literal(FRONTMATTER_SCHEMA_VERSION).default(1),
   slug: z.string().regex(SLUG_REGEX, "slug must be kebab-case (a-z, 0-9, -)"),
   title: z.string().min(1),
   summary: z.string().min(1),
+  status: NodeStatus.default("draft"),
   estimatedMinutes: z.number().int().positive().max(180),
   prerequisites: z
     .array(z.string().regex(SLUG_REGEX, "prerequisite slugs must be kebab-case"))
@@ -51,8 +62,8 @@ const BaseFrontmatter = z.object({
   /**
    * Pool of multiple-choice questions for the mastery quiz. The schema
    * enforces a floor of 5 — the minimum needed for the "5 of N" pick logic.
-   * `content:lint` in Phase 10 will raise the bar to 8 for production
-   * content so the random pick is actually random.
+   * `content:check` raises that bar to 6 for `status: published` nodes so
+   * the random pick is actually random (1 spare beyond the picked 5).
    */
   masteryQuiz: z.array(McqItem).min(5),
 });
