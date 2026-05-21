@@ -29,6 +29,13 @@
       "when": 1779294442033,
       "tag": "0003_user_card_state_fsrs",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779352331266,
+      "tag": "0004_profile_active_role",
+      "breakpoints": true
     }
   ]
 }
