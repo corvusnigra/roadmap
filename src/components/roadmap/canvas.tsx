@@ -5,6 +5,7 @@ import { useCallback, useMemo } from "react";
 import {
   Background,
   Controls,
+  MarkerType,
   ReactFlow,
   type Edge,
   type Node,
@@ -58,7 +59,11 @@ export function RoadmapCanvas({ roleSlug, roleTitle, view }: RoadmapCanvasProps)
         source: e.source,
         target: e.target,
         animated: false,
-        style: { stroke: "hsl(var(--border))" },
+        // Slate-400 has enough contrast in both light and dark mode without
+        // looking aggressive. Using a CSS variable here is fragile because
+        // ReactFlow renders edges as SVG outside the Tailwind context.
+        style: { stroke: "#94a3b8", strokeWidth: 1.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
       })),
     [view.edges],
   );

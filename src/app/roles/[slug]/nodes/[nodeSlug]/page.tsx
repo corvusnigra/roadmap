@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { MDXRemote } from "next-mdx-remote/rsc";
+import remarkGfm from "remark-gfm";
 import { and, asc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
@@ -17,6 +18,10 @@ import { getDueCardsForNode } from "@/lib/fsrs/queries";
 import { logEvent } from "@/lib/progress/transitions";
 import type { PracticeCode } from "@/lib/content/schema";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  extractTocItems,
+  mdxComponents,
+} from "@/components/learn/mdx-components";
 import {
   NodeView,
   type InitialProgress,
@@ -124,17 +129,27 @@ export default async function NodePage({ params }: PageProps) {
 
   // Pre-render the MDX as a Server Component subtree, then hand it to the
   // client view as a child — Next bridges RSC -> client component props.
+  // `mdxComponents` injects editorial typography (counter-numbered H2s,
+  // serif body, styled tables) plus the `<Callout>` component used inline.
   const theoryContent = (
     <MDXRemote
       source={loaded.source}
+      components={mdxComponents}
       options={{
         mdxOptions: {
-          // Keep default remark/rehype plugins minimal for now; Phase 7 may
-          // add syntax highlighting and Mermaid.
+          // remark-gfm enables GitHub-flavored markdown: tables, task lists,
+          // strikethrough, autolinks. Without it MDX renders `| col | col |`
+          // as literal text instead of a <table>.
+          remarkPlugins: [remarkGfm],
         },
       }}
     />
   );
+
+  // Server-side TOC: parse H2 lines out of the raw MDX (ignoring fenced
+  // code blocks). Ids match what the `h2` MDX override generates so anchors
+  // line up.
+  const tocItems = extractTocItems(loaded.source);
 
   const reinforcementCards = dueCards.map((c) => ({
     cardId: c.cardId,
@@ -172,6 +187,7 @@ export default async function NodePage({ params }: PageProps) {
       frontmatter={loaded.frontmatter}
       initialProgress={initialProgress}
       theoryContent={theoryContent}
+      tocItems={tocItems}
       reinforcementCards={reinforcementCards}
       codeExercises={codeExercises}
       tutorHistory={tutorHistory}

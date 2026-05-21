@@ -9,6 +9,7 @@ import postgres from "postgres";
 
 import * as schema from "@/db/schema";
 import { nodePrerequisites, nodes, roles } from "@/db/schema";
+import { buildLevenchukNodeSeeds } from "@/scripts/levenchuk-curriculum";
 
 interface RoleSeed {
   slug: string;
@@ -139,7 +140,7 @@ const GH600: RoleConfig = {
       title: "Инструменты агента",
       summary:
         "Подбор средств агента, их настройка и управление разрешениями.",
-      positionX: 250,
+      positionX: 380,
       positionY: 0,
       estimatedMinutes: 30,
       prerequisites: ["autonomous-observability"],
@@ -149,7 +150,7 @@ const GH600: RoleConfig = {
       title: "MCP-серверы",
       summary:
         "Подключение MCP как инструмента: GitHub remote MCP, реестры, allowlists.",
-      positionX: 250,
+      positionX: 380,
       positionY: 140,
       estimatedMinutes: 30,
       prerequisites: ["agent-tools-selection"],
@@ -159,7 +160,7 @@ const GH600: RoleConfig = {
       title: "Интеграция в среды разработки",
       summary:
         "Контекст исполнения, scope по репозиторию/ветке, вызов из CI, автономные действия (ветки и PR).",
-      positionX: 250,
+      positionX: 380,
       positionY: 280,
       estimatedMinutes: 30,
       prerequisites: ["mcp-servers"],
@@ -169,7 +170,7 @@ const GH600: RoleConfig = {
       title: "Безопасное выполнение и обработка ошибок",
       summary:
         "Error handling, retries, fallbacks, эскалация и трассируемость действий агента.",
-      positionX: 250,
+      positionX: 380,
       positionY: 420,
       estimatedMinutes: 30,
       prerequisites: ["dev-environment-integration"],
@@ -180,7 +181,7 @@ const GH600: RoleConfig = {
       title: "Стратегии памяти агента",
       summary:
         "Краткосрочная / долгосрочная / внешняя; правила истечения, обрезки и сброса.",
-      positionX: 500,
+      positionX: 760,
       positionY: 0,
       estimatedMinutes: 25,
       prerequisites: ["safe-execution-error-handling"],
@@ -190,7 +191,7 @@ const GH600: RoleConfig = {
       title: "Состояние и смещение контекста",
       summary:
         "Фиксация хода задачи в артефактах, возобновление работы, обнаружение и исправление дрейфа.",
-      positionX: 500,
+      positionX: 760,
       positionY: 140,
       estimatedMinutes: 30,
       prerequisites: ["memory-strategies"],
@@ -200,7 +201,7 @@ const GH600: RoleConfig = {
       title: "Непрерывность памяти и состояния",
       summary:
         "Общий state между инструментами и средами; защита от устаревания и конфликтов контекста.",
-      positionX: 500,
+      positionX: 760,
       positionY: 280,
       estimatedMinutes: 25,
       prerequisites: ["state-context-drift"],
@@ -211,7 +212,7 @@ const GH600: RoleConfig = {
       title: "Критерии успешности и сигналы оценки",
       summary:
         "Ожидаемые результаты и ограничения задачи; качественные и количественные сигналы; автоматические сканы как источник сигналов.",
-      positionX: 750,
+      positionX: 1140,
       positionY: 0,
       estimatedMinutes: 30,
       prerequisites: ["memory-continuity"],
@@ -221,7 +222,7 @@ const GH600: RoleConfig = {
       title: "Анализ сбоев агента",
       summary:
         "Логи, планы, трассировки, артефакты рабочих процессов; классификация первопричин: рассуждение, инструменты, контекст.",
-      positionX: 750,
+      positionX: 1140,
       positionY: 140,
       estimatedMinutes: 30,
       prerequisites: ["evaluation-criteria"],
@@ -231,7 +232,7 @@ const GH600: RoleConfig = {
       title: "Настройка поведения агента",
       summary:
         "Тонкая настройка инструкций, рабочих процессов, ограничений; уточнение памяти и доступа к инструментам.",
-      positionX: 750,
+      positionX: 1140,
       positionY: 280,
       estimatedMinutes: 25,
       prerequisites: ["failure-analysis"],
@@ -242,7 +243,7 @@ const GH600: RoleConfig = {
       title: "Оркестрация многоагентных систем",
       summary:
         "Шаблоны оркестрации, изоляция параллельных агентов, разрешение конфликтов изменений и противоречивых выходов.",
-      positionX: 1000,
+      positionX: 1520,
       positionY: 0,
       estimatedMinutes: 35,
       prerequisites: ["behavior-tuning"],
@@ -252,7 +253,7 @@ const GH600: RoleConfig = {
       title: "Наблюдаемость многоагентных систем",
       summary:
         "Артефакты, пригодные для аудита, документирование решений и передач, постфактум анализ поведения.",
-      positionX: 1000,
+      positionX: 1520,
       positionY: 140,
       estimatedMinutes: 30,
       prerequisites: ["multi-agent-orchestration"],
@@ -262,7 +263,7 @@ const GH600: RoleConfig = {
       title: "Отказы в многоагентных системах",
       summary:
         "Выявление неудачных и приостановленных исполнений; реакция на ухудшение; recovery-шаблоны и human-in-the-loop.",
-      positionX: 1000,
+      positionX: 1520,
       positionY: 280,
       estimatedMinutes: 30,
       prerequisites: ["multi-agent-observability"],
@@ -272,7 +273,7 @@ const GH600: RoleConfig = {
       title: "Жизненный цикл многоагентных процессов",
       summary:
         "Добавление, обновление и вывод агентов без нарушения активных рабочих процессов; сохранение аудируемости.",
-      positionX: 1000,
+      positionX: 1520,
       positionY: 420,
       estimatedMinutes: 25,
       prerequisites: ["multi-agent-failures"],
@@ -283,7 +284,7 @@ const GH600: RoleConfig = {
       title: "Уровни автономии",
       summary:
         "Классификация действий по риску; назначение уровней автономии для скорости + безопасности.",
-      positionX: 1250,
+      positionX: 1900,
       positionY: 0,
       estimatedMinutes: 25,
       prerequisites: ["multi-agent-lifecycle"],
@@ -293,7 +294,7 @@ const GH600: RoleConfig = {
       title: "Ограничители и human-in-the-loop",
       summary:
         "Действия с обязательным одобрением; блокировка нарушений политик; принцип минимальных прав; контроль необратимых изменений.",
-      positionX: 1250,
+      positionX: 1900,
       positionY: 140,
       estimatedMinutes: 30,
       prerequisites: ["autonomy-levels"],
@@ -301,7 +302,20 @@ const GH600: RoleConfig = {
   ],
 };
 
-const ROLES: RoleConfig[] = [FRONTEND, GH600];
+// ----- Role 3: Интеллект-стек Левенчука ---------------------------------
+
+const LEVENCHUK: RoleConfig = {
+  role: {
+    slug: "levenchuk-stack",
+    title: "Интеллект-стек Левенчука",
+    summary:
+      "Семь уровней трансдисциплин: от собранности и онтологики до системного предпринимательства и инженерии личности. Курс по работам ШСМ и блогу ailev.",
+    status: "published",
+  },
+  nodes: buildLevenchukNodeSeeds(),
+};
+
+const ROLES: RoleConfig[] = [FRONTEND, GH600, LEVENCHUK];
 
 async function seedRole(
   db: ReturnType<typeof drizzle>,

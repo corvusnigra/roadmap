@@ -43,11 +43,17 @@ export interface LoadedCodeExercise {
   testsCode: string;
 }
 
+export interface TocItem {
+  id: string;
+  text: string;
+}
+
 interface NodeViewProps {
   roleSlug: string;
   frontmatter: NodeFrontmatter;
   initialProgress: InitialProgress;
   theoryContent: ReactNode;
+  tocItems: TocItem[];
   reinforcementCards: ReinforcementCard[];
   codeExercises: LoadedCodeExercise[];
   tutorHistory: TutorTurn[];
@@ -58,6 +64,7 @@ export function NodeView({
   frontmatter,
   initialProgress,
   theoryContent,
+  tocItems,
   reinforcementCards,
   codeExercises,
   tutorHistory,
@@ -86,69 +93,61 @@ export function NodeView({
     (frontmatter.masteryQuiz?.length ?? 0) >= 5;
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6">
-      <nav className="text-sm">
+    <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8">
+      <nav className="text-xs font-mono uppercase tracking-[0.18em]">
         <Link
           href={`/roles/${roleSlug}` as `/roles/${string}`}
-          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-ink-muted hover:text-prose-accent transition-colors"
         >
-          <ArrowLeft className="h-3.5 w-3.5" /> Назад к карте
+          <ArrowLeft className="h-3 w-3" /> Назад к карте
         </Link>
       </nav>
 
-      <header className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {frontmatter.title}
-          </h1>
-          <div className="flex items-center gap-2">
-            <TutorPanel
-              roleSlug={roleSlug}
-              nodeSlug={frontmatter.slug}
-              nodeTitle={frontmatter.title}
-              initialHistory={tutorHistory}
-            />
-            <Badge
-              variant={
-                status === "mastered"
-                  ? "success"
-                  : status === "in_progress"
-                    ? "secondary"
-                    : "muted"
-              }
-              data-testid="node-status-badge"
-            >
-              {status === "mastered" ? (
-                <>
-                  <Check className="mr-1 h-3 w-3" /> Освоено
-                </>
-              ) : status === "in_progress" ? (
-                "В процессе"
-              ) : (
-                "Доступно"
-              )}
-            </Badge>
+      <header className="space-y-6 border-b border-rule pb-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex-1 min-w-0 space-y-4">
+            <h1 className="font-serif text-4xl md:text-5xl font-semibold tracking-tight leading-[1.08] text-ink">
+              {frontmatter.title}
+            </h1>
+            <p className="font-serif text-lg leading-[1.55] text-ink-muted max-w-[58ch]">
+              {frontmatter.summary}
+            </p>
+            <div className="flex flex-wrap items-center gap-4 text-[11px] font-mono uppercase tracking-[0.18em] text-ink-muted">
+              <span>~{frontmatter.estimatedMinutes} мин</span>
+              <span aria-hidden className="text-rule">·</span>
+              <Badge
+                variant={
+                  status === "mastered"
+                    ? "success"
+                    : status === "in_progress"
+                      ? "secondary"
+                      : "muted"
+                }
+                className="rounded-sm font-mono text-[10px] tracking-[0.18em] uppercase"
+                data-testid="node-status-badge"
+              >
+                {status === "mastered" ? (
+                  <>
+                    <Check className="mr-1 h-3 w-3" /> Освоено
+                  </>
+                ) : status === "in_progress" ? (
+                  "В процессе"
+                ) : (
+                  "Доступно"
+                )}
+              </Badge>
+            </div>
           </div>
-        </div>
-        <p className="text-muted-foreground">{frontmatter.summary}</p>
-        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span>~{frontmatter.estimatedMinutes} мин</span>
-          {frontmatter.learningOutcomes.length > 0 ? (
-            <details className="group">
-              <summary className="cursor-pointer">
-                Цели обучения ({frontmatter.learningOutcomes.length})
-              </summary>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                {frontmatter.learningOutcomes.map((o, i) => (
-                  <li key={i}>{o}</li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
+          <TutorPanel
+            roleSlug={roleSlug}
+            nodeSlug={frontmatter.slug}
+            nodeTitle={frontmatter.title}
+            initialHistory={tutorHistory}
+          />
         </div>
       </header>
 
-      <Tabs defaultValue="theory" className="space-y-4">
+      <Tabs defaultValue="theory" className="space-y-6">
         <TabsList>
           <TabsTrigger value="theory" data-testid="tab-theory">
             Теория
@@ -166,6 +165,8 @@ export function NodeView({
             roleSlug={roleSlug}
             nodeSlug={frontmatter.slug}
             initiallyRead={initialProgress.theoryRead}
+            learningOutcomes={frontmatter.learningOutcomes}
+            tocItems={tocItems}
           >
             {theoryContent}
           </Theory>

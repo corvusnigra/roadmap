@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -26,6 +27,20 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* Editorial palette for long-form theory articles.
+   * Distinct from the shadcn primitives above so prose styling
+   * doesn't fight chrome (buttons, badges, dialogs). */
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-rule: var(--rule);
+  --color-prose-accent: var(--prose-accent);
+  --color-prose-accent-soft: var(--prose-accent-soft);
+  --color-prose-warn: var(--prose-warn);
+  --color-prose-warn-soft: var(--prose-warn-soft);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
 }
 
 :root {
@@ -49,6 +64,16 @@
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.871 0.006 286.286);
   --radius: 0.625rem;
+
+  /* Editorial palette: warm off-white surface, near-black ink, deep teal accent. */
+  --paper: #FBFAF7;
+  --ink: #1A1816;
+  --ink-muted: #5C544A;
+  --rule: #E5E1D8;
+  --prose-accent: #0F4F4A;
+  --prose-accent-soft: #E1ECE9;
+  --prose-warn: #B45309;
+  --prose-warn-soft: #FBEEDC;
 }
 
 .dark {
@@ -71,6 +96,16 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.552 0.016 285.938);
+
+  /* Editorial palette — dark variant. */
+  --paper: #1A1816;
+  --ink: #F4EFE6;
+  --ink-muted: #B4ACA1;
+  --rule: #2E2A24;
+  --prose-accent: #6FBDB3;
+  --prose-accent-soft: #1F3935;
+  --prose-warn: #E8B872;
+  --prose-warn-soft: #3A2B17;
 }
 
 @layer base {
@@ -82,4 +117,34 @@
     color: var(--color-foreground);
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+}
+
+/* ----- Editorial article wrapper ----------------------------------------
+ *
+ * Applied to the MDX rendering host inside <Theory>. The serif font and
+ * comfortable reading column matter for ~700-word Russian articles;
+ * the H2 counter ("01", "02") gives sectional rhythm without manual
+ * numbering in source. Everything else is delegated to MDX component
+ * overrides (h1/h2/table/code/Callout) so it stays in TSX where it's
+ * easier to maintain than in CSS.
+ */
+.prose-article {
+  counter-reset: section;
+  font-family: var(--font-serif);
+  color: var(--ink);
+  line-height: 1.7;
+  font-size: 17px;
+}
+.prose-article h2 {
+  counter-increment: section;
+}
+.prose-article h2::before {
+  content: counter(section, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  color: var(--prose-accent);
+  margin-right: 0.875rem;
+  font-weight: 500;
+  vertical-align: 0.3em;
 }

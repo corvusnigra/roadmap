@@ -57,7 +57,7 @@ export function RoadmapNode({ data }: NodeProps<RoadmapNodeData>) {
       data-available={isAvailable ? "true" : "false"}
       data-node-slug={data.slug}
       className={cn(
-        "min-w-[180px] cursor-pointer rounded-lg border-2 px-4 py-3 transition-colors",
+        "w-[260px] cursor-pointer rounded-lg border-2 px-4 py-3 transition-colors",
         style.container,
       )}
     >
