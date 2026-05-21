@@ -73,7 +73,7 @@ describe("db schema tables", () => {
     expect(getTableName(profiles)).toBe("profiles");
     const cols = getTableColumns(profiles);
     expect(Object.keys(cols).sort()).toEqual(
-      ["createdAt", "displayName", "id", "timezone"].sort(),
+      ["activeRoleSlug", "createdAt", "displayName", "id", "timezone"].sort(),
     );
   });
 

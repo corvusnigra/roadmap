@@ -69,6 +69,12 @@ export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey(),
   displayName: text("display_name"),
   timezone: text("timezone").default("UTC").notNull(),
+  // Which role's roadmap the user is currently studying. Updated via
+  // `setActiveRole` server action; default keeps existing rows on the
+  // original demo role.
+  activeRoleSlug: text("active_role_slug")
+    .default("frontend-developer")
+    .notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

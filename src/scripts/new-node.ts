@@ -29,22 +29,22 @@ interface Args {
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Partial<Args> & { prereqs: string[] } = {
-    role: "frontend-developer",
-    prereqs: [],
-    minutes: 25,
-    withExercise: false,
-  };
+  let title: string | undefined;
+  let role = "frontend-developer";
+  const prereqs: string[] = [];
+  let minutes = 25;
+  let withExercise = false;
 
-  // First positional is the slug.
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === "--title") args.title = argv[++i];
-    else if (a === "--role") args.role = argv[++i];
-    else if (a === "--prereq") args.prereqs.push(argv[++i]!);
-    else if (a === "--minutes") args.minutes = Number(argv[++i]);
-    else if (a === "--with-exercise") args.withExercise = true;
+    if (a === "--title") title = argv[++i];
+    else if (a === "--role") role = argv[++i] ?? role;
+    else if (a === "--prereq") {
+      const next = argv[++i];
+      if (next) prereqs.push(next);
+    } else if (a === "--minutes") minutes = Number(argv[++i]);
+    else if (a === "--with-exercise") withExercise = true;
     else if (a.startsWith("--")) {
       throw new Error(`Unknown flag: ${a}`);
     } else positional.push(a);
@@ -55,20 +55,18 @@ function parseArgs(argv: string[]): Args {
       "Expected exactly one positional argument (slug). Run with --help for usage.",
     );
   }
-  args.slug = positional[0];
+  const slug = positional[0]!;
 
-  if (!args.title) {
+  if (!title) {
     throw new Error("--title is required");
   }
-  if (!/^[a-z0-9-]+$/.test(args.slug)) {
-    throw new Error(
-      `slug must be kebab-case (a-z, 0-9, -). Got: "${args.slug}"`,
-    );
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    throw new Error(`slug must be kebab-case (a-z, 0-9, -). Got: "${slug}"`);
   }
-  if (!Number.isInteger(args.minutes) || args.minutes <= 0) {
-    throw new Error(`--minutes must be a positive integer. Got: ${args.minutes}`);
+  if (!Number.isInteger(minutes) || minutes <= 0) {
+    throw new Error(`--minutes must be a positive integer. Got: ${minutes}`);
   }
-  return args as Args;
+  return { slug, title, role, prereqs, minutes, withExercise };
 }
 
 async function exists(p: string): Promise<boolean> {

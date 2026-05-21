@@ -6,6 +6,7 @@ import { ArrowRight, Flame } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ProgressRing } from "@/components/dashboard/progress-ring";
+import { RoleSwitcher } from "@/components/dashboard/role-switcher";
 import { Sparkline } from "@/components/dashboard/sparkline";
 import { signOut } from "@/app/login/actions";
 import { db } from "@/lib/db";
@@ -21,8 +22,6 @@ import { logEvent } from "@/lib/progress/transitions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { pluralRu } from "@/lib/i18n/plural";
 
-const ACTIVE_ROLE_SLUG = "frontend-developer";
-
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
   const {
@@ -31,19 +30,29 @@ export default async function DashboardPage() {
   if (!user) notFound();
 
   const profile = await db
-    .select({ timezone: profiles.timezone, displayName: profiles.displayName })
+    .select({
+      timezone: profiles.timezone,
+      displayName: profiles.displayName,
+      activeRoleSlug: profiles.activeRoleSlug,
+    })
     .from(profiles)
     .where(eq(profiles.id, user.id))
     .limit(1)
     .then((r) => r[0]);
   const timezone = profile?.timezone ?? "UTC";
 
-  const role = await db
+  // All published roles for the role-switcher.
+  const availableRoles = await db
     .select({ id: rolesTable.id, slug: rolesTable.slug, title: rolesTable.title })
     .from(rolesTable)
-    .where(eq(rolesTable.slug, ACTIVE_ROLE_SLUG))
-    .limit(1)
-    .then((r) => r[0]);
+    .where(eq(rolesTable.status, "published"));
+
+  // Active role is whatever the profile says, falling back to the first
+  // available published role. If neither exists we 404 — the seed should
+  // always provide at least one role.
+  const activeSlug = profile?.activeRoleSlug ?? availableRoles[0]?.slug;
+  const role =
+    availableRoles.find((r) => r.slug === activeSlug) ?? availableRoles[0];
   if (!role) notFound();
 
   const [progress, nextNode, streak, activity, dueCards] = await Promise.all([
@@ -68,10 +77,13 @@ export default async function DashboardPage() {
   return (
     <main className="mx-auto w-full max-w-4xl space-y-8 px-4 py-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            {role.title}
-          </p>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Текущая роль:
+            </p>
+            <RoleSwitcher options={availableRoles} activeSlug={role.slug} />
+          </div>
           <h1 className="text-2xl font-semibold tracking-tight">
             С возвращением
             {profile?.displayName ? `, ${profile.displayName}` : ""}
