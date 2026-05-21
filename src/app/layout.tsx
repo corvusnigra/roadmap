@@ -6,7 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 export const metadata: Metadata = {
   title: "RoleRoadmap",
   description:
-    "Turn a job role into a visual, interactive knowledge graph with theory, practice, and spaced repetition.",
+    "Превратите профессиональную роль в визуальный интерактивный граф знаний — теория, практика и интервальное повторение.",
 };
 
 export default function RootLayout({
@@ -15,7 +15,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="ru" suppressHydrationWarning>
       <body className="min-h-screen bg-background text-foreground antialiased">
         {children}
         <Toaster />

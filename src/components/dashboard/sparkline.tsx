@@ -1,3 +1,5 @@
+import { pluralRu } from "@/lib/i18n/plural";
+
 interface SparklineProps {
   data: { day: string; count: number }[];
   width?: number;
@@ -16,7 +18,7 @@ export function Sparkline({ data, width = 240, height = 56 }: SparklineProps) {
         className="flex h-14 items-center justify-center rounded-md border bg-muted/20 text-xs text-muted-foreground"
         data-testid="sparkline-empty"
       >
-        No activity yet.
+        Пока активности нет.
       </div>
     );
   }
@@ -46,7 +48,7 @@ export function Sparkline({ data, width = 240, height = 56 }: SparklineProps) {
       width={width}
       height={height}
       role="img"
-      aria-label="Activity over the last 7 days"
+      aria-label="Активность за последние 7 дней"
       data-testid="sparkline"
       className="overflow-visible"
     >
@@ -67,7 +69,7 @@ export function Sparkline({ data, width = 240, height = 56 }: SparklineProps) {
           r={p.d.count > 0 ? 2.5 : 1.5}
           className={p.d.count > 0 ? "fill-primary" : "fill-muted-foreground"}
         >
-          <title>{`${p.d.day}: ${p.d.count} event${p.d.count === 1 ? "" : "s"}`}</title>
+          <title>{`${p.d.day}: ${p.d.count} ${pluralRu(p.d.count, ["событие", "события", "событий"])}`}</title>
         </circle>
       ))}
       {/* Last bucket axis ticker — small text under the rightmost point. */}
@@ -77,7 +79,7 @@ export function Sparkline({ data, width = 240, height = 56 }: SparklineProps) {
         textAnchor="end"
         className="fill-muted-foreground text-[9px]"
       >
-        today
+        сегодня
       </text>
     </svg>
   );

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getDueCards } from "@/lib/fsrs/queries";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ReviewQueue } from "@/components/review/review-queue";
+import { pluralRu } from "@/lib/i18n/plural";
 
 export default async function ReviewPage() {
   const supabase = await createSupabaseServerClient();
@@ -24,11 +25,15 @@ export default async function ReviewPage() {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-8">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Today&apos;s review</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Повторение на сегодня</h1>
         <p className="text-sm text-muted-foreground">
           {items.length === 0
-            ? "Nothing due right now — come back when more cards age in."
-            : `${items.length} card${items.length === 1 ? "" : "s"} due across your roadmap.`}
+            ? "Сейчас нет карточек на повторение — возвращайтесь позже."
+            : `На карте ${items.length} ${pluralRu(items.length, [
+                "карточка",
+                "карточки",
+                "карточек",
+              ])} на повторение.`}
         </p>
       </header>
       <ReviewQueue items={items} />

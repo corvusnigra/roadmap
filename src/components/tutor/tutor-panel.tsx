@@ -51,15 +51,15 @@ export function TutorPanel({
         setHistory((prev) => [...prev, result.user, result.assistant]);
         setDraft("");
         if (result.stubbed) {
-          toast.info("Tutor running in stub mode", {
+          toast.info("Наставник в режиме заглушки", {
             description:
-              "Set a real ANTHROPIC_API_KEY in .env.local for live answers.",
+              "Задайте настоящий ANTHROPIC_API_KEY в .env.local, чтобы получать живые ответы.",
           });
         }
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Tutor request failed.";
-        toast.error("Tutor failed", { description: message });
+          err instanceof Error ? err.message : "Запрос к наставнику не выполнен.";
+        toast.error("Ошибка наставника", { description: message });
       }
     });
   };
@@ -74,14 +74,14 @@ export function TutorPanel({
         data-testid="open-tutor"
       >
         <Sparkles className="mr-1 h-3.5 w-3.5" />
-        Ask tutor
+        Спросить наставника
       </Button>
 
       {open ? (
         <div
           className="fixed inset-0 z-40 flex justify-end bg-black/30 backdrop-blur-sm"
           role="dialog"
-          aria-label={`Tutor for ${nodeTitle}`}
+          aria-label={`Наставник по ${nodeTitle}`}
           data-testid="tutor-panel"
           onClick={(e) => {
             // Close when clicking the backdrop, not the inner panel.
@@ -93,7 +93,7 @@ export function TutorPanel({
               <div className="flex items-center gap-2">
                 <Bot className="h-4 w-4" />
                 <h2 className="text-sm font-semibold">
-                  Tutor — <span className="text-muted-foreground">{nodeTitle}</span>
+                  Наставник — <span className="text-muted-foreground">{nodeTitle}</span>
                 </h2>
               </div>
               <Button
@@ -101,7 +101,7 @@ export function TutorPanel({
                 variant="ghost"
                 size="icon"
                 onClick={() => setOpen(false)}
-                aria-label="Close tutor"
+                aria-label="Закрыть"
                 data-testid="close-tutor"
               >
                 <X className="h-4 w-4" />
@@ -116,15 +116,15 @@ export function TutorPanel({
               {history.length === 0 ? (
                 <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
                   <p>
-                    Ask anything about <em>{nodeTitle}</em> or its prerequisites.
-                    Examples:
+                    Спросите что-нибудь про <em>{nodeTitle}</em> или
+                    предшествующие темы. Примеры:
                   </p>
                   <ul className="mt-2 list-disc space-y-1 pl-4">
-                    <li>“Why prefer <code>&lt;article&gt;</code> over <code>&lt;div&gt;</code>?”</li>
-                    <li>“I&apos;m stuck on the refactor — what should I look at first?”</li>
+                    <li>«Почему лучше <code>&lt;article&gt;</code>, а не <code>&lt;div&gt;</code>?»</li>
+                    <li>«Застрял на рефакторинге — с чего начать?»</li>
                     <li>
-                      Type <code>/solve</code> to ask the tutor to reveal the
-                      full code solution.
+                      Напишите <code>/solve</code>, чтобы попросить наставника
+                      показать полное решение.
                     </li>
                   </ul>
                 </div>
@@ -137,7 +137,7 @@ export function TutorPanel({
               {pending ? (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-                  Thinking…
+                  Думаю…
                 </div>
               ) : null}
             </div>
@@ -160,7 +160,7 @@ export function TutorPanel({
                     }
                   }}
                   rows={2}
-                  placeholder="Ask a question…  (Shift+Enter for newline)"
+                  placeholder="Задайте вопрос…  (Shift+Enter — новая строка)"
                   className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
                   disabled={pending}
                   data-testid="tutor-input"
@@ -170,14 +170,14 @@ export function TutorPanel({
                   size="icon"
                   disabled={!draft.trim() || pending}
                   data-testid="tutor-send"
-                  aria-label="Send"
+                  aria-label="Отправить"
                 >
                   <Send className="h-4 w-4" />
                 </Button>
               </div>
               <p className="mt-1.5 text-[10px] text-muted-foreground">
-                The tutor only uses material from <em>{nodeTitle}</em> and its
-                prerequisites.
+                Наставник опирается только на материал <em>{nodeTitle}</em> и
+                предшествующих тем.
               </p>
             </form>
           </aside>
@@ -201,7 +201,7 @@ function MessageBubble({ turn }: { turn: TutorTurn }) {
     >
       <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
         <Badge variant={isUser ? "secondary" : "muted"} className="px-1.5 py-0">
-          {isUser ? "You" : "Tutor"}
+          {isUser ? "Вы" : "Наставник"}
         </Badge>
         <span>{new Date(turn.createdAt).toLocaleTimeString()}</span>
       </div>

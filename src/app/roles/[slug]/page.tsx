@@ -91,5 +91,5 @@ export default async function RoleRoadmapPage({ params }: PageProps) {
     progressRows satisfies RoadmapProgressInput[],
   );
 
-  return <RoadmapCanvas roleSlug={slug} view={view} />;
+  return <RoadmapCanvas roleSlug={slug} roleTitle={role.title} view={view} />;
 }

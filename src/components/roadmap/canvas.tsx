@@ -25,12 +25,13 @@ import {
 
 interface RoadmapCanvasProps {
   roleSlug: string;
+  roleTitle: string;
   view: RoadmapView;
 }
 
 const nodeTypes = { roadmap: RoadmapNode };
 
-export function RoadmapCanvas({ roleSlug, view }: RoadmapCanvasProps) {
+export function RoadmapCanvas({ roleSlug, roleTitle, view }: RoadmapCanvasProps) {
   const router = useRouter();
 
   const flowNodes = useMemo<Node<RoadmapNodeData>[]>(
@@ -69,8 +70,8 @@ export function RoadmapCanvas({ roleSlug, view }: RoadmapCanvasProps) {
       if (!enrichedNode) return;
 
       if (!isNodeUnlocked(enrichedNode)) {
-        toast.error("Locked", {
-          description: `Finish: ${data.unmetPrerequisiteTitles.join(", ")}`,
+        toast.error("Закрыто", {
+          description: `Сначала пройдите: ${data.unmetPrerequisiteTitles.join(", ")}`,
         });
         return;
       }
@@ -91,11 +92,11 @@ export function RoadmapCanvas({ roleSlug, view }: RoadmapCanvasProps) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-lg font-semibold tracking-tight">
-              Frontend Developer roadmap
+              Дорожная карта · {roleTitle}
             </h1>
             <p className="text-xs text-muted-foreground">
               <span data-testid="progress-text">
-                {mastered} of {total} mastered
+                {mastered} из {total} освоено
               </span>
             </p>
           </div>

@@ -12,17 +12,17 @@ import { nodePrerequisites, nodes, roles } from "@/db/schema";
 
 const FRONTEND_ROLE = {
   slug: "frontend-developer",
-  title: "Frontend Developer",
+  title: "Frontend-разработчик",
   summary:
-    "From zero to a junior-ready frontend engineer: web fundamentals, HTML, CSS, JS, React, tooling.",
+    "От нуля до junior-уровня: основы веба, HTML, CSS, JS, React, инструменты.",
   status: "published" as const,
 };
 
 const PLACEHOLDER_NODES = [
   {
     slug: "how-the-web-works",
-    title: "How the Web Works",
-    summary: "Requests, responses, DNS, HTTP basics.",
+    title: "Как работает Web",
+    summary: "Запросы, ответы, DNS, основы HTTP.",
     positionX: 0,
     positionY: 0,
     estimatedMinutes: 25,
@@ -30,7 +30,7 @@ const PLACEHOLDER_NODES = [
   },
   {
     slug: "html-document-structure",
-    title: "HTML Document Structure",
+    title: "Структура HTML-документа",
     summary: "Doctype, <head>, <meta>, <body>.",
     positionX: 200,
     positionY: 0,
@@ -39,7 +39,7 @@ const PLACEHOLDER_NODES = [
   },
   {
     slug: "html-semantics",
-    title: "Semantic HTML",
+    title: "Семантика HTML",
     summary: "<section>, <article>, <header>, <nav>, <aside>.",
     positionX: 400,
     positionY: 0,
@@ -49,7 +49,7 @@ const PLACEHOLDER_NODES = [
   {
     slug: "css-box-model",
     title: "CSS Box Model",
-    summary: "Content, padding, border, margin, box-sizing.",
+    summary: "Контент, padding, border, margin, box-sizing.",
     positionX: 600,
     positionY: 0,
     estimatedMinutes: 25,
@@ -58,7 +58,7 @@ const PLACEHOLDER_NODES = [
   {
     slug: "css-flexbox",
     title: "CSS Flexbox",
-    summary: "Main/cross axis, justify-content, align-items, gap.",
+    summary: "Главная/побочная ось, justify-content, align-items, gap.",
     positionX: 800,
     positionY: 0,
     estimatedMinutes: 30,

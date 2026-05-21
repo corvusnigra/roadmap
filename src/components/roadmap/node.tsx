@@ -23,13 +23,13 @@ const STATUS_STYLES: Record<
   mastered: {
     container:
       "border-emerald-500 bg-emerald-500/5 text-foreground shadow-sm hover:bg-emerald-500/10",
-    label: "Mastered",
+    label: "Освоено",
     badgeVariant: "success",
   },
   in_progress: {
     container:
       "border-primary bg-primary/5 text-foreground shadow-sm hover:bg-primary/10",
-    label: "In progress",
+    label: "В процессе",
     badgeVariant: "secondary",
   },
   locked: {
@@ -45,9 +45,9 @@ export function RoadmapNode({ data }: NodeProps<RoadmapNodeData>) {
   const isAvailable = data.status === "locked" && data.unmetPrerequisiteTitles.length === 0;
   const style = STATUS_STYLES[data.status];
 
-  const badgeLabel = isLocked ? "Locked" : isAvailable ? "Available" : style.label;
+  const badgeLabel = isLocked ? "Закрыто" : isAvailable ? "Доступно" : style.label;
   const tooltip = isLocked
-    ? `Complete prerequisites first: ${data.unmetPrerequisiteTitles.join(", ")}`
+    ? `Сначала пройдите: ${data.unmetPrerequisiteTitles.join(", ")}`
     : undefined;
 
   return (
@@ -72,7 +72,7 @@ export function RoadmapNode({ data }: NodeProps<RoadmapNodeData>) {
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-[11px] text-muted-foreground">
-          {data.estimatedMinutes} min
+          {data.estimatedMinutes} мин
         </span>
         <Badge variant={style.badgeVariant} className="px-1.5 py-0 text-[10px]">
           {badgeLabel}

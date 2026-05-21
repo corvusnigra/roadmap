@@ -21,10 +21,10 @@ interface ReinforcementProps {
 }
 
 const RATINGS = [
-  { label: "Again", value: 1, hotkey: "1" },
-  { label: "Hard", value: 2, hotkey: "2" },
-  { label: "Good", value: 3, hotkey: "3" },
-  { label: "Easy", value: 4, hotkey: "4" },
+  { key: "again", label: "Снова", value: 1, hotkey: "1" },
+  { key: "hard", label: "Тяжело", value: 2, hotkey: "2" },
+  { key: "good", label: "Хорошо", value: 3, hotkey: "3" },
+  { key: "easy", label: "Легко", value: 4, hotkey: "4" },
 ] as const;
 
 export function Reinforcement({
@@ -45,11 +45,10 @@ export function Reinforcement({
   if (!enabled) {
     return (
       <div className="rounded-md border bg-card p-4 text-sm">
-        <p className="font-medium">Reinforcement is gated</p>
+        <p className="font-medium">Закрепление закрыто</p>
         <p className="mt-1 text-muted-foreground">
-          Pass the mastery quiz to unlock flashcard review. Grading one card
-          flips the node to mastered; subsequent grades go through the FSRS
-          scheduler.
+          Сдайте итоговый тест, чтобы открыть карточки. После первой оценки узел
+          станет освоенным; дальше карточки идут по графику FSRS.
         </p>
       </div>
     );
@@ -64,8 +63,8 @@ export function Reinforcement({
         data-testid="reinforcement-empty"
       >
         {gradedCount > 0
-          ? "All cards graded for this node — they'll resurface when the FSRS scheduler says so."
-          : "No flashcards due for this node right now."}
+          ? "Все карточки этого узла оценены — они появятся снова по графику FSRS."
+          : "Сейчас нет карточек для повторения по этому узлу."}
       </div>
     );
   }
@@ -88,10 +87,10 @@ export function Reinforcement({
     <section className="space-y-4">
       <header className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          {queue.length} card{queue.length === 1 ? "" : "s"} due
+          в очереди: {queue.length}
         </span>
         <span data-testid="reinforcement-graded-count">
-          Graded this session: {gradedCount}
+          Оценено за сессию: {gradedCount}
         </span>
       </header>
 
@@ -112,7 +111,7 @@ export function Reinforcement({
             onClick={() => setRevealed(true)}
             data-testid="reinforcement-show-answer"
           >
-            Show answer
+            Показать ответ
           </Button>
         )}
       </article>
@@ -131,7 +130,7 @@ export function Reinforcement({
               r.value === 3 && "hover:border-emerald-400",
               r.value === 4 && "hover:border-sky-400",
             )}
-            data-testid={`reinforcement-grade-${r.label.toLowerCase()}`}
+            data-testid={`reinforcement-grade-${r.key}`}
           >
             <span className="text-sm font-medium">{r.label}</span>
             <span className="text-[10px] text-muted-foreground">{r.hotkey}</span>

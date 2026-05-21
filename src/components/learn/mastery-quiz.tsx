@@ -125,10 +125,10 @@ export function MasteryQuiz({
         data-testid="mastery-quiz-dialog"
       >
         <DialogHeader>
-          <DialogTitle>Mastery quiz</DialogTitle>
+          <DialogTitle>Итоговый тест</DialogTitle>
           <DialogDescription>
-            Pass with {Math.ceil(QUIZ_SIZE * PASS_RATIO)} of {QUIZ_SIZE} correct
-            to clear the gate.
+            Правильно ответьте на {Math.ceil(QUIZ_SIZE * PASS_RATIO)} из{" "}
+            {QUIZ_SIZE} вопросов, чтобы открыть закрепление.
           </DialogDescription>
         </DialogHeader>
 
@@ -185,10 +185,10 @@ export function MasteryQuiz({
             data-passed={result.passed ? "true" : "false"}
           >
             {result.passed
-              ? `Passed: ${result.score} of ${questions.length}. Now grade a flashcard to lock in mastery.`
-              : `Scored ${result.score} of ${questions.length}. Aim for ${Math.ceil(
+              ? `Сдано: ${result.score} из ${questions.length}. Теперь оцените карточку, чтобы закрепить освоение.`
+              : `Результат: ${result.score} из ${questions.length}. Нужно не меньше ${Math.ceil(
                   questions.length * PASS_RATIO,
-                )} or more — try again when ready.`}
+                )} — попробуйте снова, когда будете готовы.`}
           </div>
         ) : null}
 
@@ -199,7 +199,7 @@ export function MasteryQuiz({
               onClick={() => onOpenChange(false)}
               data-testid="mastery-quiz-close"
             >
-              Close
+              Закрыть
             </Button>
           ) : (
             <Button
@@ -207,7 +207,7 @@ export function MasteryQuiz({
               onClick={handleSubmit}
               data-testid="mastery-quiz-submit"
             >
-              Submit
+              Ответить
             </Button>
           )}
         </DialogFooter>

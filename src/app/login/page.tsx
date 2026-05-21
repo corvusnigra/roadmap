@@ -32,18 +32,18 @@ export default async function LoginPage({
     <main className="flex min-h-screen flex-col items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-6">
         <header className="space-y-2 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Sign in to RoleRoadmap</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Вход в RoleRoadmap</h1>
           <p className="text-sm text-muted-foreground">
-            We&apos;ll email you a magic link. Locally, check{" "}
+            Мы отправим ссылку для входа на email. Локально — проверяйте{" "}
             <a
               href="http://127.0.0.1:54324"
               className="underline underline-offset-2"
               target="_blank"
               rel="noreferrer"
             >
-              Inbucket
-            </a>{" "}
-            to receive it.
+              Mailpit
+            </a>
+            .
           </p>
         </header>
 
@@ -63,13 +63,13 @@ export default async function LoginPage({
             ) : null}
           </div>
           <Button type="submit" className="w-full">
-            Send magic link
+            Отправить ссылку
           </Button>
         </form>
 
         {params.sent ? (
           <p className="rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-300">
-            Magic link sent — check your inbox (or Inbucket locally).
+            Ссылка отправлена — проверьте почту (локально — Mailpit).
           </p>
         ) : null}
         {params.error ? (

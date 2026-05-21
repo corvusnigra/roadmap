@@ -12,8 +12,9 @@ test.describe("/review", () => {
 
   test("shows the empty state when no nodes are in progress", async ({ page }) => {
     await page.goto("/review");
-    await expect(page.getByTestId("review-queue-empty")).toBeVisible();
-    await expect(page.getByText("No reviews due")).toBeVisible();
+    const empty = page.getByTestId("review-queue-empty");
+    await expect(empty).toBeVisible();
+    await expect(empty.getByText("Нет карточек на повторение")).toBeVisible();
   });
 
   test("surfaces new cards from in-progress nodes and grades them", async ({

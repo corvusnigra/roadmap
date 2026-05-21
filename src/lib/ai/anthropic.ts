@@ -45,9 +45,9 @@ export async function generateTutorReply(
   if (!client) {
     return {
       text:
-        "(Tutor not configured.) The ANTHROPIC_API_KEY in `.env.local` is the " +
-        "stub placeholder. Drop in a real key to get live answers grounded " +
-        "in this node's MDX.",
+        "(Наставник не настроен.) Переменная ANTHROPIC_API_KEY в `.env.local` " +
+        "содержит заглушку. Подставьте настоящий ключ, чтобы получать живые " +
+        "ответы по материалу этого узла.",
       model: "stub",
       stubbed: true,
     };
@@ -69,7 +69,7 @@ export async function generateTutorReply(
     .trim();
 
   return {
-    text: text || "(empty response from Anthropic)",
+    text: text || "(пустой ответ от Anthropic)",
     model: response.model,
     stubbed: false,
   };

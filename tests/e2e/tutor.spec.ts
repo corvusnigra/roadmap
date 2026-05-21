@@ -21,7 +21,7 @@ test.describe("Tutor panel on a node", () => {
     await expect(panel).toBeVisible();
 
     // Empty state hint.
-    await expect(panel.getByText(/Ask anything about/i)).toBeVisible();
+    await expect(panel.getByText(/Спросите что-нибудь про/i)).toBeVisible();
 
     // Send a message. Anthropic is stubbed via the placeholder API key, so
     // the server returns the "tutor not configured" reply — we just assert

@@ -92,7 +92,7 @@ export function NodeView({
           href={`/roles/${roleSlug}` as `/roles/${string}`}
           className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to roadmap
+          <ArrowLeft className="h-3.5 w-3.5" /> Назад к карте
         </Link>
       </nav>
 
@@ -120,23 +120,23 @@ export function NodeView({
             >
               {status === "mastered" ? (
                 <>
-                  <Check className="mr-1 h-3 w-3" /> Mastered
+                  <Check className="mr-1 h-3 w-3" /> Освоено
                 </>
               ) : status === "in_progress" ? (
-                "In progress"
+                "В процессе"
               ) : (
-                "Available"
+                "Доступно"
               )}
             </Badge>
           </div>
         </div>
         <p className="text-muted-foreground">{frontmatter.summary}</p>
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span>~{frontmatter.estimatedMinutes} min</span>
+          <span>~{frontmatter.estimatedMinutes} мин</span>
           {frontmatter.learningOutcomes.length > 0 ? (
             <details className="group">
               <summary className="cursor-pointer">
-                {frontmatter.learningOutcomes.length} learning outcomes
+                Цели обучения ({frontmatter.learningOutcomes.length})
               </summary>
               <ul className="mt-2 list-disc space-y-1 pl-5">
                 {frontmatter.learningOutcomes.map((o, i) => (
@@ -151,13 +151,13 @@ export function NodeView({
       <Tabs defaultValue="theory" className="space-y-4">
         <TabsList>
           <TabsTrigger value="theory" data-testid="tab-theory">
-            Theory
+            Теория
           </TabsTrigger>
           <TabsTrigger value="practice" data-testid="tab-practice">
-            Practice
+            Практика
           </TabsTrigger>
           <TabsTrigger value="reinforcement" data-testid="tab-reinforcement">
-            Reinforcement
+            Закрепление
           </TabsTrigger>
         </TabsList>
 
@@ -174,7 +174,7 @@ export function NodeView({
         <TabsContent value="practice" className="space-y-4">
           {mcqItems.length === 0 && codeExercises.length === 0 ? (
             <p className="rounded-md border bg-card p-4 text-sm text-muted-foreground">
-              This node has no practice items yet.
+              В этом узле пока нет заданий.
             </p>
           ) : null}
 
@@ -213,13 +213,13 @@ export function NodeView({
           {frontmatter.masteryQuiz && frontmatter.masteryQuiz.length >= 5 ? (
             <div className="flex items-center justify-between rounded-md border bg-muted/40 p-4">
               <div>
-                <p className="text-sm font-medium">Take the mastery quiz</p>
+                <p className="text-sm font-medium">Итоговый тест</p>
                 <p className="text-xs text-muted-foreground">
                   {masteryReady
-                    ? "All practice items done. Pass 4 of 5 to clear the gate."
+                    ? "Все задания выполнены. Сдайте 4 из 5, чтобы открыть закрепление."
                     : codeExercises.length > 0 && !allCodeExercisesPassed
-                      ? "Pass every code exercise to unlock."
-                      : "Answer every practice MCQ correctly to unlock."}
+                      ? "Сдайте все упражнения, чтобы открыть тест."
+                      : "Ответьте правильно на все вопросы, чтобы открыть тест."}
                 </p>
               </div>
               <Button
@@ -227,7 +227,7 @@ export function NodeView({
                 onClick={() => setMasteryOpen(true)}
                 data-testid="open-mastery-quiz"
               >
-                Take mastery quiz
+                Пройти тест
               </Button>
             </div>
           ) : null}

@@ -37,9 +37,9 @@ export function Theory({
               try {
                 await markTheoryRead({ roleSlug, nodeSlug });
                 setRead(true);
-                toast.success("Theory marked as read");
+                toast.success("Теория отмечена прочитанной");
               } catch (err) {
-                toast.error("Failed to mark read", {
+                toast.error("Не удалось отметить", {
                   description: err instanceof Error ? err.message : String(err),
                 });
               }
@@ -49,10 +49,10 @@ export function Theory({
         >
           {read ? (
             <>
-              <Check className="mr-1 h-4 w-4" /> Theory read
+              <Check className="mr-1 h-4 w-4" /> Прочитано
             </>
           ) : (
-            "Mark theory read"
+            "Отметить прочитанным"
           )}
         </Button>
       </div>

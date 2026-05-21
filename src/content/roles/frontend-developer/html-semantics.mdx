@@ -1,18 +1,18 @@
 ---
 schemaVersion: 1
 slug: html-semantics
-title: Semantic HTML
-summary: Why <article>, <nav>, <header> matter for accessibility and SEO.
+title: Семантика HTML
+summary: Зачем <article>, <nav>, <header> для доступности и SEO.
 estimatedMinutes: 25
 prerequisites:
   - html-document-structure
 learningOutcomes:
-  - Identify when to use <section> vs <article>.
-  - Refactor a non-semantic page into semantic HTML.
-  - Explain how landmarks help screen-reader navigation.
+  - Понимать, когда использовать <section>, а когда <article>.
+  - Переделать несемантическую страницу в семантическую разметку.
+  - Объяснить, как landmark'и помогают навигации по скринридеру.
 practice:
   - kind: mcq
-    prompt: Which element best wraps a self-contained blog post?
+    prompt: Каким элементом лучше обернуть самостоятельный пост в блоге?
     options:
       - <div>
       - <article>
@@ -20,110 +20,112 @@ practice:
       - <aside>
     answerIndex: 1
     explanation: >-
-      <article> is for self-contained, independently distributable content —
-      blog posts, comments, syndicated cards.
+      <article> — для самостоятельного, независимо распространяемого
+      содержания: посты блога, комментарии, синдицированные карточки.
   - kind: code
-    prompt: Refactor this HTML to use semantic landmarks.
+    prompt: Перепишите этот HTML, используя семантические landmark'и.
     starterFile: exercises/refactor-to-semantic/starter.html
     solutionFile: exercises/refactor-to-semantic/solution.html
     testsFile: exercises/refactor-to-semantic/tests.js
     language: html
 flashcards:
-  - front: What's the difference between <section> and <article>?
+  - front: В чём разница между <section> и <article>?
     back: >-
-      An <article> is self-contained; a <section> is a thematic grouping inside
-      a document.
-  - front: Which element wraps the main navigation links?
-    back: <nav>. There's typically one primary <nav> per page.
-  - front: What does <main> communicate to assistive tech?
+      <article> — самостоятельная единица; <section> — тематическая группировка
+      внутри документа.
+  - front: Какой элемент оборачивает основную навигацию?
+    back: <nav>. Обычно одна основная <nav> на страницу.
+  - front: Что <main> сообщает вспомогательным технологиям?
     back: >-
-      The dominant content of <body>, excluding header/nav/footer. One per page.
-  - front: Why prefer <button> over <div role="button">?
+      Основное содержимое <body>, исключая header/nav/footer. Один на страницу.
+  - front: Почему <button> предпочтительнее, чем <div role="button">?
     back: >-
-      Native keyboard handling, focus ring, ARIA semantics, and Enter/Space
-      activation come for free with <button>.
-  - front: When is <aside> appropriate?
-    back: For content tangentially related to the main flow — sidebars, pull quotes.
-  - front: What's a landmark in HTML?
+      У <button> «из коробки» — клавиатурное управление, фокус, ARIA-семантика,
+      срабатывание по Enter/Space.
+  - front: Когда уместен <aside>?
+    back: Для содержимого, лишь косвенно связанного с основным потоком — врезки, цитаты.
+  - front: Что такое landmark в HTML?
     back: >-
-      A region screen readers expose for jumping around: header, nav, main,
-      aside, footer, plus regions explicitly given role="region".
+      Регион, который скринридер показывает для быстрой навигации: header, nav,
+      main, aside, footer, плюс регионы с явным role="region".
 masteryQuiz:
   - kind: mcq
-    prompt: Which element wraps a primary navigation list?
+    prompt: Какой элемент оборачивает список основной навигации?
     options:
       - <div class="nav">
       - <nav>
       - <ul>
       - <section role="navigation">
     answerIndex: 1
-    explanation: <nav> is the dedicated landmark; the others miss screen-reader semantics.
+    explanation: <nav> — выделенный landmark; остальные варианты теряют семантику для скринридеров.
   - kind: mcq
-    prompt: Inside a card listing many posts, each post should be wrapped in…
+    prompt: В ленте с множеством постов каждый пост стоит обернуть в…
     options:
       - <article>
       - <div>
       - <section>
       - <aside>
     answerIndex: 0
-    explanation: Each post is self-contained, so <article> is the right landmark.
+    explanation: Каждый пост самостоятелен, поэтому <article> — правильный landmark.
   - kind: mcq
-    prompt: Where does <main> belong?
+    prompt: Где должен находиться <main>?
     options:
-      - Inside <header>.
-      - Once per page, as a sibling of <header>, <nav>, and <footer>.
-      - Inside every <section>.
-      - Optional — interchangeable with <body>.
+      - Внутри <header>.
+      - Один раз на странице, рядом с <header>, <nav> и <footer>.
+      - Внутри каждого <section>.
+      - Необязателен — взаимозаменяем с <body>.
     answerIndex: 1
-    explanation: Exactly one <main> per page, sitting next to the landmarks.
+    explanation: Ровно один <main> на страницу, рядом с другими landmark'ами.
   - kind: mcq
-    prompt: Which is NOT a benefit of semantic HTML?
+    prompt: Что НЕ относится к преимуществам семантического HTML?
     options:
-      - Better screen-reader navigation.
-      - SEO hints.
-      - Smaller CSS bundle.
-      - Default keyboard semantics for interactive elements.
+      - Улучшенная навигация скринридером.
+      - Подсказки для SEO.
+      - Меньший CSS-бандл.
+      - Стандартная клавиатурная семантика для интерактивных элементов.
     answerIndex: 2
-    explanation: Semantic tags don't shrink CSS — that's unrelated.
+    explanation: Семантические теги не уменьшают CSS — это никак не связано.
   - kind: mcq
-    prompt: Inside an article, the article's heading should be…
+    prompt: Заголовок внутри article должен быть…
     options:
-      - <h1> at any nesting depth.
-      - The heading level appropriate for the document outline (<h2>/<h3>).
-      - Always <p> with bold styling.
-      - Omitted to avoid duplication.
+      - <h1> на любом уровне вложенности.
+      - Уровень заголовка, соответствующий структуре документа (<h2>/<h3>).
+      - Всегда <p> с жирным начертанием.
+      - Опущен, чтобы избежать дублирования.
     answerIndex: 1
     explanation: >-
-      The HTML outline algorithm is unreliable; pick the heading level that
-      reflects the article's place in the document.
+      Алгоритм построения HTML-outline ненадёжен; выбирайте уровень заголовка,
+      отражающий место статьи в документе.
 ---
 
-## What "semantic" actually buys you
+## Что вы реально получаете от «семантики»
 
-Two pages can render pixel-identical and still feel completely different in
-assistive tech. The first uses `<div>` for everything; the second uses the
-right landmarks. A screen reader has no way to skip past navigation on the
-first page — every paragraph reads from the top. On the second, the user
-presses one key to jump to `<main>`.
+Две страницы могут выглядеть пиксель в пиксель одинаково и при этом
+ощущаться совершенно по-разному во вспомогательных технологиях. Первая
+использует `<div>` для всего; вторая — правильные landmark'и. У скринридера
+нет способа пропустить навигацию на первой странице — каждый абзац читается
+с самого начала. На второй пользователь одной клавишей перепрыгивает к
+`<main>`.
 
-That's the deal: **every semantic tag is a hint the browser, search engines,
-and assistive tech can use**. Plain `<div>` says "I don't know what this is."
+В этом и суть: **каждый семантический тег — это подсказка браузеру,
+поисковикам и вспомогательным технологиям**. Голый `<div>` говорит: «Я не
+знаю, что это такое».
 
-## The handful that matters
+## Набор, который действительно важен
 
-| Tag | Use it for |
+| Тег | Для чего |
 |---|---|
-| `<header>` | Page or section preamble: logo, title, intro nav. |
-| `<nav>` | Primary navigation links. One main nav per page; secondary ones OK. |
-| `<main>` | The unique content of the page (one per document). |
-| `<article>` | Self-contained, independently distributable content. |
-| `<section>` | A thematic grouping inside a document. Needs a heading. |
-| `<aside>` | Tangential content — sidebar, pull quote, related links. |
-| `<footer>` | Page or section conclusion: copyright, contact, related links. |
+| `<header>` | Преамбула страницы или секции: логотип, заголовок, вводная навигация. |
+| `<nav>` | Основные навигационные ссылки. Одна главная nav на страницу; второстепенные тоже допустимы. |
+| `<main>` | Уникальный контент страницы (один на документ). |
+| `<article>` | Самостоятельное, независимо распространяемое содержание. |
+| `<section>` | Тематическая группировка внутри документа. Нужен заголовок. |
+| `<aside>` | Косвенно связанный контент — сайдбар, врезка, связанные ссылки. |
+| `<footer>` | Заключение страницы или секции: копирайт, контакты, ссылки. |
 
-## A common refactor pattern
+## Типичный рефакторинг
 
-Before:
+Было:
 ```html
 <div class="header">
   <h1>My Blog</h1>
@@ -133,7 +135,7 @@ Before:
 <div class="footer">©</div>
 ```
 
-After:
+Стало:
 ```html
 <header>
   <h1>My Blog</h1>
@@ -143,16 +145,16 @@ After:
 <footer>©</footer>
 ```
 
-Same pixels. Wildly better accessibility, plus your CSS class names start
-describing **what** instead of **where**.
+Те же пиксели. Заметно лучшая доступность, а имена CSS-классов начинают
+описывать **что**, а не **где**.
 
-## When in doubt
+## Если сомневаетесь
 
-- Repeating layout chrome? `<header>` / `<footer>` / `<nav>`.
-- A standalone unit you'd RSS-syndicate? `<article>`.
-- A heading-led region of a longer document? `<section>`.
-- The page's distinctive content? `<main>` (exactly once).
-- Tangential stuff that won't break the page if removed? `<aside>`.
+- Повторяющаяся «обёртка» страницы? `<header>` / `<footer>` / `<nav>`.
+- Самостоятельный блок, который можно отдать по RSS? `<article>`.
+- Раздел длинного документа с заголовком? `<section>`.
+- Уникальный контент страницы? `<main>` (ровно один).
+- Косвенно связанное, без чего страница не сломается? `<aside>`.
 
-Try the practice exercise below — refactor the non-semantic markup, run the
-tests, and watch the assertions go green.
+Попробуйте упражнение ниже — перепишите несемантическую разметку, запустите
+тесты и наблюдайте, как все проверки становятся зелёными.

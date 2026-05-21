@@ -1,5 +1,5 @@
-// Assertions for the "refactor-to-semantic" exercise. The globals injected
-// by RoleRoadmap (see src/lib/sandpack/globals.ts) provide:
+// Проверки для упражнения "refactor-to-semantic". RoleRoadmap инжектит
+// глобальные хелперы (см. src/lib/sandpack/globals.ts):
 //   __report({ ok, message })
 //   assertHasElement(selector)
 
@@ -15,17 +15,17 @@
       assertHasElement("article h2");
       assertHasElement("footer");
 
-      // Make sure the user actually replaced the divs — no more class-driven
-      // "header"/"nav"/"footer" leftovers in the body.
+      // Убедимся, что пользователь действительно заменил div'ы — никаких
+      // остатков "header"/"nav"/"footer" по классу.
       var staleHeader = document.querySelector("div.header");
       var staleNav = document.querySelector("div.nav");
       var staleFooter = document.querySelector("div.footer");
       if (staleHeader || staleNav || staleFooter) {
         throw new Error(
-          "Replace .header / .nav / .footer divs with real <header>, <nav>, <footer> tags",
+          "Замените div'ы .header / .nav / .footer на настоящие теги <header>, <nav>, <footer>",
         );
       }
-      __report({ ok: true, message: "Semantic landmarks in place." });
+      __report({ ok: true, message: "Семантические landmark'и на месте." });
     } catch (err) {
       __report({ ok: false, message: err.message });
     }

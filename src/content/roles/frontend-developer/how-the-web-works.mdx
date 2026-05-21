@@ -1,17 +1,17 @@
 ---
 schemaVersion: 1
 slug: how-the-web-works
-title: How the Web Works
-summary: Requests, responses, DNS, HTTP basics — the plumbing under every web page.
+title: Как работает Web
+summary: Запросы, ответы, DNS, основы HTTP — внутренняя кухня каждой веб-страницы.
 estimatedMinutes: 25
 prerequisites: []
 learningOutcomes:
-  - Trace what happens between typing a URL and seeing pixels on screen.
-  - Explain the role of DNS, TCP, and HTTP in fetching a page.
-  - Read the structure of an HTTP request and response.
+  - Проследить путь от ввода URL до отрисовки страницы в браузере.
+  - Объяснить роль DNS, TCP и HTTP при загрузке страницы.
+  - Прочитать структуру HTTP-запроса и ответа.
 practice:
   - kind: mcq
-    prompt: Which protocol carries the page's HTML from server to browser?
+    prompt: Какой протокол переносит HTML страницы от сервера к браузеру?
     options:
       - DNS
       - HTTP
@@ -19,97 +19,99 @@ practice:
       - SSH
     answerIndex: 1
     explanation: >-
-      HTTP (HyperText Transfer Protocol) is the request/response protocol for the
-      web. DNS resolves names to IPs, SMTP carries email, SSH is for remote
-      shells.
+      HTTP (HyperText Transfer Protocol) — протокол запрос/ответ для веба. DNS
+      превращает имена в IP-адреса, SMTP передаёт почту, SSH — для удалённых
+      шеллов.
 flashcards:
-  - front: What does DNS resolve?
-    back: A hostname (e.g. `example.com`) into an IP address the OS can route to.
-  - front: What does an HTTP status of `200` mean?
-    back: OK — the request succeeded and the response body is the requested resource.
-  - front: What's the difference between a URL's `path` and its `query string`?
-    back: The path identifies a resource; the query string (`?k=v&...`) parametrizes the request.
-  - front: Which port does HTTPS use by default?
-    back: "443. HTTP uses 80."
-  - front: What does TCP guarantee that UDP doesn't?
-    back: Ordered, reliable, connection-oriented delivery of bytes.
-  - front: What's a `Content-Type` header for?
-    back: Tells the client how to interpret the response body (e.g. `text/html; charset=utf-8`).
+  - front: Что преобразует DNS?
+    back: Имя хоста (например, `example.com`) в IP-адрес, по которому ОС может маршрутизировать пакеты.
+  - front: Что означает HTTP-статус `200`?
+    back: OK — запрос успешен, тело ответа содержит запрошенный ресурс.
+  - front: В чём разница между `path` и `query string` в URL?
+    back: Путь идентифицирует ресурс; query string (`?k=v&...`) параметризует запрос.
+  - front: Какой порт по умолчанию использует HTTPS?
+    back: "443. HTTP — 80."
+  - front: Что гарантирует TCP, чего не даёт UDP?
+    back: Упорядоченную, надёжную, соединение-ориентированную доставку байтов.
+  - front: Зачем нужен заголовок `Content-Type`?
+    back: Сообщает клиенту, как интерпретировать тело ответа (например, `text/html; charset=utf-8`).
 masteryQuiz:
   - kind: mcq
-    prompt: When you type `example.com` in the browser, which step happens FIRST?
+    prompt: Вы набрали `example.com` в браузере — какой шаг произойдёт ПЕРВЫМ?
     options:
-      - The browser opens a TCP connection.
-      - The browser issues a DNS lookup.
-      - The browser sends an HTTP GET.
-      - The server returns 200 OK.
+      - Браузер открывает TCP-соединение.
+      - Браузер выполняет DNS-запрос.
+      - Браузер отправляет HTTP GET.
+      - Сервер возвращает 200 OK.
     answerIndex: 1
-    explanation: DNS must resolve the hostname before any TCP/HTTP can happen.
+    explanation: DNS должен преобразовать имя хоста, прежде чем возможен любой TCP/HTTP-обмен.
   - kind: mcq
-    prompt: Which HTTP method is idempotent AND has no request body by convention?
+    prompt: Какой HTTP-метод является идемпотентным И по соглашению не имеет тела запроса?
     options:
       - POST
       - GET
       - PATCH
       - PUT
     answerIndex: 1
-    explanation: GET is safe and idempotent; POST/PATCH/PUT carry bodies.
+    explanation: GET безопасен и идемпотентен; POST/PATCH/PUT переносят тело.
   - kind: mcq
-    prompt: A response with status `301` means…
+    prompt: Ответ со статусом `301` означает…
     options:
-      - The resource has moved permanently — clients should update their links.
-      - The resource is temporarily redirected for this one request.
-      - The request was malformed.
-      - The server is overloaded.
+      - Ресурс перемещён навсегда — клиентам стоит обновить свои ссылки.
+      - Ресурс временно перенаправлен на один этот запрос.
+      - Запрос составлен некорректно.
+      - Сервер перегружен.
     answerIndex: 0
-    explanation: 301 = Moved Permanently; 302/307 are temporary.
+    explanation: 301 = Moved Permanently; 302/307 — временные.
   - kind: mcq
-    prompt: Which of these is the FIRST line of an HTTP request?
+    prompt: Какая из этих строк является ПЕРВОЙ строкой HTTP-запроса?
     options:
       - "Host: example.com"
       - "Content-Type: text/html"
       - "GET /index.html HTTP/1.1"
       - "200 OK"
     answerIndex: 2
-    explanation: The request line is `METHOD PATH VERSION`.
+    explanation: Строка запроса имеет вид `МЕТОД ПУТЬ ВЕРСИЯ`.
   - kind: mcq
-    prompt: What's the purpose of HTTPS over HTTP?
+    prompt: Зачем нужен HTTPS вместо HTTP?
     options:
-      - Faster transfers via compression.
-      - End-to-end encryption and server authentication via TLS.
-      - Cache invalidation.
-      - Avoiding DNS lookups.
+      - Более быстрая передача за счёт сжатия.
+      - End-to-end шифрование и аутентификация сервера через TLS.
+      - Инвалидация кэша.
+      - Чтобы избегать DNS-запросов.
     answerIndex: 1
-    explanation: HTTPS wraps HTTP in TLS, providing confidentiality and integrity.
+    explanation: HTTPS оборачивает HTTP в TLS, обеспечивая конфиденциальность и целостность.
   - kind: mcq
-    prompt: Which HTTP status family signals a server error?
+    prompt: Какая группа HTTP-статусов сигнализирует об ошибке сервера?
     options:
       - 2xx
       - 3xx
       - 4xx
       - 5xx
     answerIndex: 3
-    explanation: 5xx = server error; 4xx = client error; 3xx = redirect; 2xx = success.
+    explanation: 5xx = ошибка сервера; 4xx = ошибка клиента; 3xx = редирект; 2xx = успех.
 ---
 
-## What happens when you press Enter
+## Что происходит, когда вы нажимаете Enter
 
-When you type `https://example.com/articles` into the address bar and hit Enter, your
-browser doesn't magically reach the server. It runs a multi-step pipeline that's
-useful to picture as one mental model:
+Когда вы вводите `https://example.com/articles` в адресной строке и жмёте
+Enter, браузер не достигает сервера магией. Он запускает многошаговый
+конвейер, который удобно представить как единую ментальную модель:
 
-1. **DNS** — the browser asks "what's the IP of `example.com`?" Operating system caches the answer
-   for a while, otherwise queries a DNS resolver (often your ISP's, or `1.1.1.1`/`8.8.8.8`).
-2. **TCP** — the browser opens a reliable connection to that IP on port 443 (HTTPS) or 80 (HTTP).
-3. **TLS** — for HTTPS the browser and server perform a TLS handshake, agreeing on encryption
-   keys and verifying the server's certificate.
-4. **HTTP** — the browser sends an HTTP request like:
+1. **DNS** — браузер спрашивает: «Какой IP у `example.com`?» Операционная
+   система кэширует ответ на некоторое время; иначе запрашивает DNS-резолвер
+   (часто провайдерский или `1.1.1.1`/`8.8.8.8`).
+2. **TCP** — браузер открывает надёжное соединение к этому IP на порт 443
+   (HTTPS) или 80 (HTTP).
+3. **TLS** — для HTTPS браузер и сервер выполняют TLS-рукопожатие, согласуют
+   ключи шифрования и проверяют сертификат сервера.
+4. **HTTP** — браузер отправляет HTTP-запрос вида:
    ```
    GET /articles HTTP/1.1
    Host: example.com
    Accept: text/html
    ```
-5. **Response** — the server sends back a status line, headers, and a body:
+5. **Ответ** — сервер возвращает строку статуса, заголовки и тело:
    ```
    HTTP/1.1 200 OK
    Content-Type: text/html; charset=utf-8
@@ -117,41 +119,43 @@ useful to picture as one mental model:
 
    <!doctype html>...
    ```
-6. **Render** — the browser parses the HTML, requests every linked asset (CSS, JS, images,
-   fonts), and progressively paints the page.
+6. **Отрисовка** — браузер парсит HTML, запрашивает все связанные ресурсы
+   (CSS, JS, картинки, шрифты) и постепенно рисует страницу.
 
-## Why the layering matters
+## Почему важна многослойность
 
-Each layer has a single job:
+У каждого слоя — своя задача:
 
-- **DNS** is a phonebook — only maps names to addresses.
-- **TCP** delivers bytes in order, retransmitting what got lost.
-- **TLS** wraps a TCP connection in encryption.
-- **HTTP** speaks structured request/response on top of that.
+- **DNS** — телефонная книга: только сопоставляет имена и адреса.
+- **TCP** — доставляет байты по порядку, перепосылая потерянные.
+- **TLS** — оборачивает TCP-соединение шифрованием.
+- **HTTP** — говорит структурированными запросами/ответами поверх всего этого.
 
-You can mostly forget about TCP and TLS day to day — but knowing they're there explains a lot
-of behaviour: why opening a slow site feels "stuck" before any pixels appear (TCP/TLS handshake),
-why mixed-content warnings exist (an HTTPS page must not load HTTP subresources), why
-keep-alive matters (re-using a connection for several requests avoids redoing TCP+TLS).
+В повседневной работе можно почти забыть про TCP и TLS, но знание, что они
+есть, объясняет многое: почему «медленный сайт» висит до появления первых
+пикселей (рукопожатия TCP/TLS), зачем существуют предупреждения о смешанном
+контенте (HTTPS-страница не должна загружать HTTP-ресурсы), почему важен
+keep-alive (повторное использование одного соединения для нескольких запросов
+избавляет от повторных TCP+TLS).
 
-## Reading a status code at a glance
+## Чтение статус-кода по диагонали
 
-| Code | Meaning |
+| Код | Значение |
 |---|---|
-| 200 | OK — body is what you asked for. |
-| 301 / 308 | Permanent redirect. |
-| 302 / 307 | Temporary redirect. |
-| 304 | Not Modified — your cached copy is fine. |
-| 400 | Client error — the request was malformed. |
-| 401 / 403 | Unauthenticated / Forbidden. |
-| 404 | Not Found. |
-| 500 / 502 / 503 | Server-side breakage. |
+| 200 | OK — тело — это то, что вы запросили. |
+| 301 / 308 | Постоянный редирект. |
+| 302 / 307 | Временный редирект. |
+| 304 | Not Modified — закэшированная копия актуальна. |
+| 400 | Ошибка клиента — запрос некорректен. |
+| 401 / 403 | Не аутентифицирован / Запрещено. |
+| 404 | Не найдено. |
+| 500 / 502 / 503 | Поломка на стороне сервера. |
 
-When something's broken, the status family (`2xx`/`3xx`/`4xx`/`5xx`) usually points you at
-the right side of the line — your code or theirs.
+Когда что-то ломается, группа статусов (`2xx`/`3xx`/`4xx`/`5xx`) обычно
+сразу подсказывает, на чьей стороне проблема — вашей или их.
 
-## Try this
+## Попробуйте
 
-Open the network tab in your browser devtools, refresh this page, and look at the first
-request. Find the status code, `Content-Type`, and `Content-Length`. That's HTTP — there's
-nothing else behind the curtain.
+Откройте вкладку Network в devtools браузера, перезагрузите эту страницу и
+посмотрите на первый запрос. Найдите статус-код, `Content-Type` и
+`Content-Length`. Это и есть HTTP — за кулисами больше ничего нет.

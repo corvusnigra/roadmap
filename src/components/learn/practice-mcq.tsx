@@ -71,7 +71,7 @@ export function PracticeMcq({
         {verdict === "correct" ? (
           <CheckCircle2
             className="h-5 w-5 text-emerald-500"
-            aria-label="Correct"
+            aria-label="Правильно"
           />
         ) : null}
       </header>
@@ -120,7 +120,7 @@ export function PracticeMcq({
             onClick={handleCheck}
             data-testid={`practice-mcq-${index}-check`}
           >
-            Check
+            Проверить
           </Button>
         </div>
       ) : null}
@@ -128,14 +128,14 @@ export function PracticeMcq({
       {verdict === "incorrect" ? (
         <div className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm">
           <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-          <p>Not quite — try again.</p>
+          <p>Не совсем — попробуйте ещё раз.</p>
         </div>
       ) : null}
 
       {verdict === "correct" ? (
         <div className="space-y-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm">
           <p className="font-medium text-emerald-700 dark:text-emerald-300">
-            Correct
+            Правильно
           </p>
           <p className="text-muted-foreground">{item.explanation}</p>
         </div>

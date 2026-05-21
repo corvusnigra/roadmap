@@ -13,7 +13,7 @@ test.describe("/roles/frontend-developer", () => {
     await page.goto("/roles/frontend-developer");
     await expect(page.getByTestId("roadmap-canvas")).toBeVisible();
     await expect(page.locator("[data-node-slug]")).toHaveCount(5);
-    await expect(page.getByTestId("progress-text")).toHaveText(/0 of 5 mastered/);
+    await expect(page.getByTestId("progress-text")).toHaveText(/0 из 5 освоено/);
   });
 
   test("clicking a locked node surfaces an unmet-prerequisite toast", async ({
@@ -29,9 +29,9 @@ test.describe("/roles/frontend-developer", () => {
     // "Locked" badge text that decorates all locked roadmap nodes by
     // scoping the assertion to the notifications region.
     const toastRegion = page.getByRole("region", { name: /notifications/i });
-    await expect(toastRegion.getByText("Locked", { exact: true })).toBeVisible();
+    await expect(toastRegion.getByText("Закрыто", { exact: true })).toBeVisible();
     await expect(
-      toastRegion.getByText(/How the Web Works/, { exact: false }),
+      toastRegion.getByText(/Как работает Web/, { exact: false }),
     ).toBeVisible();
   });
 

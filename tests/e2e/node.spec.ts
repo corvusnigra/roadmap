@@ -9,17 +9,17 @@ const TEST_EMAIL = "e2e-tester@example.com";
 // 5 it picks, the test looks the answer up by prompt text. Keep this in sync
 // with src/content/roles/frontend-developer/how-the-web-works.mdx.
 const MASTERY_ANSWERS: Record<string, string> = {
-  "When you type `example.com` in the browser, which step happens FIRST?":
-    "The browser issues a DNS lookup.",
-  "Which HTTP method is idempotent AND has no request body by convention?":
+  "Вы набрали `example.com` в браузере — какой шаг произойдёт ПЕРВЫМ?":
+    "Браузер выполняет DNS-запрос.",
+  "Какой HTTP-метод является идемпотентным И по соглашению не имеет тела запроса?":
     "GET",
-  "A response with status `301` means…":
-    "The resource has moved permanently — clients should update their links.",
-  "Which of these is the FIRST line of an HTTP request?":
+  "Ответ со статусом `301` означает…":
+    "Ресурс перемещён навсегда — клиентам стоит обновить свои ссылки.",
+  "Какая из этих строк является ПЕРВОЙ строкой HTTP-запроса?":
     "GET /index.html HTTP/1.1",
-  "What's the purpose of HTTPS over HTTP?":
-    "End-to-end encryption and server authentication via TLS.",
-  "Which HTTP status family signals a server error?": "5xx",
+  "Зачем нужен HTTPS вместо HTTP?":
+    "End-to-end шифрование и аутентификация сервера через TLS.",
+  "Какая группа HTTP-статусов сигнализирует об ошибке сервера?": "5xx",
 };
 
 async function answerMasteryQuiz(page: Page) {
@@ -46,12 +46,12 @@ test.describe("/roles/frontend-developer/nodes/how-the-web-works", () => {
   test("renders all three tabs and the page header", async ({ page }) => {
     await page.goto("/roles/frontend-developer/nodes/how-the-web-works");
     await expect(
-      page.getByRole("heading", { name: "How the Web Works" }),
+      page.getByRole("heading", { name: "Как работает Web" }),
     ).toBeVisible();
     await expect(page.getByTestId("tab-theory")).toBeVisible();
     await expect(page.getByTestId("tab-practice")).toBeVisible();
     await expect(page.getByTestId("tab-reinforcement")).toBeVisible();
-    await expect(page.getByTestId("node-status-badge")).toHaveText(/Available/);
+    await expect(page.getByTestId("node-status-badge")).toHaveText(/Доступно/);
   });
 
   test("full mastery flow flips status to mastered and unlocks downstream", async ({
@@ -61,7 +61,7 @@ test.describe("/roles/frontend-developer/nodes/how-the-web-works", () => {
 
     // 1. Theory read
     await page.getByTestId("theory-mark-read").click();
-    await expect(page.getByText(/theory marked as read/i)).toBeVisible();
+    await expect(page.getByText(/теория отмечена прочитанной/i)).toBeVisible();
 
     // 2. Practice — answer the seeded MCQ
     await page.getByTestId("tab-practice").click();
@@ -87,7 +87,7 @@ test.describe("/roles/frontend-developer/nodes/how-the-web-works", () => {
     await page.getByTestId("reinforcement-grade-good").click();
 
     // 5. Badge flips to Mastered
-    await expect(page.getByTestId("node-status-badge")).toHaveText(/Mastered/);
+    await expect(page.getByTestId("node-status-badge")).toHaveText(/Освоено/);
 
     // 6. Back on the canvas, the downstream node is now available.
     await page.goto("/roles/frontend-developer");

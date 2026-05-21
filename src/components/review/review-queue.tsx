@@ -20,10 +20,10 @@ interface ReviewQueueProps {
 }
 
 const RATINGS = [
-  { label: "Again", value: 1, key: "1" },
-  { label: "Hard", value: 2, key: "2" },
-  { label: "Good", value: 3, key: "3" },
-  { label: "Easy", value: 4, key: "4" },
+  { testKey: "again", label: "Снова", value: 1, key: "1" },
+  { testKey: "hard", label: "Тяжело", value: 2, key: "2" },
+  { testKey: "good", label: "Хорошо", value: 3, key: "3" },
+  { testKey: "easy", label: "Легко", value: 4, key: "4" },
 ] as const;
 
 export function ReviewQueue({ items }: ReviewQueueProps) {
@@ -79,11 +79,11 @@ export function ReviewQueue({ items }: ReviewQueueProps) {
         className="rounded-lg border bg-card p-8 text-center text-sm text-muted-foreground"
         data-testid="review-queue-empty"
       >
-        <p className="text-base font-medium text-foreground">No reviews due</p>
+        <p className="text-base font-medium text-foreground">Нет карточек на повторение</p>
         <p className="mt-1">
           {graded > 0
-            ? `Graded ${graded} card${graded === 1 ? "" : "s"} this session. Come back tomorrow.`
-            : "Come back tomorrow."}
+            ? `Оценено за сессию: ${graded}. Возвращайтесь завтра.`
+            : "Возвращайтесь завтра."}
         </p>
       </div>
     );
@@ -93,7 +93,7 @@ export function ReviewQueue({ items }: ReviewQueueProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          {queue.length} due · graded {graded} this session
+          в очереди: {queue.length} · оценено за сессию: {graded}
         </span>
         <Badge variant="muted" className="font-normal">
           {current.nodeTitle}
@@ -117,7 +117,7 @@ export function ReviewQueue({ items }: ReviewQueueProps) {
             onClick={() => setRevealed(true)}
             data-testid="review-show-answer"
           >
-            Show answer · Space
+            Показать ответ · Space
           </Button>
         )}
       </article>
@@ -136,7 +136,7 @@ export function ReviewQueue({ items }: ReviewQueueProps) {
               r.value === 3 && "hover:border-emerald-400",
               r.value === 4 && "hover:border-sky-400",
             )}
-            data-testid={`review-grade-${r.label.toLowerCase()}`}
+            data-testid={`review-grade-${r.testKey}`}
           >
             <span className="text-sm font-medium">{r.label}</span>
             <span className="text-[10px] text-muted-foreground">{r.key}</span>

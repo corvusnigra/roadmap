@@ -119,8 +119,8 @@ setup("authenticate test user", async ({ page }) => {
 
   await page.goto("/login");
   await page.getByLabel("Email").fill(TEST_EMAIL);
-  await page.getByRole("button", { name: /send magic link/i }).click();
-  await expect(page.getByText(/magic link sent/i)).toBeVisible();
+  await page.getByRole("button", { name: /отправить ссылку/i }).click();
+  await expect(page.getByText(/ссылка отправлена/i)).toBeVisible();
 
   const magicLink = await fetchLatestMagicLink(TEST_EMAIL, sentAt);
   await page.goto(magicLink);

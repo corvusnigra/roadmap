@@ -22,27 +22,27 @@ describe("buildSystemPrompt", () => {
     const withoutSolve = buildSystemPrompt({ ...base, solveRequested: false });
     const withSolve = buildSystemPrompt({ ...base, solveRequested: true });
 
-    expect(withoutSolve).toContain("NEVER reveal a full code solution");
-    expect(withoutSolve).not.toContain("you MAY reveal the full code solution");
+    expect(withoutSolve).toContain("НИКОГДА не показывайте полное решение");
+    expect(withoutSolve).not.toContain("МОЖНО показать полное решение");
 
-    expect(withSolve).toContain("you MAY reveal the full code solution");
-    expect(withSolve).not.toContain("NEVER reveal a full code solution");
+    expect(withSolve).toContain("МОЖНО показать полное решение");
+    expect(withSolve).not.toContain("НИКОГДА не показывайте полное решение");
   });
 
   it("lists prerequisite titles in the context header", () => {
     const prompt = buildSystemPrompt({ ...base, solveRequested: false });
     expect(prompt).toContain('"HTML Document Structure"');
     expect(prompt).toContain('"How the Web Works"');
-    expect(prompt).toContain('Current node: "Semantic HTML"');
+    expect(prompt).toContain('Текущий узел: "Semantic HTML"');
   });
 
-  it("emits '(none)' when there are no prerequisites", () => {
+  it("emits '(нет)' when there are no prerequisites", () => {
     const prompt = buildSystemPrompt({
       ...base,
       prerequisiteTitles: [],
       solveRequested: false,
     });
-    expect(prompt).toContain("Prerequisites in context: (none)");
+    expect(prompt).toContain("Предшествующие темы в контексте: (нет)");
   });
 
   it("wraps the context block inside <context> tags so the model can locate it", () => {
@@ -55,7 +55,8 @@ describe("buildSystemPrompt", () => {
   });
 
   it("keeps the schema version stable so persisted model_id stays meaningful", () => {
+    // Bumped to 2 when the system prompt was translated to Russian.
     // Bumping this requires correlating prior tutor_messages.model_id rows.
-    expect(TUTOR_SYSTEM_PROMPT_VERSION).toBe(1);
+    expect(TUTOR_SYSTEM_PROMPT_VERSION).toBe(2);
   });
 });

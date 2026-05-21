@@ -83,8 +83,8 @@ function ExerciseRunner({
             try {
               await recordPracticeCorrect({ roleSlug, nodeSlug, itemKey });
               onPass?.();
-              toast.success("Exercise passed", {
-                description: result.message ?? "All assertions green.",
+              toast.success("Упражнение сдано", {
+                description: result.message ?? "Все проверки прошли.",
               });
             } catch {
               /* swallow — UI already shows pass */
@@ -119,14 +119,14 @@ function ExerciseRunner({
           data-testid={`code-exercise-${index}-run`}
         >
           <Play className="mr-1 h-3.5 w-3.5" />
-          {verdict.kind === "running" ? "Running…" : "Run tests"}
+          {verdict.kind === "running" ? "Выполняется…" : "Запустить тесты"}
         </Button>
         {hasPassedOnce ? (
           <Badge
             variant="success"
             data-testid={`code-exercise-${index}-passed-badge`}
           >
-            <CheckCircle2 className="mr-1 h-3 w-3" /> Passed
+            <CheckCircle2 className="mr-1 h-3 w-3" /> Сдано
           </Badge>
         ) : null}
       </div>
@@ -137,7 +137,7 @@ function ExerciseRunner({
           data-testid={`code-exercise-${index}-verdict-pass`}
         >
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>{verdict.message ?? "Tests passed."}</p>
+          <p>{verdict.message ?? "Все тесты пройдены."}</p>
         </div>
       ) : null}
 
@@ -147,7 +147,7 @@ function ExerciseRunner({
           data-testid={`code-exercise-${index}-verdict-fail`}
         >
           <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>{verdict.message ?? "Tests failed."}</p>
+          <p>{verdict.message ?? "Тесты не пройдены."}</p>
         </div>
       ) : null}
 
@@ -155,8 +155,8 @@ function ExerciseRunner({
         <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
           <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            Tests didn&apos;t post a result within {TEST_TIMEOUT_MS / 1000}s.
-            Make sure your tests file calls <code>__report()</code>.
+            Тесты не прислали результат за {TEST_TIMEOUT_MS / 1000} с.
+            Убедитесь, что файл с тестами вызывает <code>__report()</code>.
           </p>
         </div>
       ) : null}

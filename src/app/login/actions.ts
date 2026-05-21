@@ -7,10 +7,10 @@ import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const signInSchema = z.object({
-  email: z.string().email("Enter a valid email address."),
+  email: z.string().email("Введите корректный email."),
   next: z
     .string()
-    .startsWith("/", "Redirect target must be an internal path.")
+    .startsWith("/", "Путь редиректа должен быть внутренним.")
     .optional(),
 });
 
@@ -32,7 +32,7 @@ export async function signInWithEmail(formData: FormData) {
 
   if (!parsed.success) {
     const firstError = parsed.error.issues[0];
-    const message = firstError?.message ?? "Invalid input.";
+    const message = firstError?.message ?? "Некорректные данные.";
     redirect(`/login?error=${encodeURIComponent(message)}`);
   }
 

@@ -19,14 +19,14 @@ test.describe("/dashboard", () => {
     // Today's session.
     const session = page.getByTestId("todays-session");
     await expect(session).toBeVisible();
-    // DOM concatenates "0" and "cards due" without whitespace because they
-    // live in separate <p> tags — match without requiring whitespace.
-    await expect(session).toContainText(/0\s*cards?\s+due/i);
+    // "0 карточек на повторение" — the count and the noun render in
+    // separate <p> tags, so match without requiring whitespace.
+    await expect(session).toContainText(/0\s*карточек\s+на\s+повторение/i);
 
     // Recommended next node — `how-the-web-works` has no prereqs and the
     // smallest position_x in the seed, so it always wins after a reset.
     await expect(page.getByTestId("next-node-title")).toHaveText(
-      "How the Web Works",
+      "Как работает Web",
     );
 
     // Progress ring + numbers.

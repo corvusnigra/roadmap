@@ -19,6 +19,7 @@ import {
 } from "@/lib/progress";
 import { logEvent } from "@/lib/progress/transitions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { pluralRu } from "@/lib/i18n/plural";
 
 const ACTIVE_ROLE_SLUG = "frontend-developer";
 
@@ -56,6 +57,7 @@ export default async function DashboardPage() {
   const masteryRatio =
     progress.total === 0 ? 0 : progress.mastered / progress.total;
   const dueCount = dueCards.length;
+  const totalEvents = activity.reduce((n, d) => n + d.count, 0);
 
   // Fire-and-forget "session_started" — appears in user_events + PostHog.
   await logEvent(user.id, "session_started", "role", role.id, {
@@ -71,13 +73,13 @@ export default async function DashboardPage() {
             {role.title}
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Welcome back
+            С возвращением
             {profile?.displayName ? `, ${profile.displayName}` : ""}
           </h1>
         </div>
         <form action={signOut}>
           <Button variant="ghost" size="sm" type="submit">
-            Sign out
+            Выйти
           </Button>
         </form>
       </header>
@@ -88,14 +90,18 @@ export default async function DashboardPage() {
         data-testid="todays-session"
       >
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Today&apos;s session
+          Сегодняшняя сессия
         </h2>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           <div className="flex items-center justify-between rounded-lg border bg-background/60 p-4">
             <div>
               <p className="text-2xl font-semibold tabular-nums">{dueCount}</p>
               <p className="text-xs text-muted-foreground">
-                {dueCount === 1 ? "card due" : "cards due"} for review
+                {pluralRu(dueCount, [
+                  "карточка на повторение",
+                  "карточки на повторение",
+                  "карточек на повторение",
+                ])}
               </p>
             </div>
             <Link
@@ -106,18 +112,18 @@ export default async function DashboardPage() {
               })}
               data-testid="open-review"
             >
-              Review <ArrowRight className="ml-1 h-3.5 w-3.5" />
+              Повторить <ArrowRight className="ml-1 h-3.5 w-3.5" />
             </Link>
           </div>
           <div className="flex items-center justify-between rounded-lg border bg-background/60 p-4">
             <div>
               <p className="text-sm font-medium" data-testid="next-node-title">
-                {nextNode ? nextNode.title : "All caught up"}
+                {nextNode ? nextNode.title : "Всё пройдено"}
               </p>
               <p className="text-xs text-muted-foreground">
                 {nextNode
-                  ? "Recommended next node"
-                  : "No unlocked nodes to start"}
+                  ? "Рекомендуемый следующий узел"
+                  : "Доступных узлов больше нет"}
               </p>
             </div>
             {nextNode ? (
@@ -128,10 +134,10 @@ export default async function DashboardPage() {
                 className={buttonVariants({ variant: "default", size: "sm" })}
                 data-testid="open-next-node"
               >
-                Open <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                Открыть <ArrowRight className="ml-1 h-3.5 w-3.5" />
               </Link>
             ) : (
-              <Badge variant="success">Mastered</Badge>
+              <Badge variant="success">Освоено</Badge>
             )}
           </div>
         </div>
@@ -145,11 +151,11 @@ export default async function DashboardPage() {
         >
           <ProgressRing value={masteryRatio} />
           <p className="text-sm font-medium tabular-nums">
-            <span data-testid="progress-mastered">{progress.mastered}</span> of{" "}
-            <span data-testid="progress-total">{progress.total}</span> mastered
+            <span data-testid="progress-mastered">{progress.mastered}</span> из{" "}
+            <span data-testid="progress-total">{progress.total}</span> освоено
           </p>
           <p className="text-xs text-muted-foreground">
-            {progress.inProgress} in progress · {progress.locked} locked
+            в процессе: {progress.inProgress} · закрыто: {progress.locked}
           </p>
         </div>
         <div
@@ -165,30 +171,32 @@ export default async function DashboardPage() {
               {streak}
             </span>
           </div>
-          <p className="text-sm font-medium">day streak</p>
+          <p className="text-sm font-medium">
+            {pluralRu(streak, ["день подряд", "дня подряд", "дней подряд"])}
+          </p>
           <p className="text-xs text-muted-foreground">
-            Any practice activity keeps it alive.
+            Любая активность сохраняет серию.
           </p>
         </div>
         <div
           className="flex flex-col gap-2 rounded-xl border bg-card p-5"
           data-testid="sparkline-card"
         >
-          <p className="text-sm font-medium">Last 7 days</p>
+          <p className="text-sm font-medium">За 7 дней</p>
           <Sparkline data={activity} />
           <p className="text-xs text-muted-foreground">
-            {activity.reduce((n, d) => n + d.count, 0)} events
+            всего событий: {totalEvents}
           </p>
         </div>
       </section>
 
       <section className="rounded-xl border bg-card p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Roadmap
+          Дорожная карта
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          The full graph for {role.title} — see locked / available / mastered
-          status across all nodes.
+          Полный граф для роли «{role.title}» — статусы всех узлов: закрыт /
+          доступен / освоен.
         </p>
         <div className="mt-3">
           <Link
@@ -196,7 +204,7 @@ export default async function DashboardPage() {
             className={buttonVariants({ variant: "outline", size: "sm" })}
             data-testid="open-roadmap"
           >
-            Open roadmap <ArrowRight className="ml-1 h-3.5 w-3.5" />
+            Открыть карту <ArrowRight className="ml-1 h-3.5 w-3.5" />
           </Link>
         </div>
       </section>
