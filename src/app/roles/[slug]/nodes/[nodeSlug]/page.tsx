@@ -43,13 +43,17 @@ export default async function NodePage({ params }: PageProps) {
     .then((r) => r[0]);
   if (!role) notFound();
 
+  // Scope by both roleId and slug — without the roleId predicate, LIMIT 1
+  // could return a node from a sibling role on slug collision (code-review
+  // H1). The DB-level UNIQUE(role_id, slug) constraint also rules out
+  // duplicate slugs within a role, so this is safe.
   const node = await db
     .select({ id: nodesTable.id, slug: nodesTable.slug, roleId: nodesTable.roleId })
     .from(nodesTable)
-    .where(eq(nodesTable.slug, nodeSlug))
+    .where(and(eq(nodesTable.roleId, role.id), eq(nodesTable.slug, nodeSlug)))
     .limit(1)
     .then((r) => r[0]);
-  if (!node || node.roleId !== role.id) notFound();
+  if (!node) notFound();
 
   let loaded;
   try {

@@ -4,7 +4,7 @@ loadDotenv({ path: ".env.local" });
 loadDotenv();
 
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import postgres from "postgres";
 
 import * as schema from "@/db/schema";
@@ -343,10 +343,14 @@ async function seedRole(
   const slugToId = new Map<string, string>();
 
   for (const node of config.nodes) {
+    // Scope lookup to the current role — without this, two roles with the
+    // same slug would silently overwrite each other on subsequent seeds
+    // (code-review C1). The DB-level UNIQUE(role_id, slug) constraint
+    // catches the case as well, but defending in both places is cheap.
     const existing = await db
       .select()
       .from(nodes)
-      .where(eq(nodes.slug, node.slug))
+      .where(and(eq(nodes.slug, node.slug), eq(nodes.roleId, role.id)))
       .limit(1);
 
     let id = existing[0]?.id;

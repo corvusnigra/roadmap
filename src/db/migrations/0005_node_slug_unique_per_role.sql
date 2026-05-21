@@ -1,0 +1,1 @@
+ALTER TABLE "nodes" ADD CONSTRAINT "nodes_role_id_slug_unique" UNIQUE("role_id","slug");

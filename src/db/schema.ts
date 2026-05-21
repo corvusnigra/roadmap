@@ -9,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -91,22 +92,34 @@ export const roles = pgTable("roles", {
     .notNull(),
 });
 
-export const nodes = pgTable("nodes", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  roleId: uuid("role_id")
-    .notNull()
-    .references(() => roles.id, { onDelete: "cascade" }),
-  slug: text("slug").notNull(),
-  title: text("title").notNull(),
-  summary: text("summary").notNull(),
-  positionX: integer("position_x").notNull().default(0),
-  positionY: integer("position_y").notNull().default(0),
-  estimatedMinutes: integer("estimated_minutes").notNull().default(20),
-  mandatory: boolean("mandatory").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const nodes = pgTable(
+  "nodes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    roleId: uuid("role_id")
+      .notNull()
+      .references(() => roles.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    positionX: integer("position_x").notNull().default(0),
+    positionY: integer("position_y").notNull().default(0),
+    estimatedMinutes: integer("estimated_minutes").notNull().default(20),
+    mandatory: boolean("mandatory").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    // Slug must be unique within a role. Without this, seed could silently
+    // re-attach an existing node to a different role on slug collision
+    // (see code-review C1).
+    roleSlugUnique: unique("nodes_role_id_slug_unique").on(
+      table.roleId,
+      table.slug,
+    ),
+  }),
+);
 
 export const nodePrerequisites = pgTable(
   "node_prerequisites",

@@ -36,6 +36,20 @@
       "when": 1779352331266,
       "tag": "0004_profile_active_role",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779372597998,
+      "tag": "0005_node_slug_unique_per_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779372597999,
+      "tag": "0006_active_role_slug_validation",
+      "breakpoints": true
     }
   ]
 }

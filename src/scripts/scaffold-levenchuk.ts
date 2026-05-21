@@ -99,17 +99,39 @@ interface McqStub {
   explanation: string;
 }
 
-function pickFour(items: string[], correct: string): string[] {
-  // Берёт correct + до 3 различных distractors из items.
-  const distractors = items.filter((x) => x !== correct).slice(0, 3);
+/**
+ * Возвращает массив из 4 уникальных опций: `correct` + до 3 distractors
+ * из `items` (исключая сам `correct` и дубликаты). Если distractors не
+ * хватает — добивает универсальными fillers.
+ *
+ * Раньше использовался `items[i]!` non-null assertion, который падал бы
+ * при пустых items с тем же correct (code-review M2). Теперь — defensive.
+ */
+const UNIVERSAL_FILLERS = [
+  "Это не имеет прямого отношения к дисциплине",
+  "Это симптом, а не дисциплина",
+  "Это касается только инструментов, но не сути",
+  "Этот вариант не упоминается в материалах",
+];
+
+export function pickFour(items: string[], correct: string): string[] {
+  const distractors: string[] = [];
+  const seen = new Set<string>([correct]);
+  for (const x of items) {
+    if (distractors.length >= 3) break;
+    if (seen.has(x)) continue;
+    distractors.push(x);
+    seen.add(x);
+  }
   const result = [correct, ...distractors];
-  // Подкладываем «универсальные дистракторы», если не хватило.
-  const fillers = [
-    "Это не имеет прямого отношения к дисциплине",
-    "Это симптом, а не дисциплина",
-    "Это касается только инструментов, но не сути",
-  ];
-  while (result.length < 4) result.push(fillers[result.length - 1]!);
+  let fillerIdx = 0;
+  while (result.length < 4) {
+    const filler =
+      UNIVERSAL_FILLERS[fillerIdx++] ?? `Вариант ${result.length + 1}`;
+    if (seen.has(filler)) continue;
+    result.push(filler);
+    seen.add(filler);
+  }
   return result;
 }
 
@@ -432,7 +454,14 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("scaffold-levenchuk failed:", err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+// Guard so that importing helpers (`pickFour` etc.) from tests doesn't kick
+// off a real scaffold pass.
+if (process.argv[1] && process.argv[1].includes("scaffold-levenchuk")) {
+  main().catch((err) => {
+    console.error(
+      "scaffold-levenchuk failed:",
+      err instanceof Error ? err.message : err,
+    );
+    process.exit(1);
+  });
+}

@@ -862,8 +862,9 @@ export function buildLevenchukNodeSeeds(): {
 }[] {
   const byLevel = new Map<number, LDiscipline[]>();
   for (const d of LEVENCHUK_DISCIPLINES) {
-    if (!byLevel.has(d.level)) byLevel.set(d.level, []);
-    byLevel.get(d.level)!.push(d);
+    const bucket = byLevel.get(d.level) ?? [];
+    bucket.push(d);
+    byLevel.set(d.level, bucket);
   }
 
   const out: {
@@ -893,9 +894,8 @@ export function buildLevenchukNodeSeeds(): {
       });
       prevInLevel = d.slug;
     });
-    if (disciplines.length > 0) {
-      prevLevelLast = disciplines[disciplines.length - 1]!.slug;
-    }
+    const last = disciplines[disciplines.length - 1];
+    if (last) prevLevelLast = last.slug;
   }
 
   return out;

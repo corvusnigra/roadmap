@@ -19,13 +19,20 @@ export function slugify(text: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function nodeToText(node: ReactNode): string {
+/**
+ * Flatten a React node tree to plain text — used to derive heading slugs.
+ * `depth` guards against pathological cyclic structures (custom components
+ * that pass `children` back into themselves); 10 is well past any real
+ * heading nesting (code-review H2).
+ */
+export function nodeToText(node: ReactNode, depth = 10): string {
+  if (depth <= 0) return "";
   if (node == null || node === false) return "";
   if (typeof node === "string" || typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(nodeToText).join("");
+  if (Array.isArray(node)) return node.map((n) => nodeToText(n, depth - 1)).join("");
   if (typeof node === "object" && "props" in node) {
     const props = (node as { props?: { children?: ReactNode } }).props;
-    return props ? nodeToText(props.children) : "";
+    return props ? nodeToText(props.children, depth - 1) : "";
   }
   return "";
 }
@@ -181,7 +188,10 @@ export function extractTocItems(source: string): { id: string; text: string }[] 
   let inFence = false;
   for (const rawLine of source.split("\n")) {
     const line = rawLine.trimEnd();
-    if (line.startsWith("```")) {
+    // Both ``` and ~~~ are valid markdown fence markers (CommonMark §4.5).
+    // Tracking only ``` would leak H2s inside ~~~ blocks into the TOC
+    // (code-review M3).
+    if (/^(`{3,}|~{3,})/.test(line)) {
       inFence = !inFence;
       continue;
     }

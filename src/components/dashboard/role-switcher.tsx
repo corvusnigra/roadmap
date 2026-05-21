@@ -34,6 +34,11 @@ export function RoleSwitcher({ options, activeSlug }: RoleSwitcherProps) {
         Активная роль
       </label>
       <select
+        // `key` forces React to re-mount the <select> whenever activeSlug
+        // changes from the server — without it `defaultValue` would stick
+        // to the value at first render and ignore subsequent revalidations
+        // (code-review L2).
+        key={activeSlug}
         id="role-switcher"
         name="roleSlug"
         defaultValue={activeSlug}
