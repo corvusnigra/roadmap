@@ -3,6 +3,7 @@ import { MDXRemote } from "next-mdx-remote/rsc";
 import remarkGfm from "remark-gfm";
 import { and, asc, eq } from "drizzle-orm";
 
+import { DEMO_MODE } from "@/lib/auth/demo-mode";
 import { db } from "@/lib/db";
 import {
   nodes as nodesTable,
@@ -67,56 +68,72 @@ export default async function NodePage({ params }: PageProps) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) notFound();
+  const isGuest = !user;
+  if (isGuest && !DEMO_MODE) notFound();
 
-  await logEvent(user.id, "node_opened", "node", node.id, {
-    roleSlug: slug,
-    nodeSlug,
-  });
+  if (user) {
+    await logEvent(user.id, "node_opened", "node", node.id, {
+      roleSlug: slug,
+      nodeSlug,
+    });
+  }
 
-  const [progressRow, theoryReadRows, dueCards, tutorRows] = await Promise.all([
-    db
-      .select({
-        status: userNodeProgress.status,
-        masteryScore: userNodeProgress.masteryScore,
-      })
-      .from(userNodeProgress)
-      .where(
-        and(
-          eq(userNodeProgress.userId, user.id),
-          eq(userNodeProgress.nodeId, node.id),
-        ),
-      )
-      .limit(1),
-    db
-      .select({ id: userEvents.id })
-      .from(userEvents)
-      .where(
-        and(
-          eq(userEvents.userId, user.id),
-          eq(userEvents.verb, "theory_read"),
-          eq(userEvents.objectId, node.id),
-        ),
-      )
-      .limit(1),
-    getDueCardsForNode(user.id, node.id, 10),
-    db
-      .select({
-        id: tutorMessages.id,
-        role: tutorMessages.role,
-        content: tutorMessages.content,
-        createdAt: tutorMessages.createdAt,
-      })
-      .from(tutorMessages)
-      .where(
-        and(
-          eq(tutorMessages.userId, user.id),
-          eq(tutorMessages.nodeId, node.id),
-        ),
-      )
-      .orderBy(asc(tutorMessages.createdAt))
-      .limit(50),
-  ]);
+  const [progressRow, theoryReadRows, dueCards, tutorRows] = user
+    ? await Promise.all([
+        db
+          .select({
+            status: userNodeProgress.status,
+            masteryScore: userNodeProgress.masteryScore,
+          })
+          .from(userNodeProgress)
+          .where(
+            and(
+              eq(userNodeProgress.userId, user.id),
+              eq(userNodeProgress.nodeId, node.id),
+            ),
+          )
+          .limit(1),
+        db
+          .select({ id: userEvents.id })
+          .from(userEvents)
+          .where(
+            and(
+              eq(userEvents.userId, user.id),
+              eq(userEvents.verb, "theory_read"),
+              eq(userEvents.objectId, node.id),
+            ),
+          )
+          .limit(1),
+        getDueCardsForNode(user.id, node.id, 10),
+        db
+          .select({
+            id: tutorMessages.id,
+            role: tutorMessages.role,
+            content: tutorMessages.content,
+            createdAt: tutorMessages.createdAt,
+          })
+          .from(tutorMessages)
+          .where(
+            and(
+              eq(tutorMessages.userId, user.id),
+              eq(tutorMessages.nodeId, node.id),
+            ),
+          )
+          .orderBy(asc(tutorMessages.createdAt))
+          .limit(50),
+      ])
+    : ([
+        // Гость: пустой прогресс, никакой истории, нет due cards.
+        [] as Array<{ status: "locked" | "in_progress" | "mastered"; masteryScore: number | null }>,
+        [] as Array<{ id: string }>,
+        [] as Awaited<ReturnType<typeof getDueCardsForNode>>,
+        [] as Array<{
+          id: string;
+          role: "user" | "assistant" | "system";
+          content: string;
+          createdAt: Date;
+        }>,
+      ] as const);
 
   const tutorHistory: TutorTurn[] = tutorRows.map((row) => ({
     id: row.id,

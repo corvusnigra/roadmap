@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { DEMO_MODE } from "@/lib/auth/demo-mode";
 import { publicEnv } from "@/lib/env";
 
 const PUBLIC_PATH_PREFIXES = ["/login", "/auth/"] as const;
@@ -46,7 +47,9 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user && !isPublicPath(request.nextUrl.pathname)) {
+  // В демо-режиме всех пускаем — даже без сессии. Страницы сами решают,
+  // что показать гостю (см. DEMO_MODE в dashboard/role/node).
+  if (!DEMO_MODE && !user && !isPublicPath(request.nextUrl.pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", request.nextUrl.pathname);

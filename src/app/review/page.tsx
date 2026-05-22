@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { DEMO_MODE } from "@/lib/auth/demo-mode";
 import { getDueCards } from "@/lib/fsrs/queries";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ReviewQueue } from "@/components/review/review-queue";
@@ -10,9 +11,11 @@ export default async function ReviewPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) notFound();
+  const isGuest = !user;
+  if (isGuest && !DEMO_MODE) notFound();
 
-  const dueCards = await getDueCards(user.id, 50);
+  // У гостя нет user_card_state — рендерим пустую очередь.
+  const dueCards = user ? await getDueCards(user.id, 50) : [];
 
   const items = dueCards.map((c) => ({
     cardId: c.cardId,

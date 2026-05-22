@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 
+import { DEMO_MODE } from "@/lib/auth/demo-mode";
 import { db } from "@/lib/db";
 import {
   nodePrerequisites,
@@ -41,9 +42,11 @@ export default async function RoleRoadmapPage({ params }: PageProps) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Middleware enforces auth on this route, so user is always present here,
-  // but we guard anyway in case the page is rendered from an unauth context.
-  if (!user) {
+  // В демо-режиме гость без сессии — валидный посетитель. Рендерим граф
+  // без per-user прогресса и форсим exploreMode=true, чтобы все узлы
+  // были кликабельны.
+  const isGuest = !user;
+  if (isGuest && !DEMO_MODE) {
     notFound();
   }
 
@@ -70,21 +73,26 @@ export default async function RoleRoadmapPage({ params }: PageProps) {
             prerequisiteNodeId: nodePrerequisites.prerequisiteNodeId,
           })
           .from(nodePrerequisites),
-    db
-      .select({
-        nodeId: userNodeProgress.nodeId,
-        status: userNodeProgress.status,
-      })
-      .from(userNodeProgress)
-      .where(eq(userNodeProgress.userId, user.id)),
-    db
-      .select({ exploreMode: profiles.exploreMode })
-      .from(profiles)
-      .where(eq(profiles.id, user.id))
-      .limit(1)
-      .then((r) => r[0]),
+    user
+      ? db
+          .select({
+            nodeId: userNodeProgress.nodeId,
+            status: userNodeProgress.status,
+          })
+          .from(userNodeProgress)
+          .where(eq(userNodeProgress.userId, user.id))
+      : Promise.resolve([] as Array<{ nodeId: string; status: "locked" | "in_progress" | "mastered" }>),
+    user
+      ? db
+          .select({ exploreMode: profiles.exploreMode })
+          .from(profiles)
+          .where(eq(profiles.id, user.id))
+          .limit(1)
+          .then((r) => r[0])
+      : Promise.resolve(undefined),
   ]);
-  const exploreMode = profileRow?.exploreMode ?? false;
+  // Гостю — всегда explore-режим: без замков, чтобы пощупать контент.
+  const exploreMode = profileRow?.exploreMode ?? isGuest;
 
   // Drop edges that aren't part of this role's node set (defensive against
   // future cross-role references in node_prerequisites).

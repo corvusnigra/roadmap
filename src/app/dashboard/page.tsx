@@ -10,6 +10,7 @@ import { ProgressRing } from "@/components/dashboard/progress-ring";
 import { RoleSwitcher } from "@/components/dashboard/role-switcher";
 import { Sparkline } from "@/components/dashboard/sparkline";
 import { signOut } from "@/app/login/actions";
+import { DEMO_MODE } from "@/lib/auth/demo-mode";
 import { db } from "@/lib/db";
 import { profiles, roles as rolesTable } from "@/db/schema";
 import { getDueCards } from "@/lib/fsrs/queries";
@@ -28,21 +29,30 @@ export default async function DashboardPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) notFound();
 
-  const profile = await db
-    .select({
-      timezone: profiles.timezone,
-      displayName: profiles.displayName,
-      activeRoleSlug: profiles.activeRoleSlug,
-      exploreMode: profiles.exploreMode,
-    })
-    .from(profiles)
-    .where(eq(profiles.id, user.id))
-    .limit(1)
-    .then((r) => r[0]);
+  // В демо-режиме гость без сессии — это валидный посетитель. Все
+  // per-user данные заменяем на дефолты (zeros, без прогресса), но
+  // публичные данные (роли, контент узлов) показываем как обычно.
+  const isGuest = !user;
+  if (isGuest && !DEMO_MODE) notFound();
+
+  const profile = user
+    ? await db
+        .select({
+          timezone: profiles.timezone,
+          displayName: profiles.displayName,
+          activeRoleSlug: profiles.activeRoleSlug,
+          exploreMode: profiles.exploreMode,
+        })
+        .from(profiles)
+        .where(eq(profiles.id, user.id))
+        .limit(1)
+        .then((r) => r[0])
+    : undefined;
   const timezone = profile?.timezone ?? "UTC";
-  const exploreMode = profile?.exploreMode ?? false;
+  // Для гостя explore-режим включён по умолчанию: смысл демо в том,
+  // чтобы дать пощупать контент без grind'а через prereq'и.
+  const exploreMode = profile?.exploreMode ?? isGuest;
 
   // All published roles for the role-switcher.
   const availableRoles = await db
@@ -58,24 +68,41 @@ export default async function DashboardPage() {
     availableRoles.find((r) => r.slug === activeSlug) ?? availableRoles[0];
   if (!role) notFound();
 
-  const [progress, nextNode, streak, activity, dueCards] = await Promise.all([
-    computeRoleProgress(user.id, role.id),
-    getNextRecommendedNode(user.id, role.id),
-    getStreak(user.id, timezone),
-    getActivityByDay(user.id, timezone, 7),
-    getDueCards(user.id, 50),
-  ]);
+  const [progress, nextNode, streak, activity, dueCards] = user
+    ? await Promise.all([
+        computeRoleProgress(user.id, role.id),
+        getNextRecommendedNode(user.id, role.id),
+        getStreak(user.id, timezone),
+        getActivityByDay(user.id, timezone, 7),
+        getDueCards(user.id, 50),
+      ])
+    : await Promise.all([
+        // Гость: прогресс «всё закрыто», но первый узел в графе «доступен»
+        // (это считает getNextRecommendedNode из роли + пустого progress).
+        Promise.resolve({ mastered: 0, inProgress: 0, locked: 0, total: 0 }),
+        getNextRecommendedNode("00000000-0000-0000-0000-000000000000", role.id),
+        Promise.resolve(0),
+        Promise.resolve(
+          [] as { day: string; count: number }[],
+        ),
+        Promise.resolve(
+          [] as Awaited<ReturnType<typeof getDueCards>>,
+        ),
+      ]);
 
   const masteryRatio =
     progress.total === 0 ? 0 : progress.mastered / progress.total;
   const dueCount = dueCards.length;
   const totalEvents = activity.reduce((n, d) => n + d.count, 0);
 
-  // Fire-and-forget "session_started" — appears in user_events + PostHog.
-  await logEvent(user.id, "session_started", "role", role.id, {
-    dueCount,
-    streak,
-  });
+  // Fire-and-forget "session_started" — только для авторизованных
+  // пользователей. У гостя нет user_id для записи.
+  if (user) {
+    await logEvent(user.id, "session_started", "role", role.id, {
+      dueCount,
+      streak,
+    });
+  }
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-8 px-4 py-8">
@@ -83,22 +110,41 @@ export default async function DashboardPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              Текущая роль:
+              {isGuest ? "Демо-роль:" : "Текущая роль:"}
             </p>
-            <RoleSwitcher options={availableRoles} activeSlug={role.slug} />
+            {/* В демо-режиме switcher всё ещё отображает список ролей,
+                но смена не персистится — server action setActiveRole без
+                юзера упадёт с явной ошибкой. Простой способ это закрыть:
+                просто рендерим текст имени активной роли вместо select. */}
+            {isGuest ? (
+              <span className="text-xs font-medium">{role.title}</span>
+            ) : (
+              <RoleSwitcher options={availableRoles} activeSlug={role.slug} />
+            )}
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            С возвращением
-            {profile?.displayName ? `, ${profile.displayName}` : ""}
+            {isGuest
+              ? "Демо-режим — гостевой просмотр"
+              : `С возвращением${profile?.displayName ? `, ${profile.displayName}` : ""}`}
           </h1>
         </div>
         <div className="flex items-center gap-3">
-          <ExploreModeSwitch enabled={exploreMode} />
-          <form action={signOut}>
-            <Button variant="ghost" size="sm" type="submit">
-              Выйти
-            </Button>
-          </form>
+          {/* ExploreModeSwitch и signOut требуют user_id для server-action'ов;
+              в демо-режиме показываем только «Войти», без переключателя. */}
+          {isGuest ? (
+            <Link href="/login" className="text-xs underline">
+              Войти
+            </Link>
+          ) : (
+            <>
+              <ExploreModeSwitch enabled={exploreMode} />
+              <form action={signOut}>
+                <Button variant="ghost" size="sm" type="submit">
+                  Выйти
+                </Button>
+              </form>
+            </>
+          )}
         </div>
       </header>
 
