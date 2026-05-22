@@ -220,6 +220,42 @@ export const tutorMessages = pgTable("tutor_messages", {
     .notNull(),
 });
 
+// Кэш «объяснений понятий» для inline-наставника. Когда пользователь
+// выделяет фразу и просит объяснить, мы сначала смотрим в эту таблицу
+// по (node_id, normalized_concept). Кэш общий для всех — объяснение
+// «что такое замыкание» в контексте узла X не зависит от user_id, а
+// LLM-вызов дорогой. Гости тоже читают/пишут сюда (без user-rate-limit).
+//
+// Нормализация концепта — lowercase + trim + сжатие whitespace — делает
+// поиск устойчивым к регистру и пробелам. UNIQUE гарантирует, что в
+// гонке двух одновременных вставок одна провалится с PG conflict и
+// читатель просто пере-выберет существующую строку.
+export const conceptExplanations = pgTable(
+  "concept_explanations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    // Нормализованный ключ для поиска (lowercase, trim, single-space).
+    concept: text("concept").notNull(),
+    // Что показывал пользователь — сохраняем оригинал для отображения
+    // в UI и аналитики (чтобы видеть, как формулировали запрос).
+    conceptOriginal: text("concept_original").notNull(),
+    explanation: text("explanation").notNull(),
+    modelId: text("model_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    nodeConceptUnique: unique("concept_explanations_node_id_concept_unique").on(
+      table.nodeId,
+      table.concept,
+    ),
+  }),
+);
+
 export const subscriptions = pgTable("subscriptions", {
   userId: uuid("user_id").primaryKey(),
   stripeCustomerId: text("stripe_customer_id").notNull(),
@@ -255,6 +291,7 @@ export const nodesRelations = relations(nodes, ({ one, many }) => ({
   outgoingPrereqs: many(nodePrerequisites, { relationName: "nodeToPrereqs" }),
   incomingPrereqs: many(nodePrerequisites, { relationName: "prereqToNodes" }),
   tutorMessages: many(tutorMessages),
+  conceptExplanations: many(conceptExplanations),
 }));
 
 export const nodePrerequisitesRelations = relations(
@@ -321,6 +358,16 @@ export const tutorMessagesRelations = relations(tutorMessages, ({ one }) => ({
   }),
 }));
 
+export const conceptExplanationsRelations = relations(
+  conceptExplanations,
+  ({ one }) => ({
+    node: one(nodes, {
+      fields: [conceptExplanations.nodeId],
+      references: [nodes.id],
+    }),
+  }),
+);
+
 export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
   profile: one(profiles, {
     fields: [subscriptions.userId],
@@ -356,6 +403,9 @@ export type NewUserEvent = typeof userEvents.$inferInsert;
 
 export type TutorMessage = typeof tutorMessages.$inferSelect;
 export type NewTutorMessage = typeof tutorMessages.$inferInsert;
+
+export type ConceptExplanation = typeof conceptExplanations.$inferSelect;
+export type NewConceptExplanation = typeof conceptExplanations.$inferInsert;
 
 export type Subscription = typeof subscriptions.$inferSelect;
 export type NewSubscription = typeof subscriptions.$inferInsert;

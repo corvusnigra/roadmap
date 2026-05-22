@@ -59,10 +59,13 @@ export function Theory({
         ) : null}
 
         {/* Inline-tutor: оборачиваем только тело статьи. Выделенный
-            текст внутри вызывает плавающую кнопку «Спросить наставника»
-            (через CustomEvent → TutorPanel в шапке узла). Outcomes-карточку
-            и mark-read кнопку не оборачиваем — там нечего выделять. */}
-        <SelectionTutor>{children}</SelectionTutor>
+            текст внутри вызывает плавающую кнопку «Объяснить» — server-action
+            explainConcept лезет в общий кэш по (nodeId, concept), при miss
+            делает RAG+LLM и кэширует. Outcomes-карточку и mark-read кнопку
+            не оборачиваем — там нечего выделять. */}
+        <SelectionTutor roleSlug={roleSlug} nodeSlug={nodeSlug}>
+          {children}
+        </SelectionTutor>
 
         <div className="not-prose mt-12 flex items-center justify-end border-t border-rule pt-6">
           <Button

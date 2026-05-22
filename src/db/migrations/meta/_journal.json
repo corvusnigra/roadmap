@@ -57,6 +57,13 @@
       "when": 1779450326978,
       "tag": "0007_profile_explore_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1779472558964,
+      "tag": "0008_concept_explanations",
+      "breakpoints": true
     }
   ]
 }
