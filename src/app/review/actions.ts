@@ -11,6 +11,7 @@ import {
   skillCards,
   userCardState,
 } from "@/db/schema";
+import { DEMO_MODE } from "@/lib/auth/demo-mode";
 import { reviewCard, type CardStateRow } from "@/lib/fsrs/scheduler";
 import { logEvent, maybeFlipMastered } from "@/lib/progress/transitions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -36,7 +37,19 @@ export async function gradeCard(
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  if (!user) {
+    if (DEMO_MODE) {
+      // Гость в demo: возвращаем «локально посчитанный» next due, не пишем
+      // ничего в БД. UI отрисует «next ETA» из этого ответа, и всё.
+      const nextDue = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      return {
+        nextDueAt: nextDue.toISOString(),
+        mastered: false,
+        state: "new" as CardStateRow["state"],
+      };
+    }
+    throw new Error("Not authenticated");
+  }
 
   // Look the card up — we need its node (for state-machine transitions) and
   // role (for revalidation).

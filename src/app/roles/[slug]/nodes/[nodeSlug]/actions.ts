@@ -10,6 +10,7 @@ import {
   nodes as nodesTable,
   userNodeProgress,
 } from "@/db/schema";
+import { DEMO_MODE } from "@/lib/auth/demo-mode";
 import {
   logEvent,
   maybeFlipMastered,
@@ -38,12 +39,27 @@ const ServerActionInputs = {
 /** Pass threshold for the mastery quiz — 4 of 5, per ROADMAP. */
 const MASTERY_PASS_RATIO = 0.8;
 
-async function requireUserAndNode(input: { roleSlug: string; nodeSlug: string }) {
+/**
+ * Возвращает user + node для авторизованных, либо `null` для гостей в
+ * DEMO_MODE. Без DEMO_MODE гость по-прежнему получает Not authenticated —
+ * это «жёсткий» путь для реальных пользователей.
+ *
+ * Действия используют возвращаемый null как сигнал «выполни client-side
+ * UX, ничего не пиши в БД». Это позволяет гостю в demo пройти MCQ или
+ * mastery-quiz, увидеть verdict, но не оставить следов прогресса.
+ */
+async function resolveUserAndNode(input: {
+  roleSlug: string;
+  nodeSlug: string;
+}): Promise<{ userId: string; nodeId: string } | null> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  if (!user) {
+    if (DEMO_MODE) return null;
+    throw new Error("Not authenticated");
+  }
 
   const node = await db
     .select({ id: nodesTable.id })
@@ -87,9 +103,12 @@ export async function markTheoryRead(
   raw: z.input<typeof ServerActionInputs.markTheoryRead>,
 ) {
   const input = ServerActionInputs.markTheoryRead.parse(raw);
-  const { userId, nodeId } = await requireUserAndNode(input);
+  const ctx = await resolveUserAndNode(input);
+  // Гость в DEMO_MODE: client-side `setRead(true)` уже произошёл, нам
+  // нечего писать. Просто молча возвращаемся.
+  if (!ctx) return;
 
-  if (!(await arePrereqsSatisfied(userId, nodeId))) {
+  if (!(await arePrereqsSatisfied(ctx.userId, ctx.nodeId))) {
     throw new Error("Cannot start a node whose prerequisites aren't mastered.");
   }
 
@@ -98,8 +117,8 @@ export async function markTheoryRead(
     .from(userNodeProgress)
     .where(
       and(
-        eq(userNodeProgress.userId, userId),
-        eq(userNodeProgress.nodeId, nodeId),
+        eq(userNodeProgress.userId, ctx.userId),
+        eq(userNodeProgress.nodeId, ctx.nodeId),
       ),
     )
     .limit(1)
@@ -107,13 +126,13 @@ export async function markTheoryRead(
 
   // Only flip locked -> in_progress; in_progress / mastered are unchanged.
   if (current?.status !== "in_progress" && current?.status !== "mastered") {
-    await upsertProgress(userId, nodeId, {
+    await upsertProgress(ctx.userId, ctx.nodeId, {
       status: "in_progress",
       startedAt: new Date(),
     });
   }
 
-  await logEvent(userId, "theory_read", "node", nodeId);
+  await logEvent(ctx.userId, "theory_read", "node", ctx.nodeId);
   revalidatePath(`/roles/${input.roleSlug}/nodes/${input.nodeSlug}`);
   revalidatePath(`/roles/${input.roleSlug}`);
 }
@@ -122,8 +141,9 @@ export async function recordPracticeCorrect(
   raw: z.input<typeof ServerActionInputs.recordPracticeCorrect>,
 ) {
   const input = ServerActionInputs.recordPracticeCorrect.parse(raw);
-  const { userId, nodeId } = await requireUserAndNode(input);
-  await logEvent(userId, "practice_correct", "node", nodeId, {
+  const ctx = await resolveUserAndNode(input);
+  if (!ctx) return; // гость в demo: client отрисовал «правильно», нам нечего логировать
+  await logEvent(ctx.userId, "practice_correct", "node", ctx.nodeId, {
     itemKey: input.itemKey,
   });
 }
@@ -132,25 +152,31 @@ export async function submitMasteryQuiz(
   raw: z.input<typeof ServerActionInputs.submitMasteryQuiz>,
 ) {
   const input = ServerActionInputs.submitMasteryQuiz.parse(raw);
-  const { userId, nodeId } = await requireUserAndNode(input);
-
   const ratio = input.score / input.total;
   const passed = ratio >= MASTERY_PASS_RATIO;
 
+  const ctx = await resolveUserAndNode(input);
+  // Гость в demo: возвращаем тот же result-shape, что и для авторизованного,
+  // но `mastered` всегда false (нет userNodeProgress). UI у MasteryQuiz
+  // зовёт `onPassed()` по флагу `passed`, и тут он корректный.
+  if (!ctx) {
+    return { passed, mastered: false, score: input.score };
+  }
+
   await logEvent(
-    userId,
+    ctx.userId,
     passed ? "mastery_passed" : "mastery_failed",
     "node",
-    nodeId,
+    ctx.nodeId,
     { score: input.score, total: input.total, ratio },
   );
 
   if (passed) {
-    await upsertProgress(userId, nodeId, {
+    await upsertProgress(ctx.userId, ctx.nodeId, {
       status: "in_progress",
       masteryScore: ratio,
     });
-    const flipped = await maybeFlipMastered(userId, nodeId);
+    const flipped = await maybeFlipMastered(ctx.userId, ctx.nodeId);
     revalidatePath(`/roles/${input.roleSlug}/nodes/${input.nodeSlug}`);
     revalidatePath(`/roles/${input.roleSlug}`);
     return { passed: true, mastered: flipped, score: input.score };
