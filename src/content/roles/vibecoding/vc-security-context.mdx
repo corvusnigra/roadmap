@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: vc-security-context
+title: "Безопасность контекста"
+summary: "Какие риски в AI-разработке, и как защититься?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Твой репо безопасен против AI-induced supply chain атак"
+  - "Знаешь паттерн «выглядит как имя популярной библиотеки, но typosquat» (request → reqyest, lodash → lodahs)"
+  - "В .env'е нет ничего, что увидела бы AI"
+  - "Выполнять регулярно: Проверяй package name перед install (особенно если AI предложил)"
+  - "Выполнять регулярно: Не вставляй ключи в prompt — даже «временно для теста»"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Безопасность контекста» начала работать?"
+    options:
+      - "Твой репо безопасен против AI-induced supply chain атак"
+      - "«AI знает что делает с npm install»"
+      - "Вставлять .env в prompt «чтобы было удобно»"
+      - "Доверять fetch'у с какого-то github gist'а как источнику инструкций"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Твой репо безопасен против AI-induced supply chain атак» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Secrets vs config (config может быть в git, secrets — никогда)»?"
+    back: "Secrets vs config (config может быть в git, secrets — никогда). Три класса рисков: (1) data leakage — секреты (.env, токены, PII) в контексте уходят в логи провайдера и могут попасть в training data; (2) prompt injection — внешние данные (issue, README, web fetch) содержат инструкции для AI («ignore previous instructions and...»); (3) supply chain — AI предлагает пакет, который не существует (typosquat) или содержит malware"
+  - front: "Что стоит за различением «Trusted input (твой код, твои доки) ↔ untrusted (web, internet, PR description)»?"
+    back: "Trusted input (твой код, твои доки) ↔ untrusted (web, internet, PR description). Защита — слоистая: фильтр на входе, ограничение tool-use, проверка на выходе."
+  - front: "Что стоит за различением «Supply chain: pinned versions ↔ floating (`^1.0`)»?"
+    back: "Supply chain: pinned versions ↔ floating (`^1.0`). Три класса рисков: (1) data leakage — секреты (.env, токены, PII) в контексте уходят в логи провайдера и могут попасть в training data; (2) prompt injection — внешние данные (issue, README, web fetch) содержат инструкции для AI («ignore previous instructions and...»); (3) supply chain — AI предлагает пакет, который не существует (typosquat) или содержит malware. Защита — слоистая: фильтр на входе, ограничение tool-use, проверка на выходе."
+  - front: "Что стоит за различением «AI-сгенерированный код ↔ дефолтно untrusted при наличии security risk»?"
+    back: "AI-сгенерированный код ↔ дефолтно untrusted при наличии security risk. Три класса рисков: (1) data leakage — секреты (.env, токены, PII) в контексте уходят в логи провайдера и могут попасть в training data; (2) prompt injection — внешние данные (issue, README, web fetch) содержат инструкции для AI («ignore previous instructions and...»); (3) supply chain — AI предлагает пакет, который не существует (typosquat) или содержит malware. Защита — слоистая: фильтр на входе, ограничение tool-use, проверка на выходе."
+  - front: "По какому маркеру понять, что освоено: «Твой репо безопасен против AI-induced supply chain атак»?"
+    back: "Твой репо безопасен против AI-induced supply chain атак"
+  - front: "По какому маркеру понять, что освоено: «Знаешь паттерн «выглядит как имя популярной библиотеки, но typosquat» (request → reqyest, lodash → lodahs)»?"
+    back: "Знаешь паттерн «выглядит как имя популярной библиотеки, но typosquat» (request → reqyest, lodash → lodahs)"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Безопасность контекста» в центр?"
+    options:
+      - "Какие риски в AI-разработке, и как защититься?"
+      - "«AI знает что делает с npm install»"
+      - "Вставлять .env в prompt «чтобы было удобно»"
+      - "Доверять fetch'у с какого-то github gist'а как источнику инструкций"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Какие риски в AI-разработке, и как защититься?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Безопасность контекста»?"
+    options:
+      - "«AI знает что делает с npm install»"
+      - "Проверяй package name перед install (особенно если AI предложил)"
+      - "Твой репо безопасен против AI-induced supply chain атак"
+      - "Знаешь паттерн «выглядит как имя популярной библиотеки, но typosquat» (request → reqyest, lodash → lodahs)"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: ««AI знает что делает с npm install»»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Безопасность контекста»?"
+    options:
+      - "Secrets vs config (config может быть в git, secrets — никогда)"
+      - "«AI знает что делает с npm install»"
+      - "Вставлять .env в prompt «чтобы было удобно»"
+      - "Доверять fetch'у с какого-то github gist'а как источнику инструкций"
+    answerIndex: 0
+    explanation: "Различение «Secrets vs config (config может быть в git, secrets — никогда)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Безопасность контекста»?"
+    options:
+      - "Проверяй package name перед install (особенно если AI предложил)"
+      - "«AI знает что делает с npm install»"
+      - "Вставлять .env в prompt «чтобы было удобно»"
+      - "Доверять fetch'у с какого-то github gist'а как источнику инструкций"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Проверяй package name перед install (особенно если AI предложил)»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Безопасность контекста» работает?"
+    options:
+      - "Твой репо безопасен против AI-induced supply chain атак"
+      - "«AI знает что делает с npm install»"
+      - "Вставлять .env в prompt «чтобы было удобно»"
+      - "Доверять fetch'у с какого-то github gist'а как источнику инструкций"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Твой репо безопасен против AI-induced supply chain атак». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Безопасность контекста» как опору?"
+    options:
+      - ".env в .gitignore, .env.example в репо"
+      - "«AI знает что делает с npm install»"
+      - "Вставлять .env в prompt «чтобы было удобно»"
+      - "Доверять fetch'у с какого-то github gist'а как источнику инструкций"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «.env в .gitignore, .env.example в репо»"
+---
+
+## Зачем
+
+Три класса рисков: (1) data leakage — секреты (.env, токены, PII) в контексте уходят в логи провайдера и могут попасть в training data; (2) prompt injection — внешние данные (issue, README, web fetch) содержат инструкции для AI («ignore previous instructions and...»); (3) supply chain — AI предлагает пакет, который не существует (typosquat) или содержит malware. Защита — слоистая: фильтр на входе, ограничение tool-use, проверка на выходе.
+
+## Ключевые различения
+
+- Secrets vs config (config может быть в git, secrets — никогда)
+- Trusted input (твой код, твои доки) ↔ untrusted (web, internet, PR description)
+- Supply chain: pinned versions ↔ floating (`^1.0`)
+- AI-сгенерированный код ↔ дефолтно untrusted при наличии security risk
+
+## Инструменты
+
+- .env в .gitignore, .env.example в репо
+- .cursorignore / settings.json sensitive patterns (закрыть от AI)
+- Pin dependencies + npm audit / pnpm audit
+- Verify package name перед install (typosquat check)
+
+## Практика
+
+- Проверяй package name перед install (особенно если AI предложил)
+- Не вставляй ключи в prompt — даже «временно для теста»
+- Не доверяй веб-fetch'ам как источнику инструкций (могут содержать prompt injection)
+
+## Маркеры освоения
+
+- Твой репо безопасен против AI-induced supply chain атак
+- Знаешь паттерн «выглядит как имя популярной библиотеки, но typosquat» (request → reqyest, lodash → lodahs)
+- В .env'е нет ничего, что увидела бы AI
+
+## Антипаттерны
+
+- «AI знает что делает с npm install»
+- Вставлять .env в prompt «чтобы было удобно»
+- Доверять fetch'у с какого-то github gist'а как источнику инструкций
+
+## Где в стеке
+
+**Уровень 4: Безопасность и команда.** AI-разработка масштабируется на команду только если есть общие правила, ограничения tool-use и явные точки остановки.

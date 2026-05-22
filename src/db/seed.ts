@@ -10,6 +10,7 @@ import postgres from "postgres";
 import * as schema from "@/db/schema";
 import { nodePrerequisites, nodes, roles } from "@/db/schema";
 import { buildLevenchukNodeSeeds } from "@/scripts/levenchuk-curriculum";
+import { buildVibecodingNodeSeeds } from "@/scripts/vibecoding-curriculum";
 
 interface RoleSeed {
   slug: string;
@@ -315,7 +316,20 @@ const LEVENCHUK: RoleConfig = {
   nodes: buildLevenchukNodeSeeds(),
 };
 
-const ROLES: RoleConfig[] = [FRONTEND, GH600, LEVENCHUK];
+// ----- Role 4: Вайбкодинг -----------------------------------------------
+
+const VIBECODING: RoleConfig = {
+  role: {
+    slug: "vibecoding",
+    title: "Вайбкодинг",
+    summary:
+      "Разработка через диалог с LLM-ассистентом (Claude Code / Cursor / Aider). Пять уровней: ментальная модель → вход в контекст → циклы → дисциплина итераций → команда и безопасность.",
+    status: "published",
+  },
+  nodes: buildVibecodingNodeSeeds(),
+};
+
+const ROLES: RoleConfig[] = [FRONTEND, GH600, LEVENCHUK, VIBECODING];
 
 async function seedRole(
   db: ReturnType<typeof drizzle>,
