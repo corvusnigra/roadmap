@@ -2,104 +2,132 @@
 schemaVersion: 1
 slug: dev-environment-integration
 title: "Интеграция в среды разработки"
-summary: "Контекст исполнения, scope по репозиторию/ветке, вызов из CI, автономные действия (ветки и PR)."
-status: draft
+summary: "Как настроить scope агента в твоём dev environment — репо, ветка, env, CI?"
+status: published
 estimatedMinutes: 30
-prerequisites:
-  - mcp-servers
+prerequisites: []
 learningOutcomes:
-  - "Оцените контекст выполнения для агента"
-  - "Настройте область агента для определенного репозитория"
-  - "Настройка агента для вызова в рабочем процессе CI"
-  - "Настройте агента для использования области охвата на основе веток"
-  - "Включение агента для осуществления автономных действий, в том числе создания веток и pull-запросов"
-  - "Настройка агента для обработки ограничений, относящихся к среде"
+  - "Знаешь scope каждого активного агента (репо/ветка/env)"
+  - "Ноль случаев «случайно тронул не ту ветку»"
+  - "Восстановление после сбоя = закрытие ветки за 30 секунд"
+  - "Выполнять регулярно: Один агент = одна задача = одна ветка"
+  - "Выполнять регулярно: Запрет push в protected branches (main, release)"
 practice:
   - kind: mcq
-    prompt: "TODO: один MCQ, проверяющий ключевую идею узла."
+    prompt: "По какому из признаков честно судить, что дисциплина «Интеграция в среды разработки» начала работать?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Знаешь scope каждого активного агента (репо/ветка/env)"
+      - "Full-repo write access без явной причины"
+      - "Работа агента в main без gate'ов"
+      - "State, который persist'ится между несвязанными задачами"
     answerIndex: 0
-    explanation: "TODO: 1-2 предложения объяснения."
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь scope каждого активного агента (репо/ветка/env)» — именно такой признак."
 flashcards:
-  - front: "TODO front #1"
-    back: "TODO back #1"
-  - front: "TODO front #2"
-    back: "TODO back #2"
-  - front: "TODO front #3"
-    back: "TODO back #3"
-  - front: "TODO front #4"
-    back: "TODO back #4"
-  - front: "TODO front #5"
-    back: "TODO back #5"
-  - front: "TODO front #6"
-    back: "TODO back #6"
+  - front: "Что стоит за различением «Full-repo scope ↔ subdirectory scope ↔ single-file scope»?"
+    back: "Full-repo scope ↔ subdirectory scope ↔ single-file scope. Контекст исполнения — это где агент работает: какой репозиторий, какая ветка, какие env vars, какие команды exec'ит, какая инфра доступна"
+  - front: "Что стоит за различением «Trunk-based ↔ branch-based work»?"
+    back: "Trunk-based ↔ branch-based work. Узкий scope = меньше surface area, легче ревью, дешёвый откат"
+  - front: "Что стоит за различением «CI agent (запускается по триггеру) ↔ interactive agent»?"
+    back: "CI agent (запускается по триггеру) ↔ interactive agent. Branch-based work = изоляция: если что-то сломалось — просто закрываешь ветку"
+  - front: "Что стоит за различением «Ephemeral environment ↔ shared dev env»?"
+    back: "Ephemeral environment ↔ shared dev env. Trunk-based с агентами = большие риски на молодой системе governance."
+  - front: "По какому маркеру понять, что освоено: «Знаешь scope каждого активного агента (репо/ветка/env)»?"
+    back: "Знаешь scope каждого активного агента (репо/ветка/env)"
+  - front: "По какому маркеру понять, что освоено: «Ноль случаев «случайно тронул не ту ветку»»?"
+    back: "Ноль случаев «случайно тронул не ту ветку»"
 masteryQuiz:
   - kind: mcq
-    prompt: "TODO mastery prompt #1"
+    prompt: "Какой вопрос ставит дисциплина «Интеграция в среды разработки» в центр?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Как настроить scope агента в твоём dev environment — репо, ветка, env, CI?"
+      - "Full-repo write access без явной причины"
+      - "Работа агента в main без gate'ов"
+      - "State, который persist'ится между несвязанными задачами"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как настроить scope агента в твоём dev environment — репо, ветка, env, CI?»"
   - kind: mcq
-    prompt: "TODO mastery prompt #2"
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Интеграция в среды разработки»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Full-repo write access без явной причины"
+      - "Один агент = одна задача = одна ветка"
+      - "Знаешь scope каждого активного агента (репо/ветка/env)"
+      - "Ноль случаев «случайно тронул не ту ветку»"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Full-repo write access без явной причины»"
   - kind: mcq
-    prompt: "TODO mastery prompt #3"
+    prompt: "Какое из утверждений — ключевое различение в «Интеграция в среды разработки»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Full-repo scope ↔ subdirectory scope ↔ single-file scope"
+      - "Full-repo write access без явной причины"
+      - "Работа агента в main без gate'ов"
+      - "State, который persist'ится между несвязанными задачами"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Различение «Full-repo scope ↔ subdirectory scope ↔ single-file scope» лежит в основе дисциплины и определяет, как видеть её объекты."
   - kind: mcq
-    prompt: "TODO mastery prompt #4"
+    prompt: "Какое действие в основе регулярной практики «Интеграция в среды разработки»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Один агент = одна задача = одна ветка"
+      - "Full-repo write access без явной причины"
+      - "Работа агента в main без gate'ов"
+      - "State, который persist'ится между несвязанными задачами"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Один агент = одна задача = одна ветка»"
   - kind: mcq
-    prompt: "TODO mastery prompt #5"
+    prompt: "По какому маркеру судить, что «Интеграция в среды разработки» работает?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Знаешь scope каждого активного агента (репо/ветка/env)"
+      - "Full-repo write access без явной причины"
+      - "Работа агента в main без gate'ов"
+      - "State, который persist'ится между несвязанными задачами"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь scope каждого активного агента (репо/ветка/env)». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Интеграция в среды разработки» как опору?"
+    options:
+      - "GitHub Codespaces config (`.devcontainer/`) для isolated env"
+      - "Full-repo write access без явной причины"
+      - "Работа агента в main без gate'ов"
+      - "State, который persist'ится между несвязанными задачами"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «GitHub Codespaces config (`.devcontainer/`) для isolated env»"
 ---
 
-## TODO: контекст и зачем это важно
+## Зачем
 
-Короткий ментальный крючок — почему эта тема важна для агентов в SDLC и
-что без неё ломается на практике.
+Контекст исполнения — это где агент работает: какой репозиторий, какая ветка, какие env vars, какие команды exec'ит, какая инфра доступна. Узкий scope = меньше surface area, легче ревью, дешёвый откат. Branch-based work = изоляция: если что-то сломалось — просто закрываешь ветку. Trunk-based с агентами = большие риски на молодой системе governance.
 
-## TODO: ключевые идеи
+## Ключевые различения
 
-Объясните центральные понятия с привязкой к учебным целям выше. Списки и
-таблицы, где они помогают мысли.
+- Full-repo scope ↔ subdirectory scope ↔ single-file scope
+- Trunk-based ↔ branch-based work
+- CI agent (запускается по триггеру) ↔ interactive agent
+- Ephemeral environment ↔ shared dev env
 
-## TODO: типичные ошибки и паттерны
+## Инструменты
 
-1–2 примера того, как обычно ошибаются, и как делать правильно.
+- GitHub Codespaces config (`.devcontainer/`) для isolated env
+- `.gitattributes` / `.cursorignore` для скрытия от агента
+- Branch protection rules + status checks
+- Workflow_dispatch для CI-based agents
 
-## Попробуйте
+## Практика
 
-Конкретное действие, которое учащийся может выполнить сразу (репозиторий,
-workflow, конфиг — что угодно осязаемое).
+- Один агент = одна задача = одна ветка
+- Запрет push в protected branches (main, release)
+- Ephemeral environments для длинных задач (preview deployments)
+
+## Маркеры освоения
+
+- Знаешь scope каждого активного агента (репо/ветка/env)
+- Ноль случаев «случайно тронул не ту ветку»
+- Восстановление после сбоя = закрытие ветки за 30 секунд
+
+## Антипаттерны
+
+- Full-repo write access без явной причины
+- Работа агента в main без gate'ов
+- State, который persist'ится между несвязанными задачами
+
+## Где в стеке
+
+**Инструменты и среда (20-25%).** Минимально необходимый набор инструментов, MCP-серверы, контекст исполнения и обработка ошибок — поверхности, которые определяют безопасность системы.

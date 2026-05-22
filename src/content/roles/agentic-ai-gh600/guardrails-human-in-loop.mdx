@@ -2,103 +2,132 @@
 schemaVersion: 1
 slug: guardrails-human-in-loop
 title: "Ограничители и human-in-the-loop"
-summary: "Действия с обязательным одобрением; блокировка нарушений политик; принцип минимальных прав; контроль необратимых изменений."
-status: draft
+summary: "Как организовать точки одобрения для необратимых действий без потери скорости?"
+status: published
 estimatedMinutes: 30
-prerequisites:
-  - autonomy-levels
+prerequisites: []
 learningOutcomes:
-  - "Определение подмножества действий, требующих человеческого решения"
-  - "Блокировать действия, которые нарушают определенные политики безопасности, соответствия или ответственного ИИ"
-  - "Ограничение разрешений и контекстов выполнения для обеспечения минимально необходимого доступа"
-  - "Требовать явную авторизацию или контролируемые пути для необратимых или чувствительных к соблюдению норм изменений"
-  - "Поддержание скорости выполнения за счет уменьшения количества согласований, которые незначительно снижают риск"
+  - "У тебя есть документированный список guardrails"
+  - "Нет инцидентов «не туда задеплоили без approval'а»"
+  - "Команда не жалуется на избыточные approvals"
+  - "Выполнять регулярно: Документируй каждый guardrail (что блокирует, почему)"
+  - "Выполнять регулярно: Approval только для действий с high impact (не для тривиальных)"
 practice:
   - kind: mcq
-    prompt: "TODO: один MCQ, проверяющий ключевую идею узла."
+    prompt: "По какому из признаков честно судить, что дисциплина «Ограничители и human-in-the-loop» начала работать?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "У тебя есть документированный список guardrails"
+      - "Approval на всё подряд → alert fatigue → approvals игнорируются"
+      - "Нет guardrails вообще («доверяем AI»)"
+      - "Guardrails известны только тебе, не команде"
     answerIndex: 0
-    explanation: "TODO: 1-2 предложения объяснения."
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «У тебя есть документированный список guardrails» — именно такой признак."
 flashcards:
-  - front: "TODO front #1"
-    back: "TODO back #1"
-  - front: "TODO front #2"
-    back: "TODO back #2"
-  - front: "TODO front #3"
-    back: "TODO back #3"
-  - front: "TODO front #4"
-    back: "TODO back #4"
-  - front: "TODO front #5"
-    back: "TODO back #5"
-  - front: "TODO front #6"
-    back: "TODO back #6"
+  - front: "Что стоит за различением «Запрет (hard) ↔ approval gate (soft)»?"
+    back: "Запрет (hard) ↔ approval gate (soft). Guardrails — это запреты + точки обязательного одобрения"
+  - front: "Что стоит за различением «Минимальные права ↔ «удобно — дать всё»»?"
+    back: "Минимальные права ↔ «удобно — дать всё». Запрет: «не пушить в main», «не call external API без подтверждения»"
+  - front: "Что стоит за различением «Reversible с откатом ↔ irreversible (всегда нужен approval)»?"
+    back: "Reversible с откатом ↔ irreversible (всегда нужен approval). Approval point: «перед deploy в prod покажи план человеку»"
+  - front: "Что стоит за различением «Sync approval (ждём) ↔ async (продолжаем, человек проверит)»?"
+    back: "Sync approval (ждём) ↔ async (продолжаем, человек проверит). Принцип минимальных прав: дай столько доступа, сколько нужно для задачи, не больше"
+  - front: "По какому маркеру понять, что освоено: «У тебя есть документированный список guardrails»?"
+    back: "У тебя есть документированный список guardrails"
+  - front: "По какому маркеру понять, что освоено: «Нет инцидентов «не туда задеплоили без approval'а»»?"
+    back: "Нет инцидентов «не туда задеплоили без approval'а»"
 masteryQuiz:
   - kind: mcq
-    prompt: "TODO mastery prompt #1"
+    prompt: "Какой вопрос ставит дисциплина «Ограничители и human-in-the-loop» в центр?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Как организовать точки одобрения для необратимых действий без потери скорости?"
+      - "Approval на всё подряд → alert fatigue → approvals игнорируются"
+      - "Нет guardrails вообще («доверяем AI»)"
+      - "Guardrails известны только тебе, не команде"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как организовать точки одобрения для необратимых действий без потери скорости?»"
   - kind: mcq
-    prompt: "TODO mastery prompt #2"
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Ограничители и human-in-the-loop»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Approval на всё подряд → alert fatigue → approvals игнорируются"
+      - "Документируй каждый guardrail (что блокирует, почему)"
+      - "У тебя есть документированный список guardrails"
+      - "Нет инцидентов «не туда задеплоили без approval'а»"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Approval на всё подряд → alert fatigue → approvals игнорируются»"
   - kind: mcq
-    prompt: "TODO mastery prompt #3"
+    prompt: "Какое из утверждений — ключевое различение в «Ограничители и human-in-the-loop»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Запрет (hard) ↔ approval gate (soft)"
+      - "Approval на всё подряд → alert fatigue → approvals игнорируются"
+      - "Нет guardrails вообще («доверяем AI»)"
+      - "Guardrails известны только тебе, не команде"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Различение «Запрет (hard) ↔ approval gate (soft)» лежит в основе дисциплины и определяет, как видеть её объекты."
   - kind: mcq
-    prompt: "TODO mastery prompt #4"
+    prompt: "Какое действие в основе регулярной практики «Ограничители и human-in-the-loop»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Документируй каждый guardrail (что блокирует, почему)"
+      - "Approval на всё подряд → alert fatigue → approvals игнорируются"
+      - "Нет guardrails вообще («доверяем AI»)"
+      - "Guardrails известны только тебе, не команде"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Документируй каждый guardrail (что блокирует, почему)»"
   - kind: mcq
-    prompt: "TODO mastery prompt #5"
+    prompt: "По какому маркеру судить, что «Ограничители и human-in-the-loop» работает?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "У тебя есть документированный список guardrails"
+      - "Approval на всё подряд → alert fatigue → approvals игнорируются"
+      - "Нет guardrails вообще («доверяем AI»)"
+      - "Guardrails известны только тебе, не команде"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Маркер освоения — наблюдаемое поведение: «У тебя есть документированный список guardrails». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Ограничители и human-in-the-loop» как опору?"
+    options:
+      - "GitHub branch protection + required reviews"
+      - "Approval на всё подряд → alert fatigue → approvals игнорируются"
+      - "Нет guardrails вообще («доверяем AI»)"
+      - "Guardrails известны только тебе, не команде"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «GitHub branch protection + required reviews»"
 ---
 
-## TODO: контекст и зачем это важно
+## Зачем
 
-Короткий ментальный крючок — почему эта тема важна для агентов в SDLC и
-что без неё ломается на практике.
+Guardrails — это запреты + точки обязательного одобрения. Запрет: «не пушить в main», «не call external API без подтверждения». Approval point: «перед deploy в prod покажи план человеку». Принцип минимальных прав: дай столько доступа, сколько нужно для задачи, не больше. Human-in-the-loop НЕ должен замедлять рутинные задачи — он включается только на действиях с высоким impact'ом.
 
-## TODO: ключевые идеи
+## Ключевые различения
 
-Объясните центральные понятия с привязкой к учебным целям выше. Списки и
-таблицы, где они помогают мысли.
+- Запрет (hard) ↔ approval gate (soft)
+- Минимальные права ↔ «удобно — дать всё»
+- Reversible с откатом ↔ irreversible (всегда нужен approval)
+- Sync approval (ждём) ↔ async (продолжаем, человек проверит)
 
-## TODO: типичные ошибки и паттерны
+## Инструменты
 
-1–2 примера того, как обычно ошибаются, и как делать правильно.
+- GitHub branch protection + required reviews
+- Environment protection rules в Actions (manual approval перед deploy)
+- Settings.json ask permissions для конкретных команд
+- Pre-commit hooks для запретов локально
 
-## Попробуйте
+## Практика
 
-Конкретное действие, которое учащийся может выполнить сразу (репозиторий,
-workflow, конфиг — что угодно осязаемое).
+- Документируй каждый guardrail (что блокирует, почему)
+- Approval только для действий с high impact (не для тривиальных)
+- При альерт fatigue — пересматривай, какие guardrails избыточны
+
+## Маркеры освоения
+
+- У тебя есть документированный список guardrails
+- Нет инцидентов «не туда задеплоили без approval'а»
+- Команда не жалуется на избыточные approvals
+
+## Антипаттерны
+
+- Approval на всё подряд → alert fatigue → approvals игнорируются
+- Нет guardrails вообще («доверяем AI»)
+- Guardrails известны только тебе, не команде
+
+## Где в стеке
+
+**Ограничители и подотчётность (10-15%).** Классификация действий по риску, явные ограничители и обязательные точки одобрения для необратимых действий.

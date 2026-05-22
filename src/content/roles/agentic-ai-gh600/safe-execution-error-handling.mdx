@@ -2,103 +2,132 @@
 schemaVersion: 1
 slug: safe-execution-error-handling
 title: "Безопасное выполнение и обработка ошибок"
-summary: "Error handling, retries, fallbacks, эскалация и трассируемость действий агента."
-status: draft
+summary: "Как обработать ошибки tool-вызовов и обеспечить безопасное прерывание long-running agent?"
+status: published
 estimatedMinutes: 30
-prerequisites:
-  - dev-environment-integration
+prerequisites: []
 learningOutcomes:
-  - "Реализация обработки ошибок"
-  - "Реализация повторных попыток"
-  - "Реализация откатов"
-  - "Реализация путей эскалации"
-  - "Обеспечение трассируемости и подотчетности действий агента"
+  - "Ноль агентов «висят» больше 30 минут"
+  - "Знаешь точку remediation для типичных fails (сеть, права, конфликты)"
+  - "После сбоя — артефакт с трассой, не «что-то сломалось»"
+  - "Выполнять регулярно: Лимит попыток ≤5 для любого retry"
+  - "Выполнять регулярно: Явный escalation path заранее (не «когда упадёт, тогда разберёмся»)"
 practice:
   - kind: mcq
-    prompt: "TODO: один MCQ, проверяющий ключевую идею узла."
+    prompt: "По какому из признаков честно судить, что дисциплина «Безопасное выполнение и обработка ошибок» начала работать?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Ноль агентов «висят» больше 30 минут"
+      - "Бесконечный retry-loop"
+      - "Молчаливый fail без артефакта"
+      - "Продолжать после необратимой ошибки"
     answerIndex: 0
-    explanation: "TODO: 1-2 предложения объяснения."
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Ноль агентов «висят» больше 30 минут» — именно такой признак."
 flashcards:
-  - front: "TODO front #1"
-    back: "TODO back #1"
-  - front: "TODO front #2"
-    back: "TODO back #2"
-  - front: "TODO front #3"
-    back: "TODO back #3"
-  - front: "TODO front #4"
-    back: "TODO back #4"
-  - front: "TODO front #5"
-    back: "TODO back #5"
-  - front: "TODO front #6"
-    back: "TODO back #6"
+  - front: "Что стоит за различением «Retry с exponential backoff ↔ tight retry loop»?"
+    back: "Retry с exponential backoff ↔ tight retry loop. Tool calls фейлятся по сети, по timeout'у, по правам доступа, по бизнес-логике"
+  - front: "Что стоит за различением «Transient error (сеть) ↔ permanent (нет прав)»?"
+    back: "Transient error (сеть) ↔ permanent (нет прав). Без явной обработки агент входит в retry-loop или галлюцинирует «успех»"
+  - front: "Что стоит за различением «Escalation к человеку ↔ continue retry»?"
+    back: "Escalation к человеку ↔ continue retry. Дисциплинированный error handling = retry limit + exponential backoff + явный escalation path к человеку"
+  - front: "Что стоит за различением «Rollback (отменить шаги) ↔ partial state (оставить как есть)»?"
+    back: "Rollback (отменить шаги) ↔ partial state (оставить как есть). Long-running agent должен уметь сохранять checkpoint и восстанавливаться, а не пере-делать с нуля."
+  - front: "По какому маркеру понять, что освоено: «Ноль агентов «висят» больше 30 минут»?"
+    back: "Ноль агентов «висят» больше 30 минут"
+  - front: "По какому маркеру понять, что освоено: «Знаешь точку remediation для типичных fails (сеть, права, конфликты)»?"
+    back: "Знаешь точку remediation для типичных fails (сеть, права, конфликты)"
 masteryQuiz:
   - kind: mcq
-    prompt: "TODO mastery prompt #1"
+    prompt: "Какой вопрос ставит дисциплина «Безопасное выполнение и обработка ошибок» в центр?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Как обработать ошибки tool-вызовов и обеспечить безопасное прерывание long-running agent?"
+      - "Бесконечный retry-loop"
+      - "Молчаливый fail без артефакта"
+      - "Продолжать после необратимой ошибки"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как обработать ошибки tool-вызовов и обеспечить безопасное прерывание long-running agent?»"
   - kind: mcq
-    prompt: "TODO mastery prompt #2"
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Безопасное выполнение и обработка ошибок»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Бесконечный retry-loop"
+      - "Лимит попыток ≤5 для любого retry"
+      - "Ноль агентов «висят» больше 30 минут"
+      - "Знаешь точку remediation для типичных fails (сеть, права, конфликты)"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Бесконечный retry-loop»"
   - kind: mcq
-    prompt: "TODO mastery prompt #3"
+    prompt: "Какое из утверждений — ключевое различение в «Безопасное выполнение и обработка ошибок»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Retry с exponential backoff ↔ tight retry loop"
+      - "Бесконечный retry-loop"
+      - "Молчаливый fail без артефакта"
+      - "Продолжать после необратимой ошибки"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Различение «Retry с exponential backoff ↔ tight retry loop» лежит в основе дисциплины и определяет, как видеть её объекты."
   - kind: mcq
-    prompt: "TODO mastery prompt #4"
+    prompt: "Какое действие в основе регулярной практики «Безопасное выполнение и обработка ошибок»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Лимит попыток ≤5 для любого retry"
+      - "Бесконечный retry-loop"
+      - "Молчаливый fail без артефакта"
+      - "Продолжать после необратимой ошибки"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Лимит попыток ≤5 для любого retry»"
   - kind: mcq
-    prompt: "TODO mastery prompt #5"
+    prompt: "По какому маркеру судить, что «Безопасное выполнение и обработка ошибок» работает?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Ноль агентов «висят» больше 30 минут"
+      - "Бесконечный retry-loop"
+      - "Молчаливый fail без артефакта"
+      - "Продолжать после необратимой ошибки"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Маркер освоения — наблюдаемое поведение: «Ноль агентов «висят» больше 30 минут». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Безопасное выполнение и обработка ошибок» как опору?"
+    options:
+      - "Idempotency keys для tool calls с побочным эффектом"
+      - "Бесконечный retry-loop"
+      - "Молчаливый fail без артефакта"
+      - "Продолжать после необратимой ошибки"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Idempotency keys для tool calls с побочным эффектом»"
 ---
 
-## TODO: контекст и зачем это важно
+## Зачем
 
-Короткий ментальный крючок — почему эта тема важна для агентов в SDLC и
-что без неё ломается на практике.
+Tool calls фейлятся по сети, по timeout'у, по правам доступа, по бизнес-логике. Без явной обработки агент входит в retry-loop или галлюцинирует «успех». Дисциплинированный error handling = retry limit + exponential backoff + явный escalation path к человеку. Long-running agent должен уметь сохранять checkpoint и восстанавливаться, а не пере-делать с нуля.
 
-## TODO: ключевые идеи
+## Ключевые различения
 
-Объясните центральные понятия с привязкой к учебным целям выше. Списки и
-таблицы, где они помогают мысли.
+- Retry с exponential backoff ↔ tight retry loop
+- Transient error (сеть) ↔ permanent (нет прав)
+- Escalation к человеку ↔ continue retry
+- Rollback (отменить шаги) ↔ partial state (оставить как есть)
 
-## TODO: типичные ошибки и паттерны
+## Инструменты
 
-1–2 примера того, как обычно ошибаются, и как делать правильно.
+- Idempotency keys для tool calls с побочным эффектом
+- Checkpoint + restore (state в файле перед длинной операцией)
+- Escalation paths через PR comment + label
+- Circuit breaker pattern для нестабильных внешних API
 
-## Попробуйте
+## Практика
 
-Конкретное действие, которое учащийся может выполнить сразу (репозиторий,
-workflow, конфиг — что угодно осязаемое).
+- Лимит попыток ≤5 для любого retry
+- Явный escalation path заранее (не «когда упадёт, тогда разберёмся»)
+- Failure → observable artifact (PR comment с трассой)
+
+## Маркеры освоения
+
+- Ноль агентов «висят» больше 30 минут
+- Знаешь точку remediation для типичных fails (сеть, права, конфликты)
+- После сбоя — артефакт с трассой, не «что-то сломалось»
+
+## Антипаттерны
+
+- Бесконечный retry-loop
+- Молчаливый fail без артефакта
+- Продолжать после необратимой ошибки
+
+## Где в стеке
+
+**Инструменты и среда (20-25%).** Минимально необходимый набор инструментов, MCP-серверы, контекст исполнения и обработка ошибок — поверхности, которые определяют безопасность системы.

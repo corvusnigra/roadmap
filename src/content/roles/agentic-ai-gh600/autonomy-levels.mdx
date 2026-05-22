@@ -2,100 +2,131 @@
 schemaVersion: 1
 slug: autonomy-levels
 title: "Уровни автономии"
-summary: "Классификация действий по риску; назначение уровней автономии для скорости + безопасности."
-status: draft
+summary: "Как классифицировать действия по риску и назначить уровни автономии?"
+status: published
 estimatedMinutes: 25
-prerequisites:
-  - multi-agent-lifecycle
+prerequisites: []
 learningOutcomes:
-  - "Классификация действий агентов по операционным рискам, рискам безопасности и рискам соответствия для оптимизации человеческого вмешательства"
-  - "Назначение уровней автономии для максимальной скорости доставки при сохранении соответствия стандартам безопасности организации и ответственного искусственного интеллекта"
+  - "У тебя есть документированная risk-tier таблица"
+  - "Команда понимает, почему какие-то действия требуют approval"
+  - "Скорость доставки не пострадала от добавления guardrails"
+  - "Выполнять регулярно: Для каждого нового tool — risk classification до подключения"
+  - "Выполнять регулярно: Annual review risk-tier таблицы"
 practice:
   - kind: mcq
-    prompt: "TODO: один MCQ, проверяющий ключевую идею узла."
+    prompt: "По какому из признаков честно судить, что дисциплина «Уровни автономии» начала работать?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "У тебя есть документированная risk-tier таблица"
+      - "Equal autonomy для всех действий"
+      - "Не пересматривать tier после инцидента"
+      - "Approval на тривиальные действия → alert fatigue"
     answerIndex: 0
-    explanation: "TODO: 1-2 предложения объяснения."
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «У тебя есть документированная risk-tier таблица» — именно такой признак."
 flashcards:
-  - front: "TODO front #1"
-    back: "TODO back #1"
-  - front: "TODO front #2"
-    back: "TODO back #2"
-  - front: "TODO front #3"
-    back: "TODO back #3"
-  - front: "TODO front #4"
-    back: "TODO back #4"
-  - front: "TODO front #5"
-    back: "TODO back #5"
-  - front: "TODO front #6"
-    back: "TODO back #6"
+  - front: "Что стоит за различением «Operational risk (что сломаем) ↔ security risk (что украдут) ↔ compliance risk (нарушим политики)»?"
+    back: "Operational risk (что сломаем) ↔ security risk (что украдут) ↔ compliance risk (нарушим политики). Read repo = низкий риск, deploy в prod = высокий"
+  - front: "Что стоит за различением «Auto-execute ↔ require approval ↔ blocked»?"
+    back: "Auto-execute ↔ require approval ↔ blocked. Назначение уровней автономии — это классификация действий по operational риску, security риску и compliance риску, и подбор для каждого: автоматически / approval / запрет"
+  - front: "Что стоит за различением «Reversible (откатить дёшево) ↔ irreversible»?"
+    back: "Reversible (откатить дёшево) ↔ irreversible. Цель — максимум скорости при сохранении границ"
+  - front: "Что стоит за различением «Local impact ↔ broad impact»?"
+    back: "Local impact ↔ broad impact. Слишком жёстко — агент бесполезен"
+  - front: "По какому маркеру понять, что освоено: «У тебя есть документированная risk-tier таблица»?"
+    back: "У тебя есть документированная risk-tier таблица"
+  - front: "По какому маркеру понять, что освоено: «Команда понимает, почему какие-то действия требуют approval»?"
+    back: "Команда понимает, почему какие-то действия требуют approval"
 masteryQuiz:
   - kind: mcq
-    prompt: "TODO mastery prompt #1"
+    prompt: "Какой вопрос ставит дисциплина «Уровни автономии» в центр?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Как классифицировать действия по риску и назначить уровни автономии?"
+      - "Equal autonomy для всех действий"
+      - "Не пересматривать tier после инцидента"
+      - "Approval на тривиальные действия → alert fatigue"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как классифицировать действия по риску и назначить уровни автономии?»"
   - kind: mcq
-    prompt: "TODO mastery prompt #2"
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Уровни автономии»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Equal autonomy для всех действий"
+      - "Для каждого нового tool — risk classification до подключения"
+      - "У тебя есть документированная risk-tier таблица"
+      - "Команда понимает, почему какие-то действия требуют approval"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Equal autonomy для всех действий»"
   - kind: mcq
-    prompt: "TODO mastery prompt #3"
+    prompt: "Какое из утверждений — ключевое различение в «Уровни автономии»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Operational risk (что сломаем) ↔ security risk (что украдут) ↔ compliance risk (нарушим политики)"
+      - "Equal autonomy для всех действий"
+      - "Не пересматривать tier после инцидента"
+      - "Approval на тривиальные действия → alert fatigue"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Различение «Operational risk (что сломаем) ↔ security risk (что украдут) ↔ compliance risk (нарушим политики)» лежит в основе дисциплины и определяет, как видеть её объекты."
   - kind: mcq
-    prompt: "TODO mastery prompt #4"
+    prompt: "Какое действие в основе регулярной практики «Уровни автономии»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Для каждого нового tool — risk classification до подключения"
+      - "Equal autonomy для всех действий"
+      - "Не пересматривать tier после инцидента"
+      - "Approval на тривиальные действия → alert fatigue"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Для каждого нового tool — risk classification до подключения»"
   - kind: mcq
-    prompt: "TODO mastery prompt #5"
+    prompt: "По какому маркеру судить, что «Уровни автономии» работает?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "У тебя есть документированная risk-tier таблица"
+      - "Equal autonomy для всех действий"
+      - "Не пересматривать tier после инцидента"
+      - "Approval на тривиальные действия → alert fatigue"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Маркер освоения — наблюдаемое поведение: «У тебя есть документированная risk-tier таблица». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Уровни автономии» как опору?"
+    options:
+      - "Risk-tier таблица: действие × тип риска → уровень автономии"
+      - "Equal autonomy для всех действий"
+      - "Не пересматривать tier после инцидента"
+      - "Approval на тривиальные действия → alert fatigue"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Risk-tier таблица: действие × тип риска → уровень автономии»"
 ---
 
-## TODO: контекст и зачем это важно
+## Зачем
 
-Короткий ментальный крючок — почему эта тема важна для агентов в SDLC и
-что без неё ломается на практике.
+Не все действия равны. Read repo = низкий риск, deploy в prod = высокий. Назначение уровней автономии — это классификация действий по operational риску, security риску и compliance риску, и подбор для каждого: автоматически / approval / запрет. Цель — максимум скорости при сохранении границ. Слишком жёстко — агент бесполезен. Слишком мягко — инциденты.
 
-## TODO: ключевые идеи
+## Ключевые различения
 
-Объясните центральные понятия с привязкой к учебным целям выше. Списки и
-таблицы, где они помогают мысли.
+- Operational risk (что сломаем) ↔ security risk (что украдут) ↔ compliance risk (нарушим политики)
+- Auto-execute ↔ require approval ↔ blocked
+- Reversible (откатить дёшево) ↔ irreversible
+- Local impact ↔ broad impact
 
-## TODO: типичные ошибки и паттерны
+## Инструменты
 
-1–2 примера того, как обычно ошибаются, и как делать правильно.
+- Risk-tier таблица: действие × тип риска → уровень автономии
+- Settings.json allow/ask/deny per command
+- Branch protection + required reviews для высокорисковых действий
 
-## Попробуйте
+## Практика
 
-Конкретное действие, которое учащийся может выполнить сразу (репозиторий,
-workflow, конфиг — что угодно осязаемое).
+- Для каждого нового tool — risk classification до подключения
+- Annual review risk-tier таблицы
+- При инциденте — review, надо ли понижать tier
+
+## Маркеры освоения
+
+- У тебя есть документированная risk-tier таблица
+- Команда понимает, почему какие-то действия требуют approval
+- Скорость доставки не пострадала от добавления guardrails
+
+## Антипаттерны
+
+- Equal autonomy для всех действий
+- Не пересматривать tier после инцидента
+- Approval на тривиальные действия → alert fatigue
+
+## Где в стеке
+
+**Ограничители и подотчётность (10-15%).** Классификация действий по риску, явные ограничители и обязательные точки одобрения для необратимых действий.

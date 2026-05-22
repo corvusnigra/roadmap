@@ -2,100 +2,132 @@
 schemaVersion: 1
 slug: failure-analysis
 title: "Анализ сбоев агента"
-summary: "Логи, планы, трассировки, артефакты рабочих процессов; классификация первопричин: рассуждение, инструменты, контекст."
-status: draft
+summary: "Как разбирать сбои агента, отличая ошибки рассуждения от инфра-проблем?"
+status: published
 estimatedMinutes: 30
-prerequisites:
-  - evaluation-criteria
+prerequisites: []
 learningOutcomes:
-  - "Выявление сбоев с помощью журналов, планов, трассировок, выходных данных и артефактов рабочих процессов"
-  - "Классифицируйте первопричины, включая ошибки в рассуждениях, неправильное использование инструментов и вопросы, связанные с контекстом или средой"
+  - "За 15 минут можешь сказать, к какому классу относится сбой"
+  - "Знаешь типичные failure modes твоих агентов"
+  - "Снижение recurring failures от спринта к спринту"
+  - "Выполнять регулярно: Каждый sbой — classification: reasoning / tool / environment"
+  - "Выполнять регулярно: Recurring failure → исправление на уровне инструкций или tool description"
 practice:
   - kind: mcq
-    prompt: "TODO: один MCQ, проверяющий ключевую идею узла."
+    prompt: "По какому из признаков честно судить, что дисциплина «Анализ сбоев агента» начала работать?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "За 15 минут можешь сказать, к какому классу относится сбой"
+      - "«AI просто иногда тупит» как объяснение"
+      - "Не классифицировать failures"
+      - "Чинить симптом (retry) вместо root cause"
     answerIndex: 0
-    explanation: "TODO: 1-2 предложения объяснения."
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «За 15 минут можешь сказать, к какому классу относится сбой» — именно такой признак."
 flashcards:
-  - front: "TODO front #1"
-    back: "TODO back #1"
-  - front: "TODO front #2"
-    back: "TODO back #2"
-  - front: "TODO front #3"
-    back: "TODO back #3"
-  - front: "TODO front #4"
-    back: "TODO back #4"
-  - front: "TODO front #5"
-    back: "TODO back #5"
-  - front: "TODO front #6"
-    back: "TODO back #6"
+  - front: "Что стоит за различением «Reasoning error (план был не тот) ↔ tool misuse (вызов не тот) ↔ environment (внешний фактор)»?"
+    back: "Reasoning error (план был не тот) ↔ tool misuse (вызов не тот) ↔ environment (внешний фактор). Сбой агента — это не «AI плохой»"
+  - front: "Что стоит за различением «Trace через логи tool calls ↔ догадка по симптому»?"
+    back: "Trace через логи tool calls ↔ догадка по симптому. Это сигнал, который надо классифицировать"
+  - front: "Что стоит за различением «Root cause ↔ proximate cause»?"
+    back: "Root cause ↔ proximate cause. Три класса первопричин: (1) reasoning — ошибка в плане, неверная гипотеза; (2) tool misuse — неправильный вызов, неверные аргументы; (3) context/environment — нет нужного контекста, недоступен ресурс"
+  - front: "Что стоит за различением «Recurring failure ↔ one-off»?"
+    back: "Recurring failure ↔ one-off. Без классификации каждый сбой обрабатывается одинаково (обычно — игнорируется или закрывается «сам разберётся»)."
+  - front: "По какому маркеру понять, что освоено: «За 15 минут можешь сказать, к какому классу относится сбой»?"
+    back: "За 15 минут можешь сказать, к какому классу относится сбой"
+  - front: "По какому маркеру понять, что освоено: «Знаешь типичные failure modes твоих агентов»?"
+    back: "Знаешь типичные failure modes твоих агентов"
 masteryQuiz:
   - kind: mcq
-    prompt: "TODO mastery prompt #1"
+    prompt: "Какой вопрос ставит дисциплина «Анализ сбоев агента» в центр?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Как разбирать сбои агента, отличая ошибки рассуждения от инфра-проблем?"
+      - "«AI просто иногда тупит» как объяснение"
+      - "Не классифицировать failures"
+      - "Чинить симптом (retry) вместо root cause"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как разбирать сбои агента, отличая ошибки рассуждения от инфра-проблем?»"
   - kind: mcq
-    prompt: "TODO mastery prompt #2"
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Анализ сбоев агента»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "«AI просто иногда тупит» как объяснение"
+      - "Каждый sbой — classification: reasoning / tool / environment"
+      - "За 15 минут можешь сказать, к какому классу относится сбой"
+      - "Знаешь типичные failure modes твоих агентов"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: ««AI просто иногда тупит» как объяснение»"
   - kind: mcq
-    prompt: "TODO mastery prompt #3"
+    prompt: "Какое из утверждений — ключевое различение в «Анализ сбоев агента»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Reasoning error (план был не тот) ↔ tool misuse (вызов не тот) ↔ environment (внешний фактор)"
+      - "«AI просто иногда тупит» как объяснение"
+      - "Не классифицировать failures"
+      - "Чинить симптом (retry) вместо root cause"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Различение «Reasoning error (план был не тот) ↔ tool misuse (вызов не тот) ↔ environment (внешний фактор)» лежит в основе дисциплины и определяет, как видеть её объекты."
   - kind: mcq
-    prompt: "TODO mastery prompt #4"
+    prompt: "Какое действие в основе регулярной практики «Анализ сбоев агента»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Каждый sbой — classification: reasoning / tool / environment"
+      - "«AI просто иногда тупит» как объяснение"
+      - "Не классифицировать failures"
+      - "Чинить симптом (retry) вместо root cause"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Каждый sbой — classification: reasoning / tool / environment»"
   - kind: mcq
-    prompt: "TODO mastery prompt #5"
+    prompt: "По какому маркеру судить, что «Анализ сбоев агента» работает?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "За 15 минут можешь сказать, к какому классу относится сбой"
+      - "«AI просто иногда тупит» как объяснение"
+      - "Не классифицировать failures"
+      - "Чинить симптом (retry) вместо root cause"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Маркер освоения — наблюдаемое поведение: «За 15 минут можешь сказать, к какому классу относится сбой». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Анализ сбоев агента» как опору?"
+    options:
+      - "Trace logs для tool calls с timestamps + args"
+      - "«AI просто иногда тупит» как объяснение"
+      - "Не классифицировать failures"
+      - "Чинить симптом (retry) вместо root cause"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Trace logs для tool calls с timestamps + args»"
 ---
 
-## TODO: контекст и зачем это важно
+## Зачем
 
-Короткий ментальный крючок — почему эта тема важна для агентов в SDLC и
-что без неё ломается на практике.
+Сбой агента — это не «AI плохой». Это сигнал, который надо классифицировать. Три класса первопричин: (1) reasoning — ошибка в плане, неверная гипотеза; (2) tool misuse — неправильный вызов, неверные аргументы; (3) context/environment — нет нужного контекста, недоступен ресурс. Без классификации каждый сбой обрабатывается одинаково (обычно — игнорируется или закрывается «сам разберётся»).
 
-## TODO: ключевые идеи
+## Ключевые различения
 
-Объясните центральные понятия с привязкой к учебным целям выше. Списки и
-таблицы, где они помогают мысли.
+- Reasoning error (план был не тот) ↔ tool misuse (вызов не тот) ↔ environment (внешний фактор)
+- Trace через логи tool calls ↔ догадка по симптому
+- Root cause ↔ proximate cause
+- Recurring failure ↔ one-off
 
-## TODO: типичные ошибки и паттерны
+## Инструменты
 
-1–2 примера того, как обычно ошибаются, и как делать правильно.
+- Trace logs для tool calls с timestamps + args
+- Plan diff (что планировал → что сделал)
+- Failure labels на issues для классификации
+- Workflow run artifacts (что осталось после fail)
 
-## Попробуйте
+## Практика
 
-Конкретное действие, которое учащийся может выполнить сразу (репозиторий,
-workflow, конфиг — что угодно осязаемое).
+- Каждый sbой — classification: reasoning / tool / environment
+- Recurring failure → исправление на уровне инструкций или tool description
+- Weekly review failed runs за прошлую неделю
+
+## Маркеры освоения
+
+- За 15 минут можешь сказать, к какому классу относится сбой
+- Знаешь типичные failure modes твоих агентов
+- Снижение recurring failures от спринта к спринту
+
+## Антипаттерны
+
+- «AI просто иногда тупит» как объяснение
+- Не классифицировать failures
+- Чинить симптом (retry) вместо root cause
+
+## Где в стеке
+
+**Оценка, анализ ошибок, настройка (15-20%).** Не «не упал» = успех. Машинно-проверяемые критерии, разбор сбоев по логам/планам и точечная подстройка инструкций и tools.

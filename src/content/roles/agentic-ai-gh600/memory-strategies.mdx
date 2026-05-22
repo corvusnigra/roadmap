@@ -2,101 +2,132 @@
 schemaVersion: 1
 slug: memory-strategies
 title: "Стратегии памяти агента"
-summary: "Краткосрочная / долгосрочная / внешняя; правила истечения, обрезки и сброса."
-status: draft
-estimatedMinutes: 25
-prerequisites:
-  - safe-execution-error-handling
+summary: "Какую память даёт агент, и как ограничить её рамками задачи?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
 learningOutcomes:
-  - "Выбор между краткосрочной, долгосрочной и внешней памятью"
-  - "Ограничить память агента сведениями, относящимися к задачам"
-  - "Правила истечения срока действия памяти, обрезки и сброса"
+  - "Знаешь, что хранится в long-term memory твоих агентов"
+  - "Нет «случайной утечки» prior task context"
+  - "Memory снимаешь как PR-артефакт, а не как side-effect"
+  - "Выполнять регулярно: Каждая новая задача начинает с чистого state"
+  - "Выполнять регулярно: Явный artifact = что сохраняем между задачами (что-то конкретное)"
 practice:
   - kind: mcq
-    prompt: "TODO: один MCQ, проверяющий ключевую идею узла."
+    prompt: "По какому из признаков честно судить, что дисциплина «Стратегии памяти агента» начала работать?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Знаешь, что хранится в long-term memory твоих агентов"
+      - "«Память по умолчанию накапливается»"
+      - "Не описана retention policy"
+      - "Secrets в context window сохраняются в long-term memory"
     answerIndex: 0
-    explanation: "TODO: 1-2 предложения объяснения."
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь, что хранится в long-term memory твоих агентов» — именно такой признак."
 flashcards:
-  - front: "TODO front #1"
-    back: "TODO back #1"
-  - front: "TODO front #2"
-    back: "TODO back #2"
-  - front: "TODO front #3"
-    back: "TODO back #3"
-  - front: "TODO front #4"
-    back: "TODO back #4"
-  - front: "TODO front #5"
-    back: "TODO back #5"
-  - front: "TODO front #6"
-    back: "TODO back #6"
+  - front: "Что стоит за различением «Short-term (window, до 1M токенов) ↔ long-term (persisted) ↔ external (RAG)»?"
+    back: "Short-term (window, до 1M токенов) ↔ long-term (persisted) ↔ external (RAG). Память агента — три типа: короткая (context window), длинная (persisted: файлы, БД), внешняя (RAG, semantic search)"
+  - front: "Что стоит за различением «Scope per task ↔ persistent across tasks»?"
+    back: "Scope per task ↔ persistent across tasks. Каждый тип имеет своё назначение и риски"
+  - front: "Что стоит за различением «Opt-in remember ↔ default-remember (опасно)»?"
+    back: "Opt-in remember ↔ default-remember (опасно). Без явных правил жизненного цикла память накапливает шум, секреты и устаревшие факты"
+  - front: "Что стоит за различением «Mutable memory (можно перезаписать) ↔ append-only»?"
+    back: "Mutable memory (можно перезаписать) ↔ append-only. Дисциплина = явный choice типа памяти для задачи + retention policy + purge schedule."
+  - front: "По какому маркеру понять, что освоено: «Знаешь, что хранится в long-term memory твоих агентов»?"
+    back: "Знаешь, что хранится в long-term memory твоих агентов"
+  - front: "По какому маркеру понять, что освоено: «Нет «случайной утечки» prior task context»?"
+    back: "Нет «случайной утечки» prior task context"
 masteryQuiz:
   - kind: mcq
-    prompt: "TODO mastery prompt #1"
+    prompt: "Какой вопрос ставит дисциплина «Стратегии памяти агента» в центр?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Какую память даёт агент, и как ограничить её рамками задачи?"
+      - "«Память по умолчанию накапливается»"
+      - "Не описана retention policy"
+      - "Secrets в context window сохраняются в long-term memory"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Какую память даёт агент, и как ограничить её рамками задачи?»"
   - kind: mcq
-    prompt: "TODO mastery prompt #2"
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Стратегии памяти агента»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "«Память по умолчанию накапливается»"
+      - "Каждая новая задача начинает с чистого state"
+      - "Знаешь, что хранится в long-term memory твоих агентов"
+      - "Нет «случайной утечки» prior task context"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: ««Память по умолчанию накапливается»»"
   - kind: mcq
-    prompt: "TODO mastery prompt #3"
+    prompt: "Какое из утверждений — ключевое различение в «Стратегии памяти агента»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Short-term (window, до 1M токенов) ↔ long-term (persisted) ↔ external (RAG)"
+      - "«Память по умолчанию накапливается»"
+      - "Не описана retention policy"
+      - "Secrets в context window сохраняются в long-term memory"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Различение «Short-term (window, до 1M токенов) ↔ long-term (persisted) ↔ external (RAG)» лежит в основе дисциплины и определяет, как видеть её объекты."
   - kind: mcq
-    prompt: "TODO mastery prompt #4"
+    prompt: "Какое действие в основе регулярной практики «Стратегии памяти агента»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Каждая новая задача начинает с чистого state"
+      - "«Память по умолчанию накапливается»"
+      - "Не описана retention policy"
+      - "Secrets в context window сохраняются в long-term memory"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Каждая новая задача начинает с чистого state»"
   - kind: mcq
-    prompt: "TODO mastery prompt #5"
+    prompt: "По какому маркеру судить, что «Стратегии памяти агента» работает?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Знаешь, что хранится в long-term memory твоих агентов"
+      - "«Память по умолчанию накапливается»"
+      - "Не описана retention policy"
+      - "Secrets в context window сохраняются в long-term memory"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь, что хранится в long-term memory твоих агентов». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Стратегии памяти агента» как опору?"
+    options:
+      - "Claude prompt caching (5-min TTL, дешёвый long-context)"
+      - "«Память по умолчанию накапливается»"
+      - "Не описана retention policy"
+      - "Secrets в context window сохраняются в long-term memory"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Claude prompt caching (5-min TTL, дешёвый long-context)»"
 ---
 
-## TODO: контекст и зачем это важно
+## Зачем
 
-Короткий ментальный крючок — почему эта тема важна для агентов в SDLC и
-что без неё ломается на практике.
+Память агента — три типа: короткая (context window), длинная (persisted: файлы, БД), внешняя (RAG, semantic search). Каждый тип имеет своё назначение и риски. Без явных правил жизненного цикла память накапливает шум, секреты и устаревшие факты. Дисциплина = явный choice типа памяти для задачи + retention policy + purge schedule.
 
-## TODO: ключевые идеи
+## Ключевые различения
 
-Объясните центральные понятия с привязкой к учебным целям выше. Списки и
-таблицы, где они помогают мысли.
+- Short-term (window, до 1M токенов) ↔ long-term (persisted) ↔ external (RAG)
+- Scope per task ↔ persistent across tasks
+- Opt-in remember ↔ default-remember (опасно)
+- Mutable memory (можно перезаписать) ↔ append-only
 
-## TODO: типичные ошибки и паттерны
+## Инструменты
 
-1–2 примера того, как обычно ошибаются, и как делать правильно.
+- Claude prompt caching (5-min TTL, дешёвый long-context)
+- Memory tool calls (write/read к файлам)
+- Vector DB для semantic recall
+- Файловая структура: short-term — `.cache/`, long-term — committed
 
-## Попробуйте
+## Практика
 
-Конкретное действие, которое учащийся может выполнить сразу (репозиторий,
-workflow, конфиг — что угодно осязаемое).
+- Каждая новая задача начинает с чистого state
+- Явный artifact = что сохраняем между задачами (что-то конкретное)
+- Periodic purge (раз в спринт): что устарело? что протухло?
+
+## Маркеры освоения
+
+- Знаешь, что хранится в long-term memory твоих агентов
+- Нет «случайной утечки» prior task context
+- Memory снимаешь как PR-артефакт, а не как side-effect
+
+## Антипаттерны
+
+- «Память по умолчанию накапливается»
+- Не описана retention policy
+- Secrets в context window сохраняются в long-term memory
+
+## Где в стеке
+
+**Память, состояние, выполнение (10-15%).** Какую память даёт агент, как удержать состояние длинной задачи и как избежать дрейфа контекста между шагами и инструментами.

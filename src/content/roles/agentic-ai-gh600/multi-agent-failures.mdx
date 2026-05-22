@@ -2,101 +2,131 @@
 schemaVersion: 1
 slug: multi-agent-failures
 title: "Отказы в многоагентных системах"
-summary: "Выявление неудачных и приостановленных исполнений; реакция на ухудшение; recovery-шаблоны и human-in-the-loop."
-status: draft
+summary: "Как обнаружить и восстановиться после частичного сбоя в multi-agent flow?"
+status: published
 estimatedMinutes: 30
-prerequisites:
-  - multi-agent-observability
+prerequisites: []
 learningOutcomes:
-  - "Выявление неудачных, частичных или приостановленных исполнений агента"
-  - "Реагировать на ухудшенное поведение или координацию действий агентов"
-  - "Реализация шаблонов восстановления с несколькими агентами, включая откат и участие человека в процессе"
+  - "Знаешь recovery path для типичных failures своих flows"
+  - "Recovery работает без ручного вмешательства в 80% случаев"
+  - "Выполнять регулярно: Для каждого handoff — определи поведение при failure"
+  - "Выполнять регулярно: Watchdog: если агент молчит >N минут — alert"
+  - "Выполнять регулярно: Cascade failures → автоматическая escalation"
 practice:
   - kind: mcq
-    prompt: "TODO: один MCQ, проверяющий ключевую идею узла."
+    prompt: "По какому из признаков честно судить, что дисциплина «Отказы в многоагентных системах» начала работать?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Знаешь recovery path для типичных failures своих flows"
+      - "Один агент завис, остальные ждут вечно"
+      - "Cascade без circuit breaker'а"
+      - "Recovery «вручную каждый раз»"
     answerIndex: 0
-    explanation: "TODO: 1-2 предложения объяснения."
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь recovery path для типичных failures своих flows» — именно такой признак."
 flashcards:
-  - front: "TODO front #1"
-    back: "TODO back #1"
-  - front: "TODO front #2"
-    back: "TODO back #2"
-  - front: "TODO front #3"
-    back: "TODO back #3"
-  - front: "TODO front #4"
-    back: "TODO back #4"
-  - front: "TODO front #5"
-    back: "TODO back #5"
-  - front: "TODO front #6"
-    back: "TODO back #6"
+  - front: "Что стоит за различением «Hard failure (агент упал) ↔ soft (агент дал плохой выход)»?"
+    back: "Hard failure (агент упал) ↔ soft (агент дал плохой выход). Multi-agent failure modes: (1) один агент завис, остальные ждут; (2) один сделал шаг, другие не получили результат; (3) каскад — fail одного триггерит fail других"
+  - front: "Что стоит за различением «Localised (один агент) ↔ cascading (распространяется)»?"
+    back: "Localised (один агент) ↔ cascading (распространяется). Recovery — три уровня: retry конкретного агента, rollback handoff'а, human escalation"
+  - front: "Что стоит за различением «Retry / rollback / escalate — разные стратегии»?"
+    back: "Retry / rollback / escalate — разные стратегии. Без явной recovery strategy частичный fail оставляет систему в неконсистентном состоянии."
+  - front: "Что стоит за различением «Eventually consistent ↔ strongly consistent recovery»?"
+    back: "Eventually consistent ↔ strongly consistent recovery. Multi-agent failure modes: (1) один агент завис, остальные ждут; (2) один сделал шаг, другие не получили результат; (3) каскад — fail одного триггерит fail других. Recovery — три уровня: retry конкретного агента, rollback handoff'а, human escalation. Без явной recovery strategy частичный fail оставляет систему в неконсистентном состоянии."
+  - front: "По какому маркеру понять, что освоено: «Знаешь recovery path для типичных failures своих flows»?"
+    back: "Знаешь recovery path для типичных failures своих flows"
+  - front: "По какому маркеру понять, что освоено: «Recovery работает без ручного вмешательства в 80% случаев»?"
+    back: "Recovery работает без ручного вмешательства в 80% случаев"
 masteryQuiz:
   - kind: mcq
-    prompt: "TODO mastery prompt #1"
+    prompt: "Какой вопрос ставит дисциплина «Отказы в многоагентных системах» в центр?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Как обнаружить и восстановиться после частичного сбоя в multi-agent flow?"
+      - "Один агент завис, остальные ждут вечно"
+      - "Cascade без circuit breaker'а"
+      - "Recovery «вручную каждый раз»"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как обнаружить и восстановиться после частичного сбоя в multi-agent flow?»"
   - kind: mcq
-    prompt: "TODO mastery prompt #2"
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Отказы в многоагентных системах»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Один агент завис, остальные ждут вечно"
+      - "Для каждого handoff — определи поведение при failure"
+      - "Знаешь recovery path для типичных failures своих flows"
+      - "Recovery работает без ручного вмешательства в 80% случаев"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Один агент завис, остальные ждут вечно»"
   - kind: mcq
-    prompt: "TODO mastery prompt #3"
+    prompt: "Какое из утверждений — ключевое различение в «Отказы в многоагентных системах»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Hard failure (агент упал) ↔ soft (агент дал плохой выход)"
+      - "Один агент завис, остальные ждут вечно"
+      - "Cascade без circuit breaker'а"
+      - "Recovery «вручную каждый раз»"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Различение «Hard failure (агент упал) ↔ soft (агент дал плохой выход)» лежит в основе дисциплины и определяет, как видеть её объекты."
   - kind: mcq
-    prompt: "TODO mastery prompt #4"
+    prompt: "Какое действие в основе регулярной практики «Отказы в многоагентных системах»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Для каждого handoff — определи поведение при failure"
+      - "Один агент завис, остальные ждут вечно"
+      - "Cascade без circuit breaker'а"
+      - "Recovery «вручную каждый раз»"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Для каждого handoff — определи поведение при failure»"
   - kind: mcq
-    prompt: "TODO mastery prompt #5"
+    prompt: "По какому маркеру судить, что «Отказы в многоагентных системах» работает?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Знаешь recovery path для типичных failures своих flows"
+      - "Один агент завис, остальные ждут вечно"
+      - "Cascade без circuit breaker'а"
+      - "Recovery «вручную каждый раз»"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь recovery path для типичных failures своих flows». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Отказы в многоагентных системах» как опору?"
+    options:
+      - "Saga pattern для длинных multi-agent flow"
+      - "Один агент завис, остальные ждут вечно"
+      - "Cascade без circuit breaker'а"
+      - "Recovery «вручную каждый раз»"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Saga pattern для длинных multi-agent flow»"
 ---
 
-## TODO: контекст и зачем это важно
+## Зачем
 
-Короткий ментальный крючок — почему эта тема важна для агентов в SDLC и
-что без неё ломается на практике.
+Multi-agent failure modes: (1) один агент завис, остальные ждут; (2) один сделал шаг, другие не получили результат; (3) каскад — fail одного триггерит fail других. Recovery — три уровня: retry конкретного агента, rollback handoff'а, human escalation. Без явной recovery strategy частичный fail оставляет систему в неконсистентном состоянии.
 
-## TODO: ключевые идеи
+## Ключевые различения
 
-Объясните центральные понятия с привязкой к учебным целям выше. Списки и
-таблицы, где они помогают мысли.
+- Hard failure (агент упал) ↔ soft (агент дал плохой выход)
+- Localised (один агент) ↔ cascading (распространяется)
+- Retry / rollback / escalate — разные стратегии
+- Eventually consistent ↔ strongly consistent recovery
 
-## TODO: типичные ошибки и паттерны
+## Инструменты
 
-1–2 примера того, как обычно ошибаются, и как делать правильно.
+- Saga pattern для длинных multi-agent flow
+- Compensating transactions (откатывающие действия)
+- Watchdog timer на каждого агента
+- Human-in-the-loop точки при cascade
 
-## Попробуйте
+## Практика
 
-Конкретное действие, которое учащийся может выполнить сразу (репозиторий,
-workflow, конфиг — что угодно осязаемое).
+- Для каждого handoff — определи поведение при failure
+- Watchdog: если агент молчит >N минут — alert
+- Cascade failures → автоматическая escalation
+
+## Маркеры освоения
+
+- Знаешь recovery path для типичных failures своих flows
+- Recovery работает без ручного вмешательства в 80% случаев
+
+## Антипаттерны
+
+- Один агент завис, остальные ждут вечно
+- Cascade без circuit breaker'а
+- Recovery «вручную каждый раз»
+
+## Где в стеке
+
+**Многоагентная координация (15-20%).** Несколько агентов = новая поверхность отказов. Шаблоны оркестрации, артефакты для аудита, recovery и подстановка/вывод агентов без даунтайма.

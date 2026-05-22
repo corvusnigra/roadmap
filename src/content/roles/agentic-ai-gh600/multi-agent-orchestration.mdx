@@ -2,101 +2,131 @@
 schemaVersion: 1
 slug: multi-agent-orchestration
 title: "Оркестрация многоагентных систем"
-summary: "Шаблоны оркестрации, изоляция параллельных агентов, разрешение конфликтов изменений и противоречивых выходов."
-status: draft
+summary: "Как координировать нескольких агентов и разрешать конфликты их выходов?"
+status: published
 estimatedMinutes: 35
-prerequisites:
-  - behavior-tuning
+prerequisites: []
 learningOutcomes:
-  - "Применение шаблона оркестрации для координации нескольких агентов"
-  - "Настройка изоляции агента для параллельного выполнения"
-  - "Обнаружение и разрешение конфликтов агентов, включая перекрывающиеся изменения кода, повторяющиеся усилия и противоречивые выходные данные"
+  - "Знаешь, какие шаблоны оркестрации работают на каких задачах"
+  - "Конфликты разрешаются предсказуемо"
+  - "Выполнять регулярно: Для каждого multi-agent flow — диаграмма handoff'ов"
+  - "Выполнять регулярно: Изоляция через branches: каждый агент в своей"
+  - "Выполнять регулярно: Conflict resolution стратегия выбирается заранее, не ad-hoc"
 practice:
   - kind: mcq
-    prompt: "TODO: один MCQ, проверяющий ключевую идею узла."
+    prompt: "По какому из признаков честно судить, что дисциплина «Оркестрация многоагентных систем» начала работать?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Знаешь, какие шаблоны оркестрации работают на каких задачах"
+      - "First-write-wins без явной политики"
+      - "Скрытые dependencies между агентами"
+      - "Один общий workspace без изоляции"
     answerIndex: 0
-    explanation: "TODO: 1-2 предложения объяснения."
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь, какие шаблоны оркестрации работают на каких задачах» — именно такой признак."
 flashcards:
-  - front: "TODO front #1"
-    back: "TODO back #1"
-  - front: "TODO front #2"
-    back: "TODO back #2"
-  - front: "TODO front #3"
-    back: "TODO back #3"
-  - front: "TODO front #4"
-    back: "TODO back #4"
-  - front: "TODO front #5"
-    back: "TODO back #5"
-  - front: "TODO front #6"
-    back: "TODO back #6"
+  - front: "Что стоит за различением «Pipeline (sequential) ↔ parallel ↔ supervisor (hierarchical)»?"
+    back: "Pipeline (sequential) ↔ parallel ↔ supervisor (hierarchical). Несколько агентов работают над общей задачей — нужна оркестрация"
+  - front: "Что стоит за различением «Изоляция (свой scope) ↔ shared workspace (один репо)»?"
+    back: "Изоляция (свой scope) ↔ shared workspace (один репо). Шаблоны: pipeline (последовательный hand-off), parallel-with-merge (изолированные задачи + объединение), supervisor (один агент даёт задачи другим)"
+  - front: "Что стоит за различением «Conflict resolution: merge / vote / supervisor decides»?"
+    back: "Conflict resolution: merge / vote / supervisor decides. Конфликты неизбежны: одинаковые правки в коде, противоречивые выходы"
+  - front: "Что стоит за различением «Synchronous (ждём всех) ↔ async (продолжаем без)»?"
+    back: "Synchronous (ждём всех) ↔ async (продолжаем без). Без явной стратегии разрешения = либо хаос, либо first-write-wins (часто худший выбор)."
+  - front: "По какому маркеру понять, что освоено: «Знаешь, какие шаблоны оркестрации работают на каких задачах»?"
+    back: "Знаешь, какие шаблоны оркестрации работают на каких задачах"
+  - front: "По какому маркеру понять, что освоено: «Конфликты разрешаются предсказуемо»?"
+    back: "Конфликты разрешаются предсказуемо"
 masteryQuiz:
   - kind: mcq
-    prompt: "TODO mastery prompt #1"
+    prompt: "Какой вопрос ставит дисциплина «Оркестрация многоагентных систем» в центр?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Как координировать нескольких агентов и разрешать конфликты их выходов?"
+      - "First-write-wins без явной политики"
+      - "Скрытые dependencies между агентами"
+      - "Один общий workspace без изоляции"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как координировать нескольких агентов и разрешать конфликты их выходов?»"
   - kind: mcq
-    prompt: "TODO mastery prompt #2"
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Оркестрация многоагентных систем»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "First-write-wins без явной политики"
+      - "Для каждого multi-agent flow — диаграмма handoff'ов"
+      - "Знаешь, какие шаблоны оркестрации работают на каких задачах"
+      - "Конфликты разрешаются предсказуемо"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «First-write-wins без явной политики»"
   - kind: mcq
-    prompt: "TODO mastery prompt #3"
+    prompt: "Какое из утверждений — ключевое различение в «Оркестрация многоагентных систем»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Pipeline (sequential) ↔ parallel ↔ supervisor (hierarchical)"
+      - "First-write-wins без явной политики"
+      - "Скрытые dependencies между агентами"
+      - "Один общий workspace без изоляции"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Различение «Pipeline (sequential) ↔ parallel ↔ supervisor (hierarchical)» лежит в основе дисциплины и определяет, как видеть её объекты."
   - kind: mcq
-    prompt: "TODO mastery prompt #4"
+    prompt: "Какое действие в основе регулярной практики «Оркестрация многоагентных систем»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Для каждого multi-agent flow — диаграмма handoff'ов"
+      - "First-write-wins без явной политики"
+      - "Скрытые dependencies между агентами"
+      - "Один общий workspace без изоляции"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Для каждого multi-agent flow — диаграмма handoff'ов»"
   - kind: mcq
-    prompt: "TODO mastery prompt #5"
+    prompt: "По какому маркеру судить, что «Оркестрация многоагентных систем» работает?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Знаешь, какие шаблоны оркестрации работают на каких задачах"
+      - "First-write-wins без явной политики"
+      - "Скрытые dependencies между агентами"
+      - "Один общий workspace без изоляции"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь, какие шаблоны оркестрации работают на каких задачах». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Оркестрация многоагентных систем» как опору?"
+    options:
+      - "GitHub Actions jobs + dependencies — естественная оркестрация"
+      - "First-write-wins без явной политики"
+      - "Скрытые dependencies между агентами"
+      - "Один общий workspace без изоляции"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «GitHub Actions jobs + dependencies — естественная оркестрация»"
 ---
 
-## TODO: контекст и зачем это важно
+## Зачем
 
-Короткий ментальный крючок — почему эта тема важна для агентов в SDLC и
-что без неё ломается на практике.
+Несколько агентов работают над общей задачей — нужна оркестрация. Шаблоны: pipeline (последовательный hand-off), parallel-with-merge (изолированные задачи + объединение), supervisor (один агент даёт задачи другим). Конфликты неизбежны: одинаковые правки в коде, противоречивые выходы. Без явной стратегии разрешения = либо хаос, либо first-write-wins (часто худший выбор).
 
-## TODO: ключевые идеи
+## Ключевые различения
 
-Объясните центральные понятия с привязкой к учебным целям выше. Списки и
-таблицы, где они помогают мысли.
+- Pipeline (sequential) ↔ parallel ↔ supervisor (hierarchical)
+- Изоляция (свой scope) ↔ shared workspace (один репо)
+- Conflict resolution: merge / vote / supervisor decides
+- Synchronous (ждём всех) ↔ async (продолжаем без)
 
-## TODO: типичные ошибки и паттерны
+## Инструменты
 
-1–2 примера того, как обычно ошибаются, и как делать правильно.
+- GitHub Actions jobs + dependencies — естественная оркестрация
+- Multi-agent frameworks (LangGraph, CrewAI)
+- Custom supervisor agent с explicit handoff'ами
+- Branch-per-agent + merge через супервизор
 
-## Попробуйте
+## Практика
 
-Конкретное действие, которое учащийся может выполнить сразу (репозиторий,
-workflow, конфиг — что угодно осязаемое).
+- Для каждого multi-agent flow — диаграмма handoff'ов
+- Изоляция через branches: каждый агент в своей
+- Conflict resolution стратегия выбирается заранее, не ad-hoc
+
+## Маркеры освоения
+
+- Знаешь, какие шаблоны оркестрации работают на каких задачах
+- Конфликты разрешаются предсказуемо
+
+## Антипаттерны
+
+- First-write-wins без явной политики
+- Скрытые dependencies между агентами
+- Один общий workspace без изоляции
+
+## Где в стеке
+
+**Многоагентная координация (15-20%).** Несколько агентов = новая поверхность отказов. Шаблоны оркестрации, артефакты для аудита, recovery и подстановка/вывод агентов без даунтайма.

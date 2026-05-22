@@ -2,102 +2,132 @@
 schemaVersion: 1
 slug: mcp-servers
 title: "MCP-серверы"
-summary: "Подключение MCP как инструмента: GitHub remote MCP, реестры, allowlists."
-status: draft
+summary: "Как подключить MCP-сервер как инструмент агента и контролировать его поверхность?"
+status: published
 estimatedMinutes: 30
-prerequisites:
-  - agent-tools-selection
+prerequisites: []
 learningOutcomes:
-  - "Добавьте сервер MCP в качестве инструмента для агента"
-  - "Настройка удаленного сервера MCP GitHub"
-  - "Настройка реестров MCP"
-  - "Настройка списков разрешений MCP"
+  - "Знаешь, какие MCP подключены и какие tools они дают"
+  - "Не подключаешь «удобные» сервера без аудита их tools"
+  - "Различаешь trusted MCP (свой/official) от untrusted (community)"
+  - "Выполнять регулярно: Для каждого нового MCP review его tools list ДО подключения"
+  - "Выполнять регулярно: Держи registry MCP-серверов в проекте (как dependencies)"
 practice:
   - kind: mcq
-    prompt: "TODO: один MCQ, проверяющий ключевую идею узла."
+    prompt: "По какому из признаков честно судить, что дисциплина «MCP-серверы» начала работать?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Знаешь, какие MCP подключены и какие tools они дают"
+      - "«Просто подключить, посмотрим что даст»"
+      - "Trust незнакомым MCP servers (= permission grant unknown party)"
+      - "Не вычитывать tools list при первом подключении"
     answerIndex: 0
-    explanation: "TODO: 1-2 предложения объяснения."
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь, какие MCP подключены и какие tools они дают» — именно такой признак."
 flashcards:
-  - front: "TODO front #1"
-    back: "TODO back #1"
-  - front: "TODO front #2"
-    back: "TODO back #2"
-  - front: "TODO front #3"
-    back: "TODO back #3"
-  - front: "TODO front #4"
-    back: "TODO back #4"
-  - front: "TODO front #5"
-    back: "TODO back #5"
-  - front: "TODO front #6"
-    back: "TODO back #6"
+  - front: "Что стоит за различением «MCP server = process с протоколом ↔ просто REST API»?"
+    back: "MCP server = process с протоколом ↔ просто REST API. MCP (Model Context Protocol) — открытый стандарт от Anthropic для типизированного обмена между LLM и внешними системами"
+  - front: "Что стоит за различением «stdio transport (локальный) ↔ HTTP transport (удалённый)»?"
+    back: "stdio transport (локальный) ↔ HTTP transport (удалённый). Сервер описывает свои tools (write actions), resources (read data), prompts (templates); клиент подключается, агент получает доступ"
+  - front: "Что стоит за различением «Resource (read) ↔ tool (write) ↔ prompt (template)»?"
+    back: "Resource (read) ↔ tool (write) ↔ prompt (template). Каждый MCP — отдельный процесс с собственным scope доступа"
+  - front: "Что стоит за различением «Public MCP registry ↔ private MCP (свой)»?"
+    back: "Public MCP registry ↔ private MCP (свой). Три уровня контроля: какие сервера подключены / какие tools от сервера активны / какие конкретные ресурсы."
+  - front: "По какому маркеру понять, что освоено: «Знаешь, какие MCP подключены и какие tools они дают»?"
+    back: "Знаешь, какие MCP подключены и какие tools они дают"
+  - front: "По какому маркеру понять, что освоено: «Не подключаешь «удобные» сервера без аудита их tools»?"
+    back: "Не подключаешь «удобные» сервера без аудита их tools"
 masteryQuiz:
   - kind: mcq
-    prompt: "TODO mastery prompt #1"
+    prompt: "Какой вопрос ставит дисциплина «MCP-серверы» в центр?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Как подключить MCP-сервер как инструмент агента и контролировать его поверхность?"
+      - "«Просто подключить, посмотрим что даст»"
+      - "Trust незнакомым MCP servers (= permission grant unknown party)"
+      - "Не вычитывать tools list при первом подключении"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как подключить MCP-сервер как инструмент агента и контролировать его поверхность?»"
   - kind: mcq
-    prompt: "TODO mastery prompt #2"
+    prompt: "Что из перечисленного — антипаттерн дисциплины «MCP-серверы»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "«Просто подключить, посмотрим что даст»"
+      - "Для каждого нового MCP review его tools list ДО подключения"
+      - "Знаешь, какие MCP подключены и какие tools они дают"
+      - "Не подключаешь «удобные» сервера без аудита их tools"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: ««Просто подключить, посмотрим что даст»»"
   - kind: mcq
-    prompt: "TODO mastery prompt #3"
+    prompt: "Какое из утверждений — ключевое различение в «MCP-серверы»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "MCP server = process с протоколом ↔ просто REST API"
+      - "«Просто подключить, посмотрим что даст»"
+      - "Trust незнакомым MCP servers (= permission grant unknown party)"
+      - "Не вычитывать tools list при первом подключении"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Различение «MCP server = process с протоколом ↔ просто REST API» лежит в основе дисциплины и определяет, как видеть её объекты."
   - kind: mcq
-    prompt: "TODO mastery prompt #4"
+    prompt: "Какое действие в основе регулярной практики «MCP-серверы»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Для каждого нового MCP review его tools list ДО подключения"
+      - "«Просто подключить, посмотрим что даст»"
+      - "Trust незнакомым MCP servers (= permission grant unknown party)"
+      - "Не вычитывать tools list при первом подключении"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Для каждого нового MCP review его tools list ДО подключения»"
   - kind: mcq
-    prompt: "TODO mastery prompt #5"
+    prompt: "По какому маркеру судить, что «MCP-серверы» работает?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Знаешь, какие MCP подключены и какие tools они дают"
+      - "«Просто подключить, посмотрим что даст»"
+      - "Trust незнакомым MCP servers (= permission grant unknown party)"
+      - "Не вычитывать tools list при первом подключении"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь, какие MCP подключены и какие tools они дают». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «MCP-серверы» как опору?"
+    options:
+      - "GitHub Remote MCP — официальный сервер GitHub для агентов"
+      - "«Просто подключить, посмотрим что даст»"
+      - "Trust незнакомым MCP servers (= permission grant unknown party)"
+      - "Не вычитывать tools list при первом подключении"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «GitHub Remote MCP — официальный сервер GitHub для агентов»"
 ---
 
-## TODO: контекст и зачем это важно
+## Зачем
 
-Короткий ментальный крючок — почему эта тема важна для агентов в SDLC и
-что без неё ломается на практике.
+MCP (Model Context Protocol) — открытый стандарт от Anthropic для типизированного обмена между LLM и внешними системами. Сервер описывает свои tools (write actions), resources (read data), prompts (templates); клиент подключается, агент получает доступ. Каждый MCP — отдельный процесс с собственным scope доступа. Три уровня контроля: какие сервера подключены / какие tools от сервера активны / какие конкретные ресурсы.
 
-## TODO: ключевые идеи
+## Ключевые различения
 
-Объясните центральные понятия с привязкой к учебным целям выше. Списки и
-таблицы, где они помогают мысли.
+- MCP server = process с протоколом ↔ просто REST API
+- stdio transport (локальный) ↔ HTTP transport (удалённый)
+- Resource (read) ↔ tool (write) ↔ prompt (template)
+- Public MCP registry ↔ private MCP (свой)
 
-## TODO: типичные ошибки и паттерны
+## Инструменты
 
-1–2 примера того, как обычно ошибаются, и как делать правильно.
+- GitHub Remote MCP — официальный сервер GitHub для агентов
+- settings.json: `mcpServers` блок + per-server allowlists
+- MCP registries для discovery (public + private)
+- Allowlist на уровне сервера + на уровне конкретных tools
 
-## Попробуйте
+## Практика
 
-Конкретное действие, которое учащийся может выполнить сразу (репозиторий,
-workflow, конфиг — что угодно осязаемое).
+- Для каждого нового MCP review его tools list ДО подключения
+- Держи registry MCP-серверов в проекте (как dependencies)
+- Pin версии серверов; обновляй явно, с changelog ревью
+
+## Маркеры освоения
+
+- Знаешь, какие MCP подключены и какие tools они дают
+- Не подключаешь «удобные» сервера без аудита их tools
+- Различаешь trusted MCP (свой/official) от untrusted (community)
+
+## Антипаттерны
+
+- «Просто подключить, посмотрим что даст»
+- Trust незнакомым MCP servers (= permission grant unknown party)
+- Не вычитывать tools list при первом подключении
+
+## Где в стеке
+
+**Инструменты и среда (20-25%).** Минимально необходимый набор инструментов, MCP-серверы, контекст исполнения и обработка ошибок — поверхности, которые определяют безопасность системы.

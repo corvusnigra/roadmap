@@ -2,101 +2,131 @@
 schemaVersion: 1
 slug: multi-agent-observability
 title: "Наблюдаемость многоагентных систем"
-summary: "Артефакты, пригодные для аудита, документирование решений и передач, постфактум анализ поведения."
-status: draft
+summary: "Как обеспечить аудит-pригодные артефакты для multi-agent flow?"
+status: published
 estimatedMinutes: 30
-prerequisites:
-  - multi-agent-orchestration
+prerequisites: []
 learningOutcomes:
-  - "Настройка рабочих процессов с несколькими агентами для создания артефактов, подходящих для проверки и аудита"
-  - "Документируйте ключевые решения, передачи и результаты между агентами"
-  - "Проведите пост-фактум анализ поведения многоагентной системы"
+  - "Можешь восстановить multi-agent flow за прошлую неделю по артефактам"
+  - "Знаешь, какой агент причина конкретного коммита"
+  - "Выполнять регулярно: Каждый handoff → артефакт с {from, to, input, expected_output}"
+  - "Выполнять регулярно: Cross-agent решения документируются в decision log"
+  - "Выполнять регулярно: Post-mortem доступен через артефакты, не нужно реконструировать"
 practice:
   - kind: mcq
-    prompt: "TODO: один MCQ, проверяющий ключевую идею узла."
+    prompt: "По какому из признаков честно судить, что дисциплина «Наблюдаемость многоагентных систем» начала работать?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Можешь восстановить multi-agent flow за прошлую неделю по артефактам"
+      - "Implicit handoffs «он же знает, что делать»"
+      - "Trace только для одного агента"
+      - "Не документировать межагентные решения"
     answerIndex: 0
-    explanation: "TODO: 1-2 предложения объяснения."
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Можешь восстановить multi-agent flow за прошлую неделю по артефактам» — именно такой признак."
 flashcards:
-  - front: "TODO front #1"
-    back: "TODO back #1"
-  - front: "TODO front #2"
-    back: "TODO back #2"
-  - front: "TODO front #3"
-    back: "TODO back #3"
-  - front: "TODO front #4"
-    back: "TODO back #4"
-  - front: "TODO front #5"
-    back: "TODO back #5"
-  - front: "TODO front #6"
-    back: "TODO back #6"
+  - front: "Что стоит за различением «Single-agent trace ↔ multi-agent graph»?"
+    back: "Single-agent trace ↔ multi-agent graph. В одноагентной системе trace = chain действий одного актора"
+  - front: "Что стоит за различением «Handoff артефакт (вход/выход) ↔ implicit handoff»?"
+    back: "Handoff артефакт (вход/выход) ↔ implicit handoff. В multi-agent — это граф: кто кого вызвал, какие данные передали, кто что решил"
+  - front: "Что стоит за различением «Aggregate result ↔ individual contributions»?"
+    back: "Aggregate result ↔ individual contributions. Без артефактов handoff'а постмортем сводится к гаданию"
+  - front: "Что стоит за различением «Real-time monitoring ↔ post-hoc analysis»?"
+    back: "Real-time monitoring ↔ post-hoc analysis. Главные документируемые объекты: handoff (с input/output), межагентное решение, итоговый результат."
+  - front: "По какому маркеру понять, что освоено: «Можешь восстановить multi-agent flow за прошлую неделю по артефактам»?"
+    back: "Можешь восстановить multi-agent flow за прошлую неделю по артефактам"
+  - front: "По какому маркеру понять, что освоено: «Знаешь, какой агент причина конкретного коммита»?"
+    back: "Знаешь, какой агент причина конкретного коммита"
 masteryQuiz:
   - kind: mcq
-    prompt: "TODO mastery prompt #1"
+    prompt: "Какой вопрос ставит дисциплина «Наблюдаемость многоагентных систем» в центр?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Как обеспечить аудит-pригодные артефакты для multi-agent flow?"
+      - "Implicit handoffs «он же знает, что делать»"
+      - "Trace только для одного агента"
+      - "Не документировать межагентные решения"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как обеспечить аудит-pригодные артефакты для multi-agent flow?»"
   - kind: mcq
-    prompt: "TODO mastery prompt #2"
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Наблюдаемость многоагентных систем»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Implicit handoffs «он же знает, что делать»"
+      - "Каждый handoff → артефакт с {from, to, input, expected_output}"
+      - "Можешь восстановить multi-agent flow за прошлую неделю по артефактам"
+      - "Знаешь, какой агент причина конкретного коммита"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Implicit handoffs «он же знает, что делать»»"
   - kind: mcq
-    prompt: "TODO mastery prompt #3"
+    prompt: "Какое из утверждений — ключевое различение в «Наблюдаемость многоагентных систем»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Single-agent trace ↔ multi-agent graph"
+      - "Implicit handoffs «он же знает, что делать»"
+      - "Trace только для одного агента"
+      - "Не документировать межагентные решения"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Различение «Single-agent trace ↔ multi-agent graph» лежит в основе дисциплины и определяет, как видеть её объекты."
   - kind: mcq
-    prompt: "TODO mastery prompt #4"
+    prompt: "Какое действие в основе регулярной практики «Наблюдаемость многоагентных систем»?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Каждый handoff → артефакт с {from, to, input, expected_output}"
+      - "Implicit handoffs «он же знает, что делать»"
+      - "Trace только для одного агента"
+      - "Не документировать межагентные решения"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Каждый handoff → артефакт с {from, to, input, expected_output}»"
   - kind: mcq
-    prompt: "TODO mastery prompt #5"
+    prompt: "По какому маркеру судить, что «Наблюдаемость многоагентных систем» работает?"
     options:
-      - TODO option 1
-      - TODO option 2
-      - TODO option 3
-      - TODO option 4
+      - "Можешь восстановить multi-agent flow за прошлую неделю по артефактам"
+      - "Implicit handoffs «он же знает, что делать»"
+      - "Trace только для одного агента"
+      - "Не документировать межагентные решения"
     answerIndex: 0
-    explanation: "TODO: объяснение."
+    explanation: "Маркер освоения — наблюдаемое поведение: «Можешь восстановить multi-agent flow за прошлую неделю по артефактам». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Наблюдаемость многоагентных систем» как опору?"
+    options:
+      - "Distributed tracing с agent_id в каждом spane"
+      - "Implicit handoffs «он же знает, что делать»"
+      - "Trace только для одного агента"
+      - "Не документировать межагентные решения"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Distributed tracing с agent_id в каждом spane»"
 ---
 
-## TODO: контекст и зачем это важно
+## Зачем
 
-Короткий ментальный крючок — почему эта тема важна для агентов в SDLC и
-что без неё ломается на практике.
+В одноагентной системе trace = chain действий одного актора. В multi-agent — это граф: кто кого вызвал, какие данные передали, кто что решил. Без артефактов handoff'а постмортем сводится к гаданию. Главные документируемые объекты: handoff (с input/output), межагентное решение, итоговый результат.
 
-## TODO: ключевые идеи
+## Ключевые различения
 
-Объясните центральные понятия с привязкой к учебным целям выше. Списки и
-таблицы, где они помогают мысли.
+- Single-agent trace ↔ multi-agent graph
+- Handoff артефакт (вход/выход) ↔ implicit handoff
+- Aggregate result ↔ individual contributions
+- Real-time monitoring ↔ post-hoc analysis
 
-## TODO: типичные ошибки и паттерны
+## Инструменты
 
-1–2 примера того, как обычно ошибаются, и как делать правильно.
+- Distributed tracing с agent_id в каждом spane
+- Handoff log в issue/PR comments
+- Decision records для cross-agent выборов
+- Multi-agent dashboards (LangSmith, Weights&Biases)
 
-## Попробуйте
+## Практика
 
-Конкретное действие, которое учащийся может выполнить сразу (репозиторий,
-workflow, конфиг — что угодно осязаемое).
+- Каждый handoff → артефакт с {from, to, input, expected_output}
+- Cross-agent решения документируются в decision log
+- Post-mortem доступен через артефакты, не нужно реконструировать
+
+## Маркеры освоения
+
+- Можешь восстановить multi-agent flow за прошлую неделю по артефактам
+- Знаешь, какой агент причина конкретного коммита
+
+## Антипаттерны
+
+- Implicit handoffs «он же знает, что делать»
+- Trace только для одного агента
+- Не документировать межагентные решения
+
+## Где в стеке
+
+**Многоагентная координация (15-20%).** Несколько агентов = новая поверхность отказов. Шаблоны оркестрации, артефакты для аудита, recovery и подстановка/вывод агентов без даунтайма.
