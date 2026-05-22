@@ -177,7 +177,17 @@ export function NodeView({
             <p className="rounded-md border bg-card p-4 text-sm text-muted-foreground">
               В этом узле пока нет заданий.
             </p>
-          ) : null}
+          ) : (
+            // Один одинокий MCQ без code-упражнений (типично для
+            // рефлексивных узлов вроде Levenchuk-стека) — это не «тест»,
+            // а быстрая разминка перед итоговым тестом. Без kicker'а
+            // студент думает, что это и есть проверка.
+            <p className="text-xs font-mono uppercase tracking-[0.18em] text-prose-accent">
+              {mcqItems.length === 1 && codeExercises.length === 0
+                ? "Разминка перед итоговым тестом"
+                : "Тренировочные задания — открывают итоговый тест"}
+            </p>
+          )}
 
           {mcqItems.map((item, i) => (
             <PracticeMcq

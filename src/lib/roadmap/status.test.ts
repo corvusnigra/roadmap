@@ -88,4 +88,40 @@ describe("computeRoadmapView", () => {
     );
     expect(view.edges).toEqual([{ id: "A->B", source: "A", target: "B" }]);
   });
+
+  it("exploreMode: treats every node as available, ignoring prereqs", () => {
+    // Without exploreMode, B and C are locked (need A and B respectively).
+    const view = computeRoadmapView(
+      baseNodes,
+      [
+        { nodeId: "B", prerequisiteNodeId: "A" },
+        { nodeId: "C", prerequisiteNodeId: "B" },
+      ],
+      [],
+      { exploreMode: true },
+    );
+    for (const n of view.nodes) {
+      expect(n.unmetPrerequisiteTitles).toEqual([]);
+      expect(isNodeUnlocked(n)).toBe(true);
+    }
+  });
+
+  it("exploreMode: still respects stored mastered/in_progress status", () => {
+    const view = computeRoadmapView(
+      baseNodes,
+      [{ nodeId: "B", prerequisiteNodeId: "A" }],
+      [
+        { nodeId: "A", status: "mastered" },
+        { nodeId: "C", status: "in_progress" },
+      ],
+      { exploreMode: true },
+    );
+    expect(view.nodes.find((n) => n.id === "A")?.status).toBe("mastered");
+    expect(view.nodes.find((n) => n.id === "C")?.status).toBe("in_progress");
+    // B has unmet prereq A=mastered (so met anyway), but in exploreMode
+    // we'd still expect it available with no badge.
+    const b = view.nodes.find((n) => n.id === "B");
+    expect(b?.unmetPrerequisiteTitles).toEqual([]);
+    expect(isNodeUnlocked(b!)).toBe(true);
+  });
 });

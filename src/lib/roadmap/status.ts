@@ -43,10 +43,22 @@ export interface RoadmapView {
   totals: { mastered: number; inProgress: number; locked: number; total: number };
 }
 
+export interface ComputeRoadmapOptions {
+  /**
+   * When true, prerequisite gating is suspended: every node is treated as
+   * available, `unmetPrerequisiteTitles` is always empty, and progress
+   * (`mastered` / `in_progress`) still wins for display badges. Intended
+   * for curators/owners who want to browse the full graph without
+   * grinding the mastery flow.
+   */
+  exploreMode?: boolean;
+}
+
 export function computeRoadmapView(
   nodes: RoadmapNodeInput[],
   edges: RoadmapEdgeInput[],
   progress: RoadmapProgressInput[],
+  options: ComputeRoadmapOptions = {},
 ): RoadmapView {
   const progressByNode = new Map<string, StoredProgressStatus>();
   for (const p of progress) {
@@ -86,9 +98,9 @@ export function computeRoadmapView(
     // a user who completes a prereq sees the downstream node unlock without
     // any background job to flip the row.
     const prereqIds = prereqsByNode.get(node.id) ?? [];
-    const unmetIds = prereqIds.filter(
-      (pid) => progressByNode.get(pid) !== "mastered",
-    );
+    const unmetIds = options.exploreMode
+      ? []
+      : prereqIds.filter((pid) => progressByNode.get(pid) !== "mastered");
     if (unmetIds.length === 0) {
       return {
         ...node,

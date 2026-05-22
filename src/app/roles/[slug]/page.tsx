@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import {
   nodePrerequisites,
   nodes as nodesTable,
+  profiles,
   roles as rolesTable,
   userNodeProgress,
 } from "@/db/schema";
@@ -60,7 +61,7 @@ export default async function RoleRoadmapPage({ params }: PageProps) {
 
   const nodeIds = nodeRows.map((n) => n.id);
 
-  const [edgeRows, progressRows] = await Promise.all([
+  const [edgeRows, progressRows, profileRow] = await Promise.all([
     nodeIds.length === 0
       ? Promise.resolve([])
       : db
@@ -76,7 +77,14 @@ export default async function RoleRoadmapPage({ params }: PageProps) {
       })
       .from(userNodeProgress)
       .where(eq(userNodeProgress.userId, user.id)),
+    db
+      .select({ exploreMode: profiles.exploreMode })
+      .from(profiles)
+      .where(eq(profiles.id, user.id))
+      .limit(1)
+      .then((r) => r[0]),
   ]);
+  const exploreMode = profileRow?.exploreMode ?? false;
 
   // Drop edges that aren't part of this role's node set (defensive against
   // future cross-role references in node_prerequisites).
@@ -89,7 +97,15 @@ export default async function RoleRoadmapPage({ params }: PageProps) {
     nodeRows satisfies RoadmapNodeInput[],
     ownEdges satisfies RoadmapEdgeInput[],
     progressRows satisfies RoadmapProgressInput[],
+    { exploreMode },
   );
 
-  return <RoadmapCanvas roleSlug={slug} roleTitle={role.title} view={view} />;
+  return (
+    <RoadmapCanvas
+      roleSlug={slug}
+      roleTitle={role.title}
+      view={view}
+      exploreMode={exploreMode}
+    />
+  );
 }

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { markTheoryRead } from "@/app/roles/[slug]/nodes/[nodeSlug]/actions";
 import { Button } from "@/components/ui/button";
+import { SelectionTutor } from "@/components/learn/selection-tutor";
 import type { TocItem } from "@/components/learn/node-view";
 
 interface TheoryProps {
@@ -57,7 +58,11 @@ export function Theory({
           </aside>
         ) : null}
 
-        {children}
+        {/* Inline-tutor: оборачиваем только тело статьи. Выделенный
+            текст внутри вызывает плавающую кнопку «Спросить наставника»
+            (через CustomEvent → TutorPanel в шапке узла). Outcomes-карточку
+            и mark-read кнопку не оборачиваем — там нечего выделять. */}
+        <SelectionTutor>{children}</SelectionTutor>
 
         <div className="not-prose mt-12 flex items-center justify-end border-t border-rule pt-6">
           <Button

@@ -54,3 +54,39 @@ export async function setActiveRole(formData: FormData): Promise<void> {
 
   revalidatePath("/dashboard");
 }
+
+const setExploreModeInput = z.object({
+  enabled: z.enum(["on", "off"]),
+});
+
+/**
+ * Toggle "explore mode" — when enabled, the roadmap canvas treats every
+ * node as available regardless of prereqs. Intended for curators/owners
+ * who want to browse content without grinding through the mastery flow.
+ * Revalidates `/dashboard` and the active role's canvas so the lock state
+ * refreshes on next render.
+ */
+export async function setExploreMode(formData: FormData): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    throw new Error("Не аутентифицирован.");
+  }
+
+  const parsed = setExploreModeInput.safeParse({
+    enabled: formData.get("enabled"),
+  });
+  if (!parsed.success) {
+    throw new Error("Некорректный параметр.");
+  }
+
+  await db
+    .update(profiles)
+    .set({ exploreMode: parsed.data.enabled === "on" })
+    .where(eq(profiles.id, user.id));
+
+  revalidatePath("/dashboard");
+  revalidatePath("/roles/[slug]", "page");
+}

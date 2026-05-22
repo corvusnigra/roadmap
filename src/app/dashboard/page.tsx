@@ -5,6 +5,7 @@ import { ArrowRight, Flame } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { ExploreModeSwitch } from "@/components/dashboard/explore-mode-switch";
 import { ProgressRing } from "@/components/dashboard/progress-ring";
 import { RoleSwitcher } from "@/components/dashboard/role-switcher";
 import { Sparkline } from "@/components/dashboard/sparkline";
@@ -34,12 +35,14 @@ export default async function DashboardPage() {
       timezone: profiles.timezone,
       displayName: profiles.displayName,
       activeRoleSlug: profiles.activeRoleSlug,
+      exploreMode: profiles.exploreMode,
     })
     .from(profiles)
     .where(eq(profiles.id, user.id))
     .limit(1)
     .then((r) => r[0]);
   const timezone = profile?.timezone ?? "UTC";
+  const exploreMode = profile?.exploreMode ?? false;
 
   // All published roles for the role-switcher.
   const availableRoles = await db
@@ -89,11 +92,14 @@ export default async function DashboardPage() {
             {profile?.displayName ? `, ${profile.displayName}` : ""}
           </h1>
         </div>
-        <form action={signOut}>
-          <Button variant="ghost" size="sm" type="submit">
-            Выйти
-          </Button>
-        </form>
+        <div className="flex items-center gap-3">
+          <ExploreModeSwitch enabled={exploreMode} />
+          <form action={signOut}>
+            <Button variant="ghost" size="sm" type="submit">
+              Выйти
+            </Button>
+          </form>
+        </div>
       </header>
 
       {/* Today's session card */}

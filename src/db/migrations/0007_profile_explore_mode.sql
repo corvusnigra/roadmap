@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "explore_mode" boolean DEFAULT false NOT NULL;

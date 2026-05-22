@@ -28,11 +28,18 @@ interface RoadmapCanvasProps {
   roleSlug: string;
   roleTitle: string;
   view: RoadmapView;
+  /** Когда true — узлы без prereq-замков (см. profiles.explore_mode). */
+  exploreMode?: boolean;
 }
 
 const nodeTypes = { roadmap: RoadmapNode };
 
-export function RoadmapCanvas({ roleSlug, roleTitle, view }: RoadmapCanvasProps) {
+export function RoadmapCanvas({
+  roleSlug,
+  roleTitle,
+  view,
+  exploreMode = false,
+}: RoadmapCanvasProps) {
   const router = useRouter();
 
   const flowNodes = useMemo<Node<RoadmapNodeData>[]>(
@@ -95,15 +102,26 @@ export function RoadmapCanvas({ roleSlug, roleTitle, view }: RoadmapCanvasProps)
     >
       <header className="border-b border-border bg-background/80 px-6 py-3 backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">
-              Дорожная карта · {roleTitle}
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              <span data-testid="progress-text">
-                {mastered} из {total} освоено
+          <div className="flex items-center gap-3">
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight">
+                Дорожная карта · {roleTitle}
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                <span data-testid="progress-text">
+                  {mastered} из {total} освоено
+                </span>
+              </p>
+            </div>
+            {exploreMode ? (
+              <span
+                className="rounded-full border border-prose-accent/40 bg-prose-accent-soft px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-prose-accent"
+                title="Все узлы доступны независимо от пройденных prereq'ов. Отключить можно в dashboard."
+                data-testid="explore-mode-badge"
+              >
+                Исследовательский режим
               </span>
-            </p>
+            ) : null}
           </div>
           <div className="w-48 max-w-full">
             <Progress value={mastered} max={Math.max(total, 1)} />

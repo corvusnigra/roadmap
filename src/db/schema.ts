@@ -76,6 +76,11 @@ export const profiles = pgTable("profiles", {
   activeRoleSlug: text("active_role_slug")
     .default("frontend-developer")
     .notNull(),
+  // When true, the roadmap canvas treats all nodes as available regardless
+  // of prereq state — useful for owners/curators who want to browse the
+  // full graph without grinding through the mastery flow. Toggled via the
+  // `setExploreMode` server action from the dashboard.
+  exploreMode: boolean("explore_mode").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

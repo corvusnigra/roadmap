@@ -20,6 +20,21 @@ export interface TutorPanelProps {
   initialHistory: TutorTurn[];
 }
 
+/**
+ * Имя CustomEvent, через которое любой клиентский компонент может попросить
+ * наставника о чём-то с предзаполненным черновиком. Используется
+ * SelectionTutor для inline-выделений в теории.
+ *
+ *   window.dispatchEvent(
+ *     new CustomEvent("roleroadmap:ask-tutor", { detail: { prompt: "..." } })
+ *   );
+ */
+export const ASK_TUTOR_EVENT = "roleroadmap:ask-tutor";
+
+export interface AskTutorEventDetail {
+  prompt: string;
+}
+
 export function TutorPanel({
   roleSlug,
   nodeSlug,
@@ -31,6 +46,7 @@ export function TutorPanel({
   const [draft, setDraft] = useState("");
   const [pending, startTransition] = useTransition();
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Keep the latest message in view when new turns arrive.
   useEffect(() => {
@@ -38,6 +54,24 @@ export function TutorPanel({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [history, open]);
+
+  // Inline-bridge: внешний компонент (SelectionTutor) выделяет текст и
+  // диспатчит ASK_TUTOR_EVENT. Открываем панель с уже заполненным
+  // черновиком в виде «Что значит "<выделение>"?», чтобы пользователь мог
+  // одним Enter'ом отправить.
+  useEffect(() => {
+    function handler(e: Event) {
+      const ce = e as CustomEvent<AskTutorEventDetail>;
+      const prompt = ce.detail?.prompt?.trim();
+      if (!prompt) return;
+      setOpen(true);
+      setDraft(`Что значит «${prompt}»?`);
+      // Подождём пока панель смонтируется, потом сфокусируем поле.
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    }
+    window.addEventListener(ASK_TUTOR_EVENT, handler);
+    return () => window.removeEventListener(ASK_TUTOR_EVENT, handler);
+  }, []);
 
   const submit = (text: string) => {
     if (!text.trim() || pending) return;
@@ -151,6 +185,7 @@ export function TutorPanel({
             >
               <div className="flex items-end gap-2">
                 <textarea
+                  ref={textareaRef}
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => {

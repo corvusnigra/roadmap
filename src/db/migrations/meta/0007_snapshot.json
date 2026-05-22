@@ -1,6 +1,6 @@
 {
-  "id": "629ae1c0-9448-4be1-bff4-8c6049162b8a",
-  "prevId": "c65502b3-052e-40d6-ae14-905c2d219e40",
+  "id": "3ad1b80e-d69b-47c9-972f-0739da8708d7",
+  "prevId": "629ae1c0-9448-4be1-bff4-8c6049162b8a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -195,6 +195,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'frontend-developer'"
+        },
+        "explore_mode": {
+          "name": "explore_mode",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "created_at": {
           "name": "created_at",
