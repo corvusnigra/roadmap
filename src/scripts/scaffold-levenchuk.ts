@@ -21,6 +21,7 @@ import {
   LEVELS_META,
   type LDiscipline,
 } from "@/scripts/levenchuk-curriculum";
+import { LEVENCHUK_MASTERY } from "@/scripts/levenchuk-mastery";
 
 const ROLE_SLUG = "levenchuk-stack";
 const ROLE_DIR = path.join(
@@ -156,6 +157,18 @@ function buildPracticeMcq(d: LDiscipline): McqStub {
 }
 
 function buildMasteryQuizStubs(d: LDiscipline): McqStub[] {
+  // Ручные MCQ из levenchuk-mastery.ts — если есть, используем их вместо
+  // авто-генерации. Это даёт качество ШСМ-уровня для каждой дисциплины.
+  const override = LEVENCHUK_MASTERY[d.slug];
+  if (override && override.length >= 5) {
+    return override.slice(0, 6).map((m) => ({
+      prompt: m.prompt,
+      options: [...m.options],
+      answerIndex: m.answerIndex,
+      explanation: m.explanation,
+    }));
+  }
+
   const out: McqStub[] = [];
 
   // (1) Дефиниция — что описывает дисциплину.
