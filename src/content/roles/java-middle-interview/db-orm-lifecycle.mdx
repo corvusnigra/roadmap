@@ -128,6 +128,414 @@ masteryQuiz:
 - open-in-view = true — антипаттерн «sneaky queries»
 - Заполнение Detached entity без merge и удивление
 
+## Развёрнутое объяснение
+
+JPA / Hibernate entity lifecycle — главное архитектурное понятие в ORM.
+Понимание четырёх состояний и переходов между ними отличает middle от
+junior.
+
+**Четыре состояния:**
+
+```
+TRANSIENT (new Object)
+   │
+   │ persist()
+   ▼
+PERSISTENT (managed by EntityManager) ◄────┐
+   │  ▲                                    │
+   │  │ find / load / query                │ merge()
+   │  │                                    │
+   ▼  │ detach() / clear() / close()       │
+DETACHED                                   │
+   │                                       │
+   │ remove() (только из PERSISTENT)       │
+   ▼                                       │
+REMOVED ───── flush ────► (удалён из БД) ──┘
+```
+
+```java
+// TRANSIENT — только в Java памяти
+User u = new User("Alice");          // не в EM, не в БД
+
+// PERSISTENT — в EM (и после flush — в БД)
+entityManager.persist(u);             // теперь PERSISTENT, есть id, dirty checking активен
+u.setName("Bob");                     // изменение АВТОМАТИЧЕСКИ запомнится → UPDATE на flush
+
+// DETACHED — был в EM, теперь нет
+entityManager.detach(u);              // или entityManager.close(), или Spring TX-end
+u.setName("Carol");                   // изменение ИГНОРИТСЯ — нужен merge для save
+
+// MERGE — отдельный объект становится PERSISTENT через copy
+User managed = entityManager.merge(u);   // managed — НОВЫЙ persistent объект
+// u остаётся detached!
+
+// REMOVE — помечен на удаление
+entityManager.remove(managed);        // DELETE на flush
+```
+
+**persist vs merge — главное различие:**
+
+| | persist | merge |
+|---|---|---|
+| Принимает | TRANSIENT | DETACHED или PERSISTENT |
+| Действие | INSERT при flush | UPDATE или INSERT |
+| Возвращает | void (тот же объект managed) | новый managed экземпляр (старый не managed) |
+| ID required | нет (генерится) | может быть, может не быть |
+
+```java
+// persist:
+User u = new User();
+em.persist(u);
+// u — теперь PERSISTENT, u.id != null после flush
+
+// merge:
+User detached = new User(); detached.setId(42L);
+detached.setName("X");
+User managed = em.merge(detached);
+// detached остаётся DETACHED!
+// managed.setName("Y") — отслеживается
+// detached.setName("Z") — игнорится
+```
+
+Частая ловушка: `entityManager.merge(detachedUser)` без `=` справа. Изменения
+не сохранятся, потому что мы не работаем с возвращённым managed объектом.
+
+**Spring Data `save` — это `merge` или `persist`?**
+
+`SimpleJpaRepository.save(entity)`:
+
+```java
+@Transactional
+public <S extends T> S save(S entity) {
+    if (entityInformation.isNew(entity)) {
+        em.persist(entity);
+        return entity;
+    } else {
+        return em.merge(entity);
+    }
+}
+```
+
+Использует `isNew()` — для большинства entity это «id == null». Так что:
+- Новый объект (id==null) → persist.
+- С существующим id → merge.
+
+Спрашивают на собесе: «что вернёт `save()`?» — managed entity. Если был
+DETACHED, вы получаете НОВЫЙ объект, исходный остаётся DETACHED.
+
+**Lazy и Eager:**
+
+```java
+@Entity
+public class Order {
+    @Id Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)        // default = EAGER (!) — изменяем на LAZY
+    User user;
+
+    @OneToMany(mappedBy = "order")            // default = LAZY (ОК)
+    List<OrderItem> items;
+}
+```
+
+**JPA default** для ассоциаций:
+- `@ManyToOne` → **EAGER** ✗ почти всегда плохо
+- `@OneToOne` → **EAGER** ✗
+- `@OneToMany` → **LAZY** ✓
+- `@ManyToMany` → **LAZY** ✓
+
+Правило middle: **всегда явно ставить `fetch = FetchType.LAZY`** на @ManyToOne
+и @OneToOne. EAGER ведёт к каскадным JOIN'ам или (для нескольких связанных
+entities) к N+1 на ровном месте.
+
+**LazyInitializationException — самая частая ошибка:**
+
+```java
+@Service
+public class OrderService {
+    @Transactional(readOnly = true)
+    public Order get(Long id) {
+        return repo.findById(id).orElseThrow();
+    }
+}
+
+@RestController
+public class OrderController {
+    @GetMapping("/orders/{id}")
+    public OrderDto get(@PathVariable Long id) {
+        Order o = service.get(id);
+        return new OrderDto(o.getId(),
+                            o.getItems().stream()...);  // LazyInitializationException
+    }
+}
+```
+
+`o.getItems()` — lazy. Загружается через прокси с обращением к EM. После
+выхода из `service.get(...)` транзакция закрылась, EM закрыт. Любой доступ
+к lazy полю → `LazyInitializationException`.
+
+**`spring.jpa.open-in-view` — антипаттерн default.**
+
+В Spring Boot по дефолту `spring.jpa.open-in-view = true`. Это означает, что
+EntityManager «открыт» на всё время HTTP request — в контроллере lazy
+работает. Но это **антипаттерн**:
+- Lazy queries в контроллере (sneaky queries после возврата service) трудно
+  обнаружить.
+- Транзакция (или autocommit per query) держит коннект всё время response.
+- Production-grade: `open-in-view = false`, явный fetch в service.
+
+**Решения LazyInitializationException:**
+1. **`@EntityGraph` / JOIN FETCH** в repository — load eagerly то, что нужно.
+2. **DTO в service** — конвертировать entity → DTO внутри транзакции, contoller
+   работает с DTO.
+3. `Hibernate.initialize(entity.getItems())` — явно подгрузить в TX.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, Сбер, VK).** «Какие состояния JPA entity?»
+
+Четыре: Transient, Persistent (Managed), Detached, Removed. Переходы:
+- new → persist → Persistent.
+- Persistent → close/detach/clear → Detached.
+- Detached → merge → возвращает новый Persistent.
+- Persistent → remove → Removed → flush → удалена.
+
+Главное: dirty checking работает ТОЛЬКО для Persistent.
+
+**Вопрос 2 (Лига, T-Bank).** «Чем persist отличается от merge?»
+
+`persist(transient)` — делает объект managed на месте. Возврат void.
+
+`merge(detached)` — копирует данные из detached в managed экземпляр (либо
+загружает по id, либо создаёт новый). Возвращает managed. Старый detached не
+становится managed.
+
+**Вопрос 3 (Альфа, Озон).** «Что не так?»
+
+```java
+@Transactional
+public void update(UserDto dto) {
+    User u = new User();
+    u.setId(dto.id());
+    u.setName(dto.name());
+    em.merge(u);
+}
+```
+
+Если у dto есть id, но в БД нет — merge сделает INSERT с тем id, что может
+противоречить sequence. Если в БД есть — merge заменит **все** поля u
+(включая null'ы → перетрёт существующие). Лекарство: явный `findById`, потом
+`u.setName(dto.name())`, dirty checking сохранит.
+
+```java
+@Transactional
+public void update(UserDto dto) {
+    User u = repo.findById(dto.id()).orElseThrow();
+    u.setName(dto.name());   // dirty checking → UPDATE name only
+    // даже без save!
+}
+```
+
+**Вопрос 4 (T-Bank).** «Что такое LazyInitializationException? Как избежать?»
+
+Возникает при обращении к lazy полю **после** закрытия сессии. Решения:
+1. `@EntityGraph` / JOIN FETCH — eager load в нужном месте.
+2. DTO внутри service внутри транзакции.
+3. `open-in-view = true` — антипаттерн, не делать.
+
+**Вопрос 5 (Сбер).** «Почему `@ManyToOne` default EAGER — плохо?»
+
+EAGER принуждает загружать связанный entity каждый раз. На несколько
+ассоциаций → каскадные JOIN'ы или N+1. Lazy — стандартный default, override
+только когда явно нужно (например, `@ManyToOne(fetch = EAGER)` для
+обязательного User в Order — но даже там лучше JOIN FETCH).
+
+## Один день из практики
+
+Тебя позвали разобраться: «при обновлении user через PUT /users/{id} мы
+теряем некоторые поля». Открываем код:
+
+```java
+@PutMapping("/users/{id}")
+@Transactional
+public UserDto update(@PathVariable Long id, @Valid @RequestBody UserUpdateDto dto) {
+    User u = new User();
+    u.setId(id);
+    u.setName(dto.name());
+    u.setEmail(dto.email());
+    User saved = userRepo.save(u);
+    return UserDto.from(saved);
+}
+```
+
+Проблема: создаём transient User, ставим только name/email. В БД у user'а
+есть ещё password, createdAt, role, isActive. `save(u)` идёт в merge, который
+ПЕРЕЗАПИШЕТ существующего пользователя — все остальные поля заменятся на null.
+
+Решение — load + update внутри транзакции:
+
+```java
+@PutMapping("/users/{id}")
+@Transactional
+public UserDto update(@PathVariable Long id, @Valid @RequestBody UserUpdateDto dto) {
+    User u = userRepo.findById(id).orElseThrow(() -> new NotFoundException("..."));
+    u.setName(dto.name());           // dirty checking
+    u.setEmail(dto.email());
+    // не нужен save — flush на коммите автоматически
+    return UserDto.from(u);
+}
+```
+
+Под транзакцией u — managed, dirty checking увидит изменения, сделает
+`UPDATE users SET name = ?, email = ? WHERE id = ?` (только изменённые
+поля при `hibernate.dynamic-update=true`).
+
+Регресс-тест:
+
+```java
+@Test
+@Sql("/test-data.sql")    // user(id=1, name='Alice', password='secret')
+void update_preserves_unchanged_fields() {
+    UserUpdateDto dto = new UserUpdateDto("Bob", "bob@b.c");
+    controller.update(1L, dto);
+
+    User updated = repo.findById(1L).orElseThrow();
+    assertEquals("Bob", updated.getName());
+    assertEquals("bob@b.c", updated.getEmail());
+    assertEquals("secret", updated.getPassword());   // не перезаписалось
+}
+```
+
+После релиза баг ушёл. Урок: для UPDATE — всегда load + mutate, не reconstruct
+с нуля.
+
+## Типичные провалы
+
+Кейс 1. Где баг (lazy access)?
+
+```java
+@Transactional(readOnly = true)
+public Order get(Long id) {
+    return repo.findById(id).orElseThrow();
+}
+
+// в контроллере:
+Order o = service.get(id);
+o.getItems().size();   // LazyInitializationException (если open-in-view=false)
+```
+
+Lazy collection access за пределами TX. Лекарство: DTO внутри service, или
+`@EntityGraph` в repository.
+
+Кейс 2. Где баг (merge)?
+
+```java
+@Transactional
+public void update(User detached) {
+    em.merge(detached);          // ✗ не используем результат
+    detached.setName("New");     // ✗ detached не managed!
+}
+```
+
+`merge` возвращает managed, исходный остаётся detached. `setName` на detached
+не сохранится. Лекарство: `User managed = em.merge(detached); managed.setName(...);`.
+
+Кейс 3. Где баг?
+
+```java
+@Transactional
+public void cleanup() {
+    List<User> all = repo.findAll();
+    for (User u : all) {
+        em.remove(u);   // 1M строк, каждый remove — отдельный SQL
+    }
+}
+```
+
+Каждый remove — отдельный DELETE. На 1M — медленно. Лекарство:
+
+```java
+@Modifying
+@Query("DELETE FROM User u WHERE u.expiredAt < CURRENT_DATE")
+int deleteExpired();
+```
+
+Bulk DELETE одним SQL.
+
+Кейс 4. Где баг (EAGER на коллекциях)?
+
+```java
+@Entity
+public class Order {
+    @OneToMany(fetch = FetchType.EAGER)   // ✗
+    List<OrderItem> items;
+}
+
+repo.findAll();   // на каждый order — items сразу
+```
+
+EAGER на коллекции = caratesian explosion + N+1 на ровном месте. Никогда.
+
+Кейс 5. Где баг (open-in-view)?
+
+```java
+@RestController
+public class Controller {
+    @GetMapping("/users/{id}")
+    public UserDto get(@PathVariable Long id) {
+        User u = service.get(id);
+        // open-in-view = true → lazy queries в контроллере!
+        return new UserDto(u.getId(), u.getOrders().size(), u.getProfile().getPhoto());
+    }
+}
+```
+
+Каждый lazy access делает SQL в контроллере, EM держит коннект. На нагрузке —
+исчерпание пула. Лекарство: `spring.jpa.open-in-view=false`, DTO в service.
+
+Кейс 6. Где баг (бесконтрольная cascade)?
+
+```java
+@Entity
+public class User {
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    List<Order> orders;
+}
+
+user.getOrders().clear();   // ВСЕ ORDERS УДАЛЯТСЯ из БД!
+```
+
+`CascadeType.ALL + orphanRemoval = true` означает: orphan-orders удаляются на
+flush. `clear()` создаёт 100 orphans — 100 DELETE'ов. Часто не intended.
+
+Кейс 7. Где баг (id-based hashCode/equals)?
+
+```java
+@Entity
+public class User {
+    @Id @GeneratedValue Long id;
+    @Override public int hashCode() { return Objects.hash(id); }
+    @Override public boolean equals(Object o) { return o instanceof User u && Objects.equals(id, u.id); }
+}
+
+User u = new User();
+Set<User> set = new HashSet<>();
+set.add(u);
+em.persist(u);                  // id присвоился
+set.contains(u);                // false (hashCode изменился!)
+```
+
+См. java-equals-hashcode. Лекарство: business key или UUID до persist.
+
+## Что почитать
+
+- [Jakarta Persistence 3.0 Specification](https://jakarta.ee/specifications/persistence/3.0/jakarta-persistence-spec-3.0.html) — официальная спека JPA.
+- *High-Performance Java Persistence*, Vlad Mihalcea — best in class.
+- Vlad Mihalcea blog — десятки статей по lifecycle, lazy, merge.
+- [Hibernate User Guide](https://docs.jboss.org/hibernate/orm/6.4/userguide/html_single/Hibernate_User_Guide.html) — все детали.
+- *Java Persistence with Hibernate*, Christian Bauer — учебник.
+- [Spring Data JPA Reference](https://docs.spring.io/spring-data/jpa/docs/current/reference/html/) — про save/repository semantics.
+
 ## Где в стеке
 
 **Уровень 5: Database, JPA, Hibernate.** После Spring — самый частый блок. N+1 спросят в 8/8 компаний. Уровни изоляции, planner B-tree, lazy/eager — must-know.

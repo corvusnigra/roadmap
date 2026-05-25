@@ -128,6 +128,556 @@ JUnit 5 (Jupiter) — модульная архитектура: API, Engine, Vi
 - Множество verify в одном тесте — тест проверяет реализацию, а не контракт
 - InjectMocks без @ExtendWith — null pointer на старте
 
+## Развёрнутое объяснение
+
+JUnit 5 + Mockito + AssertJ — стандартный набор для Java-тестов в 2025. На
+middle ждут уверенного владения: написать unit-тест на сервис за 5-10 минут.
+
+**JUnit 5 (Jupiter) architecture:**
+
+```
+JUnit 5 = JUnit Platform + JUnit Jupiter + JUnit Vintage
+   ├── Platform   — base, launchers, IDE integration
+   ├── Jupiter    — новое API (@Test, @BeforeEach, @ExtendWith)
+   └── Vintage    — backward compat для JUnit 4 тестов
+```
+
+**Базовые аннотации:**
+
+```java
+@ExtendWith(MockitoExtension.class)
+class UserServiceTest {
+
+    @Mock UserRepository repo;             // полностью искусственный mock
+    @Mock EmailSender emailer;
+    @InjectMocks UserService service;      // создаст service, injecting @Mock-и
+
+    @BeforeAll                              // один раз для класса
+    static void setupClass() { ... }
+
+    @BeforeEach                             // перед каждым тестом
+    void setup() { ... }
+
+    @Test
+    @DisplayName("creates user with default role")
+    void createUser_setsDefaultRole() {
+        // arrange
+        when(repo.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // act
+        User created = service.create("Alice", "a@b.c");
+
+        // assert
+        assertThat(created.getRole()).isEqualTo(Role.USER);
+        verify(emailer).send(eq("a@b.c"), contains("welcome"));
+    }
+
+    @AfterEach
+    void cleanup() { ... }
+
+    @ParameterizedTest                      // запускается N раз с разными аргументами
+    @ValueSource(strings = {"", " ", "  "})
+    void rejects_blank_names(String name) {
+        assertThrows(IllegalArgumentException.class, () -> service.create(name, "a@b.c"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "ADMIN, 100",
+        "USER,    50",
+        "GUEST,   10"
+    })
+    void quota_depends_on_role(Role role, int expected) {
+        assertEquals(expected, service.getQuota(role));
+    }
+
+    @Nested
+    @DisplayName("edge cases")
+    class EdgeCases {
+        @Test void empty_name() { ... }
+    }
+}
+```
+
+**Mockito — три типа double:**
+
+```java
+// 1. Mock — полностью искусственный объект
+@Mock UserRepository repo;
+when(repo.findById(1L)).thenReturn(Optional.of(new User()));
+// все methods, не stub'нутые — возвращают null/0/false/empty
+
+// 2. Spy — обёртка над реальным объектом
+@Spy UserRepository repo = new UserRepositoryImpl();
+doReturn(null).when(repo).findById(99L);   // override один метод
+// все остальные методы вызывают реальный код
+
+// 3. InjectMocks — создаёт инстанс и инжектит mock'и
+@InjectMocks UserService service;
+// Mockito ищет конструктор с подходящими типами и заполняет
+```
+
+**`when` vs `doReturn` — важная разница:**
+
+```java
+// when().thenReturn() — для mock'ов:
+when(mock.foo()).thenReturn("x");   // OK, mock.foo() возвращает заглушку
+
+// when() для spy — ОШИБКА:
+when(spy.foo()).thenReturn("x");
+//   ↑ spy.foo() реально вызывается до stub! Может NullPointerException, side effects.
+
+// Решение для spy — doReturn:
+doReturn("x").when(spy).foo();
+// doReturn НЕ вызывает реальный метод.
+
+// Также doReturn нужен для:
+// 1. void методов — нет return → нет when
+doThrow(new RuntimeException()).when(mock).voidMethod();
+doNothing().when(mock).voidMethod();
+
+// 2. Checked exception в setup:
+doAnswer(inv -> { throw new IOException(); }).when(mock).readFile();
+```
+
+**ArgumentCaptor — поймать аргумент:**
+
+```java
+@Test
+void create_passes_correct_email() {
+    service.create("Alice", "a@b.c");
+
+    ArgumentCaptor<String> emailCaptor = ArgumentCaptor.forClass(String.class);
+    ArgumentCaptor<String> bodyCaptor  = ArgumentCaptor.forClass(String.class);
+    verify(emailer).send(emailCaptor.capture(), bodyCaptor.capture());
+
+    assertEquals("a@b.c", emailCaptor.getValue());
+    assertThat(bodyCaptor.getValue()).contains("Welcome, Alice");
+}
+```
+
+`@Captor` аннотация:
+
+```java
+@Captor ArgumentCaptor<User> userCaptor;
+
+verify(repo).save(userCaptor.capture());
+User saved = userCaptor.getValue();
+```
+
+**Verify modes:**
+
+```java
+verify(mock).method();                      // ровно 1 раз
+verify(mock, times(3)).method();            // ровно 3
+verify(mock, atLeast(2)).method();          // >= 2
+verify(mock, atMost(5)).method();           // <= 5
+verify(mock, never()).method();             // 0 раз
+verifyNoInteractions(mock);                 // mock вообще не дёрнули
+verifyNoMoreInteractions(mock);             // после всех verify — больше ничего
+
+// InOrder:
+InOrder inOrder = inOrder(mock1, mock2);
+inOrder.verify(mock1).a();
+inOrder.verify(mock2).b();   // только если a была до b
+```
+
+**Argument matchers:**
+
+```java
+when(mock.find(anyLong())).thenReturn(...);
+when(mock.find(eq(42L))).thenReturn(...);
+when(mock.send(anyString(), contains("welcome"))).thenReturn(...);
+when(mock.save(argThat(u -> u.getEmail().endsWith("@acme.com")))).thenReturn(...);
+
+// Правило: либо ВСЕ аргументы — matchers, либо НИ ОДИН (mixed нельзя):
+when(mock.foo(anyString(), 42)).thenReturn(x);     // ✗ compile error
+when(mock.foo(anyString(), eq(42))).thenReturn(x); // ✓
+```
+
+**AssertJ — fluent assertions:**
+
+```java
+import static org.assertj.core.api.Assertions.*;
+
+assertThat(user.getName()).isEqualTo("Alice");
+assertThat(list).hasSize(3).contains("a", "b").doesNotContain("c");
+assertThat(map).containsKey("k").containsValue("v").hasSize(2);
+assertThat(user).extracting(User::getEmail).isEqualTo("a@b.c");
+
+// Soft assertions — собирают все ошибки, не падают на первой:
+SoftAssertions soft = new SoftAssertions();
+soft.assertThat(user.getName()).isEqualTo("Bob");      // fails — продолжаем
+soft.assertThat(user.getAge()).isEqualTo(30);          // тоже проверяем
+soft.assertAll();                                       // выкидывает все накопленные
+
+// Exception assertions:
+assertThatThrownBy(() -> service.create(null))
+    .isInstanceOf(IllegalArgumentException.class)
+    .hasMessageContaining("name");
+```
+
+**Spring Boot Test:**
+
+```java
+// @SpringBootTest — full context (медленно, 5+ сек на старт)
+@SpringBootTest
+@AutoConfigureMockMvc
+class UserApiIntegrationTest {
+    @Autowired MockMvc mvc;
+    @MockBean UserService service;     // подменяем bean в контексте
+
+    @Test
+    void post_returns_201() throws Exception {
+        when(service.create(any())).thenReturn(new UserDto(1L, "Alice"));
+        mvc.perform(post("/api/users")
+                .contentType(APPLICATION_JSON)
+                .content("{\"name\":\"Alice\"}"))
+           .andExpect(status().isCreated());
+    }
+}
+
+// @WebMvcTest — только controller layer
+@WebMvcTest(UserController.class)
+class UserControllerTest {
+    @Autowired MockMvc mvc;
+    @MockBean UserService service;
+}
+
+// @DataJpaTest — только JPA layer + Embedded DB
+@DataJpaTest
+class UserRepositoryTest {
+    @Autowired UserRepository repo;
+}
+
+// @JsonTest — Jackson serialization
+@JsonTest
+class UserDtoSerializationTest { ... }
+```
+
+**Testcontainers** — real DB в Docker для integration tests:
+
+```java
+@SpringBootTest
+@Testcontainers
+class IntegrationTest {
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    @DynamicPropertySource
+    static void props(DynamicPropertyRegistry r) {
+        r.add("spring.datasource.url", postgres::getJdbcUrl);
+        r.add("spring.datasource.username", postgres::getUsername);
+        r.add("spring.datasource.password", postgres::getPassword);
+    }
+}
+```
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank, Альфа, VK, Сбер).** «Напиши unit-тест UserService с
+mock UserRepository.»
+
+Стандартный live coding. Ожидают:
+
+```java
+@ExtendWith(MockitoExtension.class)
+class UserServiceTest {
+    @Mock UserRepository repo;
+    @Mock EmailSender emailer;
+    @InjectMocks UserService service;
+
+    @Test
+    void create_persists_and_sends_email() {
+        when(repo.save(any())).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            u.setId(1L);
+            return u;
+        });
+
+        UserDto result = service.create("Alice", "a@b.c");
+
+        assertEquals(1L, result.id());
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(repo).save(captor.capture());
+        assertEquals("Alice", captor.getValue().getName());
+
+        verify(emailer).send(eq("a@b.c"), anyString());
+    }
+}
+```
+
+**Вопрос 2 (T-Bank).** «Чем mock отличается от spy?»
+
+Mock — полностью искусственный. Все методы возвращают defaults (null/0). Что
+не stub'нуто — null/0.
+
+Spy — обёртка над реальным объектом. Все методы по дефолту вызывают реальный
+код. Можно override отдельные методы через `doReturn`.
+
+Применение spy: тест существующего класса, где хочется override 1-2 метода.
+Mock: для зависимостей (repository, client).
+
+**Вопрос 3 (Альфа, Сбер).** «Когда `doReturn` вместо `when`?»
+
+1. **Spy**: `when(spy.method())` реально вызывает метод (плохо).
+2. **Void method**: `when` не имеет return → `doNothing/doThrow/doAnswer`.
+3. **Checked exception в stub**: `doThrow(new IOException())`.
+
+Для обычных mock-методов с return — `when().thenReturn()` идиоматичнее.
+
+**Вопрос 4 (Озон).** «Что не так?»
+
+```java
+@Test
+void test() {
+    UserService service = new UserService();
+    when(userRepo.findAll()).thenReturn(...);   // ✗
+}
+```
+
+`userRepo` — null (нет `@Mock` или `@ExtendWith`). NPE на `when`. Лекарство:
+`@ExtendWith(MockitoExtension.class)` + `@Mock UserRepository userRepo`.
+
+## Один день из практики
+
+Тебя позвали в Альфу. Live coding: «Напиши тест для OrderService.placeOrder.
+25 минут».
+
+```java
+@Service
+public class OrderService {
+    private final OrderRepository orderRepo;
+    private final InventoryClient inventory;
+    private final PaymentClient payment;
+    private final EmailSender emailer;
+    public OrderService(OrderRepository or, InventoryClient ic, PaymentClient pc, EmailSender es) {
+        this.orderRepo = or; this.inventory = ic; this.payment = pc; this.emailer = es;
+    }
+
+    @Transactional
+    public Order placeOrder(Long userId, List<OrderItemDto> items) {
+        if (items.isEmpty()) throw new IllegalArgumentException("empty cart");
+
+        BigDecimal total = items.stream()
+            .map(i -> i.price().multiply(BigDecimal.valueOf(i.quantity())))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        inventory.reserve(items);
+        PaymentResult pr = payment.charge(userId, total);
+        if (!pr.isSuccess()) {
+            inventory.release(items);
+            throw new PaymentFailedException(pr.reason());
+        }
+
+        Order o = new Order(userId, items, total, OrderStatus.PAID);
+        Order saved = orderRepo.save(o);
+        emailer.send(userId, "Order " + saved.getId() + " confirmed");
+        return saved;
+    }
+}
+```
+
+Тест:
+
+```java
+@ExtendWith(MockitoExtension.class)
+class OrderServiceTest {
+
+    @Mock OrderRepository orderRepo;
+    @Mock InventoryClient inventory;
+    @Mock PaymentClient payment;
+    @Mock EmailSender emailer;
+    @InjectMocks OrderService service;
+
+    @Captor ArgumentCaptor<Order> orderCaptor;
+
+    private final List<OrderItemDto> items = List.of(
+        new OrderItemDto(1L, 2, new BigDecimal("10.00")),
+        new OrderItemDto(2L, 1, new BigDecimal("30.00"))
+    );
+
+    @Test
+    void placeOrder_persists_and_charges_correctly() {
+        // arrange
+        when(payment.charge(eq(42L), eq(new BigDecimal("50.00"))))
+            .thenReturn(PaymentResult.success("txn-1"));
+        when(orderRepo.save(any())).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            return new Order(99L, o.getUserId(), o.getItems(), o.getTotal(), o.getStatus());
+        });
+
+        // act
+        Order result = service.placeOrder(42L, items);
+
+        // assert
+        assertEquals(99L, result.getId());
+        assertEquals(new BigDecimal("50.00"), result.getTotal());
+
+        verify(inventory).reserve(items);
+        verify(payment).charge(42L, new BigDecimal("50.00"));
+        verify(orderRepo).save(orderCaptor.capture());
+        assertEquals(OrderStatus.PAID, orderCaptor.getValue().getStatus());
+        verify(emailer).send(42L, "Order 99 confirmed");
+    }
+
+    @Test
+    void empty_cart_throws() {
+        assertThatThrownBy(() -> service.placeOrder(42L, List.of()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("empty");
+
+        verifyNoInteractions(inventory, payment, orderRepo, emailer);
+    }
+
+    @Test
+    void payment_failure_releases_inventory() {
+        when(payment.charge(any(), any()))
+            .thenReturn(PaymentResult.failure("card declined"));
+
+        assertThatThrownBy(() -> service.placeOrder(42L, items))
+            .isInstanceOf(PaymentFailedException.class);
+
+        verify(inventory).reserve(items);
+        verify(inventory).release(items);
+        verify(orderRepo, never()).save(any());
+        verify(emailer, never()).send(any(), any());
+    }
+
+    @Test
+    void calls_in_correct_order() {
+        when(payment.charge(any(), any())).thenReturn(PaymentResult.success(""));
+        when(orderRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.placeOrder(42L, items);
+
+        InOrder inOrder = inOrder(inventory, payment, orderRepo, emailer);
+        inOrder.verify(inventory).reserve(items);
+        inOrder.verify(payment).charge(any(), any());
+        inOrder.verify(orderRepo).save(any());
+        inOrder.verify(emailer).send(any(), any());
+    }
+}
+```
+
+Интервьюер видит: @Mock + @InjectMocks, ArgumentCaptor, verify в правильных
+комбинациях, InOrder для checking sequence, AssertJ assertions,
+verifyNoInteractions для negative cases.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+class Test {
+    @Mock UserRepo repo;
+    @Test
+    void test() {
+        when(repo.findById(1L)).thenReturn(Optional.empty());  // NPE
+    }
+}
+```
+
+Нет `@ExtendWith(MockitoExtension.class)`. `repo` — null. Лекарство:
+`@ExtendWith(MockitoExtension.class)` на класс.
+
+Кейс 2. Где баг?
+
+```java
+@Spy UserService service = new UserServiceImpl();
+
+@Test void test() {
+    when(service.heavyOp()).thenReturn("x");   // реально вызывает heavyOp!
+}
+```
+
+`when` на spy вызывает реальный метод до stub. Лекарство: `doReturn("x").when(service).heavyOp();`.
+
+Кейс 3. Где баг?
+
+```java
+@Test
+void test() {
+    when(mock.foo(anyString(), 42)).thenReturn("x");   // compile error
+}
+```
+
+Mixed matchers. Либо все matchers, либо все literal. Лекарство:
+`when(mock.foo(anyString(), eq(42)))...`.
+
+Кейс 4. Где баг (тест зависит от реализации)?
+
+```java
+@Test
+void create_user() {
+    service.create("Alice", "a@b.c");
+
+    verify(repo).save(any());
+    verify(repo).flush();            // ✗ implementation detail
+    verify(repo, times(1)).count();  // ✗ implementation detail
+    verify(emailer).send(any(), any());
+}
+```
+
+Тест проверяет implementation (flush, count) вместо contract (save был
+вызван с правильными аргументами, email отправлен). При рефакторинге
+service ломается. Лекарство: проверять только observable behavior.
+
+Кейс 5. Где баг (mock entity)?
+
+```java
+@Mock User user;
+when(user.getName()).thenReturn("Alice");
+when(user.getEmail()).thenReturn("a@b.c");
+```
+
+Mock на DTO/entity бесполезен. Проще `new User("Alice", "a@b.c")`. Mock'ируем
+только behavior (repository, client, service).
+
+Кейс 6. Где баг (@SpringBootTest везде)?
+
+```java
+@SpringBootTest    // 5 секунд на старт
+class UserServiceTest {
+    @Autowired UserService service;
+    @MockBean UserRepository repo;
+}
+```
+
+Full context для unit-теста — медленно. На 100 тестов — 8 минут. Лекарство:
+обычный JUnit 5 + Mockito (без Spring) для unit. `@SpringBootTest` только
+для integration.
+
+Кейс 7. Где баг?
+
+```java
+@Test
+void test() throws Exception {
+    when(client.callApi()).thenThrow(IOException.class);   // checked exception
+}
+
+// IOException — checked, throw в when ломается compile или runtime
+```
+
+Если метод не объявляет throws — `thenThrow(IOException.class)` runtime
+error. Лекарство: либо метод реально throws IOException (тогда OK), либо
+`thenAnswer`:
+
+```java
+when(client.callApi()).thenAnswer(inv -> { throw new IOException(); });
+```
+
+## Что почитать
+
+- [JUnit 5 User Guide](https://junit.org/junit5/docs/current/user-guide/) — официальный.
+- [Mockito documentation](https://javadoc.io/doc/org.mockito/mockito-core/latest/org/mockito/Mockito.html) — Javadoc-style гид.
+- [AssertJ documentation](https://assertj.github.io/doc/) — fluent.
+- *Effective Software Testing*, Maurício Aniche — современный учебник.
+- *xUnit Test Patterns*, Gerard Meszaros — классика.
+- [Testcontainers](https://testcontainers.com/) — для integration tests с real БД/Kafka/etc.
+- *Growing Object-Oriented Software, Guided by Tests*, Steve Freeman — TDD с mock'ами.
+
 ## Где в стеке
 
 **Уровень 6: System Design, Tools, DevOps.** Прикладная часть. На middle — концептуальное понимание Kafka ordering, Circuit Breaker состояний, Docker multi-stage. JUnit+Mockito — практика на live coding.

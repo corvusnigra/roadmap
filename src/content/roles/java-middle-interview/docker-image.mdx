@@ -128,6 +128,426 @@ Image — immutable шаблон, слоистая файловая систем
 - Запуск под root — нарушение security
 - Копировать .git / target в image — ненужно, раздувает
 
+## Развёрнутое объяснение
+
+Docker — главный способ упаковки приложений в 2025. На middle ждут понимания
+image vs container, multi-stage build, layer cache, security базовых.
+
+**Image vs Container:**
+
+```
+Image      — immutable шаблон, layered file system. Hash-addressable.
+              Можно tag'ировать (registry/image:version).
+Container  — runtime instance image'а + writable layer сверху.
+              Один image → N containers, каждый со своим writable layer.
+```
+
+```bash
+docker build -t myapp:1.0 .          # создать image из Dockerfile
+docker run -d --name a1 myapp:1.0    # запустить container
+docker run -d --name a2 myapp:1.0    # ещё один из того же image
+docker ps                             # активные containers
+docker exec -it a1 sh                 # shell в running container
+docker logs a1                        # stdout/stderr
+docker stop a1; docker rm a1          # остановить + удалить container
+docker rmi myapp:1.0                  # удалить image
+```
+
+**Layered file system (overlayFS).** Каждая инструкция Dockerfile создаёт
+новый layer. Финальный image — стек layer'ов:
+
+```
+Layer 5: COPY app.jar  (50MB)
+Layer 4: RUN apk add ... (10MB)
+Layer 3: ENV variables (0)
+Layer 2: WORKDIR /app  (0)
+Layer 1: FROM eclipse-temurin:21-jre-alpine (200MB)
+```
+
+**Layer cache** — каждая инструкция cached по hash содержимого. Если
+изменилась только верхняя — нижние реюзаются. Это значит:
+
+```dockerfile
+# ПЛОХО (cache invalidates на каждом изменении src):
+FROM maven:3.9
+COPY . /app
+WORKDIR /app
+RUN mvn package
+
+# ХОРОШО (зависимости отдельно, build отдельно):
+FROM maven:3.9
+WORKDIR /app
+COPY pom.xml ./
+RUN mvn dependency:go-offline   # layer cache на зависимостях
+COPY src ./src
+RUN mvn package -DskipTests      # этот layer пересоздаётся, но зависимости из cache
+```
+
+После изменения только в `src/` — `mvn dependency:go-offline` layer переиспользуется,
+`mvn package` пересоздаётся. Build занимает секунды вместо минут.
+
+**Multi-stage build** — главный паттерн для Java:
+
+```dockerfile
+# Stage 1: BUILD
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /app
+COPY pom.xml ./
+RUN mvn dependency:go-offline
+COPY src ./src
+RUN mvn package -DskipTests
+
+# Stage 2: RUNTIME
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+Финальный image — только Stage 2 (JRE + jar). Maven, исходники, .m2 не
+попадают. Размер: ~180MB вместо ~700MB.
+
+**Базовые images для Java:**
+
+```
+eclipse-temurin:21-jdk       — full JDK, для build. 400+ MB.
+eclipse-temurin:21-jre-alpine — JRE + Alpine Linux. ~180 MB.
+eclipse-temurin:21-jre-jammy  — JRE + Ubuntu 22.04. ~250 MB.
+gcr.io/distroless/java21      — Google distroless, минимальный. ~120 MB, no shell.
+amazoncorretto:21-alpine      — Amazon LTS distribution. ~180 MB.
+```
+
+Alpine — musl libc вместо glibc. Меньше, но есть редкие edge cases с
+несовместимостью (Netty с native lib'ами).
+
+Distroless — нет shell, нет apt/apk. Безопаснее (меньше attack surface), но
+дебажить сложнее (нельзя `kubectl exec sh`).
+
+**Spring Boot Layered JARs (best practice):**
+
+```dockerfile
+FROM eclipse-temurin:21-jdk AS build
+WORKDIR /app
+COPY . .
+RUN ./mvnw package -DskipTests
+RUN java -Djarmode=layertools -jar target/app.jar extract
+
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY --from=build /app/dependencies/ ./
+COPY --from=build /app/spring-boot-loader/ ./
+COPY --from=build /app/snapshot-dependencies/ ./
+COPY --from=build /app/application/ ./
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
+```
+
+Spring Boot 2.3+ умеет разбивать fat JAR на 4 слоя:
+- dependencies (стабильны, меняются редко).
+- spring-boot-loader (фиксирован).
+- snapshot-dependencies.
+- application (наш код).
+
+При rebuild при изменении только application — dependencies layer
+переиспользуется в registry, image push быстрее.
+
+**CMD vs ENTRYPOINT:**
+
+```dockerfile
+# CMD — default command, легко override:
+CMD ["java", "-jar", "app.jar"]
+# docker run image       → java -jar app.jar
+# docker run image bash  → bash (CMD заменён)
+
+# ENTRYPOINT — всегда выполняется:
+ENTRYPOINT ["java", "-jar", "app.jar"]
+# docker run image       → java -jar app.jar
+# docker run image extra → java -jar app.jar extra
+
+# Комбинация:
+ENTRYPOINT ["java"]
+CMD ["-jar", "app.jar"]
+# docker run image                → java -jar app.jar
+# docker run image -version       → java -version
+```
+
+**Security best practices:**
+
+```dockerfile
+# 1. НЕ root user
+RUN addgroup -S app && adduser -S app -G app
+USER app
+
+# 2. Минимальный base image
+FROM gcr.io/distroless/java21:nonroot
+
+# 3. Health check
+HEALTHCHECK --interval=30s --timeout=3s \
+    CMD wget -q -O- http://localhost:8080/actuator/health || exit 1
+
+# 4. .dockerignore исключает sensitive
+# .dockerignore:
+# .git
+# .env
+# target
+# *.log
+# node_modules
+# .m2
+```
+
+**JVM options для container:**
+
+```dockerfile
+ENTRYPOINT ["java", \
+    "-XX:MaxRAMPercentage=75", \
+    "-XX:+UseG1GC", \
+    "-XX:+HeapDumpOnOutOfMemoryError", \
+    "-XX:HeapDumpPath=/data/heap.hprof", \
+    "-XX:+ExitOnOutOfMemoryError", \
+    "-Dfile.encoding=UTF-8", \
+    "-jar", "app.jar"]
+```
+
+`-XX:MaxRAMPercentage=75` — JVM сама считает heap от cgroup limit (контейнер-aware
+с Java 10+). Если k8s limit 2GB, JVM возьмёт 1.5GB heap.
+
+**Jib — build без Dockerfile:**
+
+```xml
+<plugin>
+    <groupId>com.google.cloud.tools</groupId>
+    <artifactId>jib-maven-plugin</artifactId>
+    <version>3.4.0</version>
+    <configuration>
+        <from><image>eclipse-temurin:21-jre-alpine</image></from>
+        <to><image>registry/myapp:${project.version}</image></to>
+        <container>
+            <jvmFlags>
+                <jvmFlag>-XX:MaxRAMPercentage=75</jvmFlag>
+            </jvmFlags>
+            <user>1000</user>
+        </container>
+    </configuration>
+</plugin>
+```
+
+```bash
+mvn jib:build         # build + push, без Docker daemon
+mvn jib:dockerBuild   # build в локальный Docker
+```
+
+Jib (Google) делает layered build из Maven/Gradle напрямую в registry,
+reproducible (deterministic layer hashes), не требует Dockerfile.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank, Альфа).** «Чем отличается image от container?»
+
+Image — immutable шаблон (layered file system). Container — runtime instance
+image'а + writable layer. Один image — N containers. Image hash-addressable.
+
+**Вопрос 2 (Лига, Альфа).** «Зачем multi-stage build?»
+
+Build-stage содержит compiler, исходники, dependencies (~700MB).
+Runtime-stage только JRE + JAR (~180MB). Финальный image — только runtime,
+без build-инструментов. Уменьшение размера в 3-4 раза, security (меньше
+attack surface).
+
+**Вопрос 3 (T-Bank, Озон).** «Чем CMD отличается от ENTRYPOINT?»
+
+CMD — default command, легко переопределить через `docker run image cmd`.
+ENTRYPOINT — всегда выполняется, аргументы передаются в него. Часто используют
+вместе: ENTRYPOINT ["java"] + CMD ["-jar", "app.jar"].
+
+**Вопрос 4 (Сбер).** «Что не так?»
+
+```dockerfile
+FROM openjdk:8
+COPY . /app
+WORKDIR /app
+RUN ./mvnw package
+EXPOSE 8080
+CMD ["java", "-jar", "target/app.jar"]
+```
+
+(1) `openjdk:8` — Java 8 + deprecated tag. Использовать `eclipse-temurin:21`.
+(2) `COPY .` без .dockerignore — копирует .git/.m2/node_modules.
+(3) Build на runtime stage — образ ~700MB. Multi-stage решит.
+(4) Запуск под root — security.
+(5) Нет HEALTHCHECK.
+
+## Один день из практики
+
+Тебя позвали: «наш image — 1.2 GB, k8s push занимает 5 минут на каждый
+deploy». Открываем Dockerfile:
+
+```dockerfile
+FROM openjdk:11
+COPY . /app
+WORKDIR /app
+RUN apt-get update && apt-get install -y maven git curl
+RUN mvn package
+EXPOSE 8080
+CMD java -jar target/app.jar
+```
+
+Проблемы:
+1. `openjdk:11` deprecated, ~800MB base.
+2. `COPY .` копирует всё, включая .git, .m2.
+3. Build в runtime stage.
+4. `apt-get install maven` — лишний build tool в финальном image.
+5. Нет multi-stage.
+
+Перепишем:
+
+```dockerfile
+FROM eclipse-temurin:21-jdk AS build
+WORKDIR /app
+COPY pom.xml mvnw ./
+COPY .mvn ./.mvn
+RUN ./mvnw dependency:go-offline -B
+COPY src ./src
+RUN ./mvnw package -DskipTests -B && \
+    java -Djarmode=layertools -jar target/*.jar extract
+
+FROM eclipse-temurin:21-jre-alpine
+RUN addgroup -S app && adduser -S app -G app
+USER app
+WORKDIR /app
+COPY --from=build --chown=app:app /app/dependencies/         ./
+COPY --from=build --chown=app:app /app/spring-boot-loader/   ./
+COPY --from=build --chown=app:app /app/snapshot-dependencies/ ./
+COPY --from=build --chown=app:app /app/application/          ./
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+    CMD wget -q --spider http://localhost:8080/actuator/health || exit 1
+ENTRYPOINT ["java", \
+    "-XX:MaxRAMPercentage=75", \
+    "-XX:+ExitOnOutOfMemoryError", \
+    "org.springframework.boot.loader.launch.JarLauncher"]
+```
+
+.dockerignore:
+```
+.git
+.gitignore
+target
+*.log
+.idea
+.vscode
+node_modules
+.m2
+.env*
+README.md
+docs/
+```
+
+Результат:
+- Image размер: 1.2GB → 230MB.
+- Build time с layer cache: 4 мин → 30 сек (на изменения только src).
+- Push в registry: 5 мин → 50 сек.
+- HEALTHCHECK для k8s liveness/readiness.
+- Запуск под non-root user.
+- JVM heap auto-sized под cgroup limit.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```dockerfile
+FROM openjdk:11    # deprecated tag
+```
+
+Oracle снёс official `openjdk` теги. Замена: `eclipse-temurin`, `amazoncorretto`.
+
+Кейс 2. Где баг?
+
+```dockerfile
+COPY pom.xml ./
+RUN mvn dependency:go-offline
+COPY . .
+RUN mvn package
+```
+
+`COPY .` после dependency-step разрушает layer cache — каждое изменение
+.gitignore или README триггерит rebuild. Лекарство: `.dockerignore` + явный
+`COPY src ./src` (только нужное).
+
+Кейс 3. Где баг (RUN секреты)?
+
+```dockerfile
+RUN git clone https://user:password@github.com/...
+```
+
+Password попадает в layer **навсегда**. Даже если delete файл позже — layer
+сохраняется. `docker history image` покажет команду. Лекарство: BuildKit
+secrets:
+
+```dockerfile
+# syntax=docker/dockerfile:1
+RUN --mount=type=secret,id=token \
+    git clone https://$(cat /run/secrets/token)@github.com/...
+```
+
+```bash
+DOCKER_BUILDKIT=1 docker build --secret id=token,src=./token .
+```
+
+Кейс 4. Где баг (root)?
+
+```dockerfile
+FROM eclipse-temurin:21-jre-alpine
+COPY app.jar /
+CMD ["java", "-jar", "app.jar"]
+```
+
+Запуск под root. Если в k8s pod scape — атакующий имеет root в container.
+Лекарство: `USER 1000` или `addgroup + adduser`.
+
+Кейс 5. Где баг (cgroup)?
+
+```dockerfile
+ENTRYPOINT ["java", "-Xmx512m", "-jar", "app.jar"]
+# в k8s: limits.memory = 2Gi
+```
+
+Жёстко зашитый `-Xmx512m` игнорирует k8s limit. Лекарство:
+`-XX:MaxRAMPercentage=75` — JVM сама учитывает cgroup.
+
+Кейс 6. Где баг (multi-stage + cache)?
+
+```dockerfile
+FROM maven:3.9 AS build
+COPY . /app
+WORKDIR /app
+RUN mvn dependency:go-offline
+RUN mvn package
+```
+
+`COPY .` инвалидирует cache на любое изменение. Лекарство: pom.xml отдельно
+от src.
+
+Кейс 7. Где баг (Alpine + glibc)?
+
+```dockerfile
+FROM eclipse-temurin:21-jre-alpine
+# приложение использует Netty native epoll
+```
+
+Alpine — musl libc, не glibc. Netty native epoll skipped, fallback на NIO.
+На production hot-paths — заметная регрессия. Лекарство: jammy-jre (Ubuntu)
+или explicit `netty-tcnative-boringssl-static` для musl.
+
+## Что почитать
+
+- [Docker Documentation](https://docs.docker.com/) — официальная.
+- [Spring Boot Docker reference](https://docs.spring.io/spring-boot/docs/current/reference/htmlsingle/#container-images) — layered JARs.
+- [Best practices for writing Dockerfiles](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/) — best practices.
+- [Eclipse Temurin Docker images](https://hub.docker.com/_/eclipse-temurin) — официальный JDK.
+- [Jib documentation](https://github.com/GoogleContainerTools/jib) — Google build tool.
+- *Docker Deep Dive*, Nigel Poulton — хорошая книга для middle.
+- [12-factor App](https://12factor.net/) — config через env, не файлы внутри image.
+
 ## Где в стеке
 
 **Уровень 6: System Design, Tools, DevOps.** Прикладная часть. На middle — концептуальное понимание Kafka ordering, Circuit Breaker состояний, Docker multi-stage. JUnit+Mockito — практика на live coding.

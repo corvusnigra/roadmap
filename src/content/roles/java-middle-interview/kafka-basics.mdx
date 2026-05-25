@@ -128,6 +128,372 @@ Kafka — distributed log. Топик разбит на партиции (parall
 - auto-commit + heavy processing — потеря при crash
 - Один KafkaConsumer на много потоков — он НЕ thread-safe
 
+## Развёрнутое объяснение
+
+Kafka — distributed append-only log. На middle ждут понимания трёх вещей:
+партиции и ordering, consumer groups + offsets, гарантии доставки.
+
+**Архитектура Kafka:**
+
+```
+Topic "orders"
+   ├── Partition 0  [msg1, msg2, msg3, ...]   ← log на disk
+   ├── Partition 1  [msg4, msg5, msg6, ...]
+   └── Partition 2  [msg7, msg8, msg9, ...]
+
+Brokers (физические серверы):
+   broker-1: Partition 0 (leader), Partition 1 (follower)
+   broker-2: Partition 0 (follower), Partition 1 (leader), Partition 2 (follower)
+   broker-3: Partition 2 (leader), Partition 0 (follower), Partition 1 (follower)
+
+replication.factor = 3 — каждая партиция в 3 копиях.
+min.insync.replicas = 2 — для acks=all нужно подтверждение от 2.
+```
+
+**Producer.** Отправляет сообщения. Каждое сообщение в одну партицию по правилу:
+- Если `key` указан: `partition = hash(key) % num_partitions`.
+- Если null: round-robin (или sticky partitioner с Kafka 2.4+).
+
+```java
+Properties props = new Properties();
+props.put("bootstrap.servers", "kafka:9092");
+props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+
+// КРИТИЧНЫЕ настройки для prod:
+props.put("acks", "all");                          // ждать все ISR
+props.put("enable.idempotence", true);             // дедуп на стороне producer
+props.put("max.in.flight.requests.per.connection", 5);   // для idempotent
+props.put("retries", Integer.MAX_VALUE);           // бесконечный retry
+props.put("compression.type", "snappy");           // или gzip / lz4 / zstd
+
+KafkaProducer<String, String> producer = new KafkaProducer<>(props);
+producer.send(new ProducerRecord<>("orders", orderId, payload));
+```
+
+**Consumer.** Читает из партиций, поддерживает offset:
+
+```java
+Properties props = new Properties();
+props.put("group.id", "order-processor");
+props.put("auto.offset.reset", "earliest");          // что делать если нет committed offset
+props.put("enable.auto.commit", false);              // ручной коммит!
+props.put("isolation.level", "read_committed");      // для exactly-once
+
+KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+consumer.subscribe(List.of("orders"));
+
+while (true) {
+    ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
+    for (var record : records) {
+        process(record);
+    }
+    consumer.commitSync();    // commit ПОСЛЕ обработки
+}
+```
+
+**Consumer Group и rebalance.** N consumer'ов в одной группе делят партиции
+между собой. При добавлении/удалении consumer'а — rebalance (Kafka 2.4+ с
+incremental cooperative rebalancing вместо stop-the-world).
+
+Правило: partitions ≥ consumers. Если 10 партиций и 12 consumer'ов — 2
+лишних ничего не делают (idle). Параллелизм consumer-side ограничен числом
+партиций.
+
+**Гарантии доставки:**
+
+```
+At-most-once (default с auto-commit):
+   1. poll → 2. auto-commit (раз в 5 сек) → 3. process
+   Если crash между 2 и 3 — сообщение потеряется (committed но не processed).
+
+At-least-once (рекомендованный default):
+   1. poll → 2. process → 3. commit
+   Если crash между 2 и 3 — сообщение пересоздастся при следующем poll.
+   Дубликаты возможны.
+
+Exactly-once:
+   Producer: enable.idempotence=true + transactional.id
+   Consumer: isolation.level=read_committed
+   Внутри транзакции: read → process → write → commit-tx
+   Дубликаты исключены.
+```
+
+На middle обычно — **at-least-once + idempotent consumer**. Идемпотентность
+на стороне consumer'а через UNIQUE constraint в БД или ID в Redis-кэше.
+
+**Spring Kafka:**
+
+```java
+@KafkaListener(topics = "orders", groupId = "order-processor")
+public void onOrder(ConsumerRecord<String, String> record) {
+    Order order = parse(record.value());
+    if (processedRepo.existsByOrderId(order.id())) {
+        return;  // idempotency
+    }
+    processOrder(order);
+    processedRepo.save(new Processed(order.id()));
+}
+
+@KafkaListener(topics = "orders",
+               groupId = "order-processor",
+               containerFactory = "manualAckContainerFactory")
+public void onOrder(ConsumerRecord<String, String> record, Acknowledgment ack) {
+    try {
+        process(record);
+        ack.acknowledge();   // manual commit
+    } catch (Exception e) {
+        // не делаем ack — следующий poll получит снова
+        log.error("failed", e);
+    }
+}
+```
+
+**Transactional Outbox pattern** — самый важный паттерн для микросервисов с
+БД + Kafka:
+
+```java
+@Transactional
+public void createOrder(Order o) {
+    orderRepo.save(o);
+    outboxRepo.save(new OutboxEvent("order-created", o.toJson()));
+    // обе операции в одной БД-транзакции — атомарно
+}
+
+@Scheduled(fixedDelay = 100)
+public void flushOutbox() {
+    List<OutboxEvent> events = outboxRepo.findUnpublished(100);
+    for (OutboxEvent e : events) {
+        kafkaTemplate.send("orders", e.payload());
+        outboxRepo.markPublished(e.id());
+    }
+}
+```
+
+Альтернатива — **Debezium CDC**: читает WAL PostgreSQL/MySQL, публикует
+изменения в Kafka. Полностью прозрачно для приложения.
+
+**Ordering — главная ловушка.** Kafka гарантирует ordering **только внутри
+партиции**. Глобального ordering нет. Если нужно ordering по customer_id:
+
+```java
+// Все события клиента → одна партиция
+producer.send(new ProducerRecord<>("orders", customerId.toString(), payload));
+```
+
+Hash(customerId) → одна партиция → все события customer'а в одном порядке.
+Между customer'ами — без гарантий.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, Сбер, Озон).** «Расскажи Kafka basics:
+producer, consumer, partitions.»
+
+Producer пишет в topic. Topic разбит на партиции. Каждое сообщение
+определяется в партицию по hash(key). Consumer Group — группа consumer'ов
+делит партиции. Ordering — только внутри партиции, не глобально.
+
+**Вопрос 2 (T-Bank).** «Какие гарантии доставки?»
+
+At-most-once: commit before process → потеря при crash.
+At-least-once: commit after process → дубликаты при retry.
+Exactly-once: idempotent producer + transactions + read_committed consumer.
+
+На прод обычно at-least-once + idempotent на стороне consumer'а через UNIQUE
+в БД.
+
+**Вопрос 3 (Альфа).** «Можно ли гарантировать ordering между разными
+сообщениями?»
+
+Только **внутри партиции**. Если нужно ordering по entity (user, account) —
+ключ сообщения = entity id, hash(id) → одна партиция → ordering сохраняется.
+Глобального — нет.
+
+**Вопрос 4 (Озон, продвинутый).** «У вас сервис должен атомарно создать
+запись в БД и отправить событие в Kafka. Как?»
+
+Transactional Outbox: пишем в БД + outbox table в одной транзакции, отдельный
+poller отправляет outbox в Kafka. Атомарность БД гарантирует, что либо обе
+операции, либо ни одной.
+
+Альтернатива: Debezium CDC, читает WAL и публикует в Kafka.
+
+## Один день из практики
+
+Тебя позвали: «иногда уведомления приходят два раза». Открываем consumer:
+
+```java
+@KafkaListener(topics = "notifications", groupId = "notif-svc",
+               properties = {"enable.auto.commit=true"})
+public void onNotification(String payload) {
+    Notification n = parse(payload);
+    emailService.send(n);   // 200мс — HTTP вызов
+}
+```
+
+Проблема: auto-commit каждые 5 сек, message обработка 200мс. Если сервис
+рестартует посередине batch'а — некоторые messages закоммичены без обработки
+(потеря), некоторые обработаны но не закоммичены (дубликат при следующем
+poll).
+
+Решение 1 — manual ack + idempotency:
+
+```java
+@KafkaListener(topics = "notifications", groupId = "notif-svc",
+               containerFactory = "manualAckContainerFactory")
+@Transactional
+public void onNotification(ConsumerRecord<String, String> record,
+                            Acknowledgment ack) {
+    Notification n = parse(record.value());
+    if (sentRepo.existsByNotificationId(n.id())) {
+        ack.acknowledge();
+        return;
+    }
+    emailService.send(n);
+    sentRepo.save(new SentNotification(n.id()));
+    ack.acknowledge();
+}
+```
+
+Решение 2 — Outbox на стороне producer'а:
+
+```java
+@Transactional
+public void requestNotification(NotificationRequest req) {
+    notifRepo.save(req);
+    outboxRepo.save(new OutboxEvent("notify", req.toJson()));
+}
+
+// отдельный poller отправляет в Kafka с retry
+```
+
+Это надёжнее, но требует БД consumer-side для dedupe.
+
+Регресс-тест:
+
+```java
+@Test
+@EmbeddedKafka(topics = "notifications")
+void duplicate_message_processed_once() {
+    Notification n = new Notification("notif-1", "Hello");
+    sendToKafka("notifications", n);
+    sendToKafka("notifications", n);   // duplicate
+
+    Awaitility.await().untilAsserted(() -> {
+        verify(emailService, times(1)).send(any());    // ровно один раз!
+    });
+}
+```
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+consumer.subscribe(List.of("orders"));
+
+ExecutorService pool = Executors.newFixedThreadPool(10);
+while (true) {
+    var records = consumer.poll(Duration.ofMillis(100));
+    for (var r : records) {
+        pool.submit(() -> process(r));
+    }
+}
+```
+
+`KafkaConsumer` НЕ thread-safe. Доступ из одного thread'а. Если нужен
+parallel processing — partitions × N consumer'ов, либо обработка в пуле
+с правильной координацией ack.
+
+Кейс 2. Где баг (ordering)?
+
+```java
+producer.send(new ProducerRecord<>("orders", null, "payload"));
+```
+
+`key = null` → round-robin распределение. Если нужно ordering по
+customer/order id — ключ обязателен.
+
+Кейс 3. Где баг (retries без idempotence)?
+
+```properties
+acks=all
+retries=10
+enable.idempotence=false    # default до Kafka 3.0
+max.in.flight.requests.per.connection=5
+```
+
+Без idempotence + retries + многопоточный send → дубликаты в логе. Лекарство:
+`enable.idempotence=true` (с Kafka 3.0+ дефолт).
+
+Кейс 4. Где баг?
+
+```properties
+auto.offset.reset=earliest
+group.id=new-group
+```
+
+Новый consumer group начнёт с **самого начала** топика. Может это и есть
+desired (replay), но обычно это означает «load всё с нуля» = OOM. Лекарство:
+`auto.offset.reset=latest` для production, `earliest` только для backfill.
+
+Кейс 5. Где баг (rebalance + DB)?
+
+```java
+@KafkaListener(...)
+public void onMessage(Record r) {
+    process(r);  // 5 секунд
+    // commit auto, max.poll.interval.ms = 5 минут
+}
+```
+
+Если обработка дольше `max.poll.interval.ms` — broker считает consumer
+мёртвым, делает rebalance, partition уходит другому consumer'у. Тот
+получает то же сообщение → дубликат. Лекарство: либо ускорить обработку,
+либо увеличить `max.poll.interval.ms`, либо async-обработка с heartbeat.
+
+Кейс 6. Где баг (Transactional Outbox + race)?
+
+```java
+@Transactional
+public void createOrder(Order o) {
+    orderRepo.save(o);
+    kafkaTemplate.send("orders", o.toJson());   // ✗ НЕ в БД-транзакции!
+}
+```
+
+Kafka send не часть DB transaction. Если БД commit прошёл, но Kafka недоступна —
+теряем event. Если Kafka send прошёл, но БД rollback — event без orderа в БД.
+Лекарство: Outbox pattern или Kafka transactions (`KafkaTemplate.executeInTransaction`,
+но это сложно).
+
+Кейс 7. Где баг (consumer crash + dirty state)?
+
+```java
+@KafkaListener(...)
+public void onEvent(Event e) {
+    repo.save(e);     // SQL INSERT
+    // crash здесь
+    sendNotification(e);   // не отправилось
+}
+// после restart: тот же event приходит снова
+// repo.save - UNIQUE constraint violation
+```
+
+Не идемпотентен. Лекарство: либо `INSERT ... ON CONFLICT DO NOTHING`, либо
+явная проверка `if (repo.existsById(e.id())) return;`.
+
+## Что почитать
+
+- [Kafka Documentation](https://kafka.apache.org/documentation/) — официальная.
+- *Kafka: The Definitive Guide*, Neha Narkhede, Gwen Shapira, Todd Palino — учебник.
+- *Designing Data-Intensive Applications*, Martin Kleppmann — главы 11 (Stream Processing).
+- [Confluent Blog](https://www.confluent.io/blog/) — лучшие практики, паттерны.
+- [Debezium](https://debezium.io/) — CDC для outbox pattern без приложения.
+- Chris Richardson, [«Microservices Patterns»](https://microservices.io/patterns/data/transactional-outbox.html) — Outbox pattern.
+- [Spring Kafka Reference](https://docs.spring.io/spring-kafka/reference/) — практический gid.
+
 ## Где в стеке
 
 **Уровень 6: System Design, Tools, DevOps.** Прикладная часть. На middle — концептуальное понимание Kafka ordering, Circuit Breaker состояний, Docker multi-stage. JUnit+Mockito — практика на live coding.

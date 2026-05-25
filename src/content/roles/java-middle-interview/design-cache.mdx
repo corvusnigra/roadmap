@@ -128,6 +128,409 @@ masteryQuiz:
 - Write-behind для денег / критичных данных — потеря
 - Локальный кэш в multi-instance кластере с ожиданием consistency
 
+## Развёрнутое объяснение
+
+Кэширование — паттерн ускорения чтения за счёт хранения копии данных
+поближе к потребителю. На middle ждут понимания: локальный vs распределённый,
+4 классических паттерна, TTL обязателен, invalidation — самое сложное.
+
+**Локальный (in-process):**
+
+```java
+private final Cache<String, User> cache = Caffeine.newBuilder()
+    .maximumSize(10_000)
+    .expireAfterWrite(Duration.ofMinutes(10))
+    .recordStats()
+    .build();
+
+User u = cache.get(id, k -> userRepo.findById(k).orElseThrow());
+```
+
+Caffeine (W-TinyLFU eviction) — лучший локальный кэш в Java. Преимущества:
+- Скорость: ns (nanoseconds) — данные в heap текущего процесса.
+- Без сетевых задержек.
+
+Недостатки:
+- Каждый instance свой — нет consistency.
+- Умирает с процессом (cache cold start после restart).
+- Heap-bound — нельзя держать гигабайты данных.
+
+Применение: lookup-кэши (категории, конфиги, immutable справочники), redу
+fetched данные.
+
+**Распределённый (out-of-process):**
+
+```java
+@Cacheable(value = "users", key = "#id")
+public User findById(Long id) { ... }
+
+// Подключение Redis в Spring Boot:
+spring.cache.type=redis
+spring.data.redis.host=redis
+```
+
+Redis, Hazelcast, Apache Ignite, Memcached — общий кэш на все instance.
+Преимущества:
+- Consistency между instance'ами.
+- Переживает restart приложения.
+- Может держать большие объёмы (GB+).
+
+Недостатки:
+- Сетевая задержка (1-5ms на запрос).
+- Дополнительная инфраструктура (HA Redis cluster).
+- Serialization overhead.
+
+**Четыре паттерна:**
+
+```
+1. Cache-aside (lazy load):
+   Read:  if (cache.has(k)) return cache.get(k);
+          v = db.read(k);
+          cache.put(k, v);
+          return v;
+   Write: db.write(k, v);
+          cache.invalidate(k);
+
+2. Read-through:
+   Read: cache.get(k) // cache сам подгружает через CacheLoader
+   Write: app пишет в БД, cache не знает (либо как cache-aside).
+
+3. Write-through:
+   Write: cache.put(k, v) → cache синхронно пишет в БД.
+   Гарантирует consistency, но slow write.
+
+4. Write-behind (write-back):
+   Write: cache.put(k, v) — синхронно в memory, async flush в БД.
+   Быстрый write, но при crash — потеря.
+
+5. Refresh-ahead (опционально):
+   Caffeine.refreshAfterWrite() — обновляет background, если запросили
+   данные близкие к expiration.
+```
+
+Cache-aside — **самый частый**. Логика проще: явное чтение/инвалидация. 80%
+случаев это то, что нужно.
+
+**TTL обязательно:**
+
+```java
+// Без TTL — утечка памяти и stale данные:
+private static final Map<String, User> CACHE = new ConcurrentHashMap<>();
+public User get(String id) { return CACHE.computeIfAbsent(id, ...); }
+
+// С TTL (Caffeine):
+Cache<String, User> cache = Caffeine.newBuilder()
+    .expireAfterWrite(15, TimeUnit.MINUTES)   // stale через 15 мин
+    .expireAfterAccess(30, TimeUnit.MINUTES)  // забыть через 30 без чтения
+    .maximumSize(100_000)                      // eviction по LRU/LFU
+    .build();
+```
+
+**Spring Cache:**
+
+```java
+@Configuration
+@EnableCaching
+public class CacheConfig {
+    @Bean
+    public CacheManager cacheManager() {
+        CaffeineCacheManager mgr = new CaffeineCacheManager("users", "products");
+        mgr.setCaffeine(Caffeine.newBuilder()
+            .expireAfterWrite(10, TimeUnit.MINUTES)
+            .maximumSize(10_000));
+        return mgr;
+    }
+}
+
+@Service
+public class UserService {
+    @Cacheable(value = "users", key = "#id")
+    public User findById(Long id) {
+        return repo.findById(id).orElseThrow();
+    }
+
+    @CacheEvict(value = "users", key = "#u.id")
+    public void update(User u) { repo.save(u); }
+
+    @CachePut(value = "users", key = "#result.id")
+    public User createAndReturn(...) { return repo.save(new User(...)); }
+
+    @Caching(evict = {
+        @CacheEvict(value = "users", key = "#id"),
+        @CacheEvict(value = "userProfiles", key = "#id")
+    })
+    public void delete(Long id) { repo.deleteById(id); }
+}
+```
+
+**Cache stampede (thundering herd).** Один популярный ключ просочился. Тысячи
+параллельных запросов → все делают miss → все идут в БД одновременно. Решения:
+- **`computeIfAbsent` в ConcurrentHashMap / CHM.compute** — атомарность.
+- **Probabilistic early expiration** — обновлять до истечения для популярных
+  ключей.
+- **Single-flight pattern** — Lock на ключ, чтобы только один загружал.
+
+```java
+// Caffeine с async load — single-flight по дефолту:
+AsyncLoadingCache<String, User> cache = Caffeine.newBuilder()
+    .buildAsync(key -> loadFromDb(key));
+```
+
+**Invalidation — самое сложное.**
+
+> «Two hard things in computer science: cache invalidation, naming things, and
+> off-by-one errors.» — Phil Karlton
+
+- **TTL** — самое простое: cache сам забудет. Минус: stale в окне TTL.
+- **Manual evict** — на write делаем `@CacheEvict`. Минус: распределённый
+  кэш в multi-instance — все инстансы должны inv'ать.
+- **Pub/sub** — write публикует event «X изменился», все инстансы слушают,
+  инвалидируют локально.
+- **Read-through + version** — кэшируем не «User», а `Versioned<User>`, при
+  чтении проверяем version в БД (или ETag).
+
+**Memoization vs Cache.** Memoization — кэширование результатов чистой
+функции. Cache — общее понятие. В Java memoization чаще всего через `Map`
+или `Caffeine`.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, Озон).** «Локальный или распределённый кэш?»
+
+- **Локальный** (Caffeine): когда данные доступны read-mostly, можно
+  допустить ленивую consistency между инстансами (TTL 1 мин ОК), latency
+  критична.
+- **Распределённый** (Redis): когда нужна strict consistency между
+  инстансами, переживание restart, большие объёмы.
+
+Часто — **двухуровневый**: Caffeine (L1, ns) + Redis (L2, ms). Например,
+Caffeine TTL 1 мин для горячих ключей, Redis TTL 10 мин для всего.
+
+**Вопрос 2 (Альфа).** «Cache-aside vs Write-through?»
+
+Cache-aside: app сам управляет cache (read + write + invalidate). Простой,
+гибкий. Stale window после change.
+
+Write-through: write идёт в cache, который синхронно пишет в БД. Always
+consistent, но slow write. Применение: финансы, audit.
+
+**Вопрос 3 (T-Bank).** «Что не так?»
+
+```java
+private static final Map<String, User> CACHE = new HashMap<>();
+
+public User getUser(String id) {
+    if (CACHE.containsKey(id)) return CACHE.get(id);
+    User u = userRepo.findById(id).orElseThrow();
+    CACHE.put(id, u);
+    return u;
+}
+```
+
+(1) HashMap не thread-safe. (2) Нет TTL — leak. (3) `containsKey + get + put` —
+race condition (cache stampede). (4) Если user изменился в БД — stale.
+
+Лекарство: Caffeine с TTL + `computeIfAbsent`:
+
+```java
+private static final Cache<String, User> CACHE = Caffeine.newBuilder()
+    .expireAfterWrite(10, TimeUnit.MINUTES)
+    .maximumSize(10_000)
+    .build();
+
+public User getUser(String id) {
+    return CACHE.get(id, k -> userRepo.findById(k).orElseThrow());
+}
+```
+
+## Один день из практики
+
+Тебя позвали: «эндпоинт `/products/{id}` в peak hours 200 RPS, БД захлёбывается».
+Открываем сервис:
+
+```java
+@Service
+public class ProductService {
+    private final ProductRepository repo;
+
+    public Product findById(Long id) {
+        return repo.findById(id).orElseThrow();    // каждый раз в БД
+    }
+}
+```
+
+Шаг 1. Caching через Caffeine:
+
+```java
+@Configuration
+@EnableCaching
+public class CacheConfig {
+    @Bean
+    CacheManager cacheManager() {
+        var mgr = new CaffeineCacheManager("products");
+        mgr.setCaffeine(Caffeine.newBuilder()
+            .expireAfterWrite(5, TimeUnit.MINUTES)
+            .maximumSize(50_000)
+            .recordStats());
+        return mgr;
+    }
+}
+
+@Service
+public class ProductService {
+    @Cacheable(value = "products", key = "#id")
+    public Product findById(Long id) {
+        return repo.findById(id).orElseThrow();
+    }
+
+    @CacheEvict(value = "products", key = "#p.id")
+    public Product update(Product p) {
+        return repo.save(p);
+    }
+}
+```
+
+После: 99% запросов идут в memory (Caffeine), БД получает только cache miss'ы.
+Hit rate в Grafana 98%.
+
+Шаг 2. Distributed scenario. У нас 8 instance'ов. При update на instance A —
+A инвалидирует свой Caffeine. B,C,...,H продолжают отдавать stale до их TTL.
+
+Решение: Redis pub/sub для cross-instance invalidation, или Two-level
+(Caffeine + Redis):
+
+```java
+@CacheEvict(value = "products", key = "#p.id")
+public Product update(Product p) {
+    Product saved = repo.save(p);
+    redisTemplate.convertAndSend("cache-invalidate", "products:" + p.id());
+    return saved;
+}
+
+@EventListener
+public void onInvalidate(String message) {
+    // parse "products:42" → инвалидировать локально
+}
+```
+
+Или просто использовать Redis как L1: `spring.cache.type=redis`. Тогда все
+instance'ы делят один кэш, нет cross-инвалидации.
+
+Trade-off: Redis ~1-5ms на каждое чтение. Если 99% запросов хитят кэш и
+БД-запрос 50мс — Redis выгоден. Если БД-запрос 2мс — local Caffeine выгоднее.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+@Cacheable("users")
+public User findByEmail(String email) {
+    return repo.findByEmail(email);
+}
+// у одного user'а несколько email-форм (case-sensitive)
+```
+
+Cache key по дефолту = `email`. `"a@b.c"` и `"A@B.C"` — разные ключи, дубликаты
+в cache. Лекарство: нормализовать email в LOWER до cache lookup, или
+кастомный KeyGenerator.
+
+Кейс 2. Где баг?
+
+```java
+@Cacheable("orders")
+public List<Order> findByUser(Long userId) { ... }
+
+@CacheEvict("orders")
+public void create(Order o) { /* нужно invalidate список по o.userId */ }
+```
+
+`@CacheEvict` без key инвалидирует ВЕСЬ orders cache (или конкретный entry,
+если key умолчанию = первый параметр — но create не имеет userId argument).
+Лекарство: явный `@CacheEvict(value = "orders", key = "#o.userId")`.
+
+Кейс 3. Где баг (write-behind)?
+
+```java
+cache.put(key, value);
+// БД ещё не обновлена → если crash → потеря write
+```
+
+Write-behind для финансовых данных — нельзя. Crash между memory и flush
+теряет write. Для денег — write-through.
+
+Кейс 4. Где баг (self-invocation)?
+
+```java
+@Service
+public class Service {
+    @Cacheable("data")
+    public Data load(Long id) { ... }
+
+    public Data getOrLoad(Long id) {
+        return load(id);  // ✗ self-invocation, @Cacheable не работает!
+    }
+}
+```
+
+Spring Cache работает через AOP-прокси. `this.load()` — мимо прокси, кэш не
+работает. Лекарство: разнести в два сервиса или AopContext.
+
+Кейс 5. Где баг (computeIfAbsent на популярный key)?
+
+```java
+cache.get(hotKey, k -> {
+    Thread.sleep(2000);   // 2 секунды на load
+    return load(k);
+});
+```
+
+Caffeine `get(k, loader)` для одного ключа single-flight — параллельные
+вызовы получат тот же результат после первого. Но если loader долгий и
+блокирующий, все consumer-thread'ы висят 2 сек. Лекарство: `AsyncLoadingCache`
++ `getAll`.
+
+Кейс 6. Где баг (HashMap leak)?
+
+```java
+private static final Map<String, BigData> CACHE = new HashMap<>();
+
+public BigData get(String k) {
+    return CACHE.computeIfAbsent(k, this::load);
+}
+```
+
+HashMap без bounds, не thread-safe, без TTL. На длинном run heap забивается.
+Лекарство: Caffeine.
+
+Кейс 7. Где баг (cache stampede)?
+
+```java
+public Product get(Long id) {
+    Product p = redis.get("product:" + id);
+    if (p == null) {
+        p = repo.findById(id).orElseThrow();  // 1000 параллельных miss
+        redis.set("product:" + id, p);
+    }
+    return p;
+}
+```
+
+При первом запросе после deploy/expiration 1000 параллельных запросов
+делают БД-fetch одновременно — overload. Лекарство:
+- Redis `SET NX` (atomic).
+- Distributed lock (Redisson).
+- Caffeine с `computeIfAbsent` per JVM, + Redis с small TTL skew.
+
+## Что почитать
+
+- [Caffeine documentation](https://github.com/ben-manes/caffeine/wiki) — главный локальный.
+- [Spring Cache Reference](https://docs.spring.io/spring-framework/reference/integration/cache.html) — Spring abstraction.
+- *Designing Data-Intensive Applications*, Martin Kleppmann — глава 11 (Caching).
+- [Redis documentation](https://redis.io/docs/) — для distributed.
+- [Caching Patterns](https://docs.aws.amazon.com/whitepapers/latest/database-caching-strategies-using-redis/caching-patterns.html) — AWS whitepaper.
+- *Software Engineering at Google*, Titus Winters et al. — глава 12 о caches.
+
 ## Где в стеке
 
 **Уровень 6: System Design, Tools, DevOps.** Прикладная часть. На middle — концептуальное понимание Kafka ordering, Circuit Breaker состояний, Docker multi-stage. JUnit+Mockito — практика на live coding.
