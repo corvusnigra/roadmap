@@ -129,6 +129,383 @@ masteryQuiz:
 - Включать в equals поля, не включая их в hashCode
 - Делать класс с mutable-полями ключом коллекции
 
+## Развёрнутое объяснение
+
+equals/hashCode — самая частая тема собесов после HashMap. Контракт записан в
+Javadoc `java.lang.Object` и состоит из пяти свойств equals и одного свойства
+hashCode:
+
+```
+equals:
+  1. Reflexive:  a.equals(a) == true для любого ненулевого a
+  2. Symmetric:  a.equals(b) == b.equals(a)
+  3. Transitive: a.equals(b) && b.equals(c) => a.equals(c)
+  4. Consistent: повторные вызовы дают тот же результат, если объекты не
+                 меняются в полях, участвующих в equals
+  5. Non-null:   a.equals(null) == false
+
+hashCode:
+  6. a.equals(b) => a.hashCode() == b.hashCode()
+     (обратное НЕ обязано: a.hashCode() == b.hashCode() не означает a.equals(b))
+```
+
+**Дефолтная реализация** в `Object` — identity: `equals` через `==`, `hashCode`
+от адреса объекта в native memory (точнее — от `Mark Word`, см. JEP 388 «Class
+Data Sharing» и работу `System.identityHashCode`).
+
+**Почему именно эти 5+1?** Каждое свойство соответствует конкретному месту в
+коде стандартной библиотеки:
+
+- Reflexive: `Set.contains(x)` после `add(x)` должно возвращать true.
+- Symmetric: `Set.contains(x)` и `Set.contains(y)` должны вести себя одинаково,
+  если x.equals(y).
+- Transitive: `Set` не должен хранить «частично равные» элементы.
+- Consistent: HashMap полагается на стабильность hashCode между put и get.
+- Non-null: `if (a.equals(null))` не должно бросать NPE.
+- hashCode-контракт: HashMap кладёт в бакет по hashCode и ищет в нём по equals.
+  Если hashCode разные, get не найдёт.
+
+**Симметричность — самая частая ловушка** в иерархиях:
+
+```java
+public class Point {
+    int x, y;
+    @Override public boolean equals(Object o) {
+        return o instanceof Point p && x == p.x && y == p.y;
+    }
+}
+
+public class ColorPoint extends Point {
+    Color color;
+    @Override public boolean equals(Object o) {
+        if (!(o instanceof ColorPoint cp)) return false;
+        return super.equals(cp) && color == cp.color;
+    }
+}
+
+Point p = new Point(1, 2);
+ColorPoint cp = new ColorPoint(1, 2, RED);
+p.equals(cp);    // true  (Point видит координаты)
+cp.equals(p);    // false (ColorPoint требует color)
+```
+
+Симметричность нарушена. Effective Java Item 10 называет это «фундаментальной
+проблемой ООП» — её нельзя решить, не сломав subset-relation. Решения:
+- **Композиция вместо наследования**: `ColorPoint` имеет `Point` как поле.
+- **Запретить equals между типами**: использовать `getClass() == o.getClass()`
+  вместо `instanceof`. Жёстче и ломает Liskov, но симметричность сохраняется.
+
+**Канонический шаблон equals (Java 14+ с pattern matching):**
+
+```java
+public final class Address {
+    private final String city;
+    private final String street;
+    private final int house;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        return o instanceof Address a
+            && house == a.house
+            && Objects.equals(city, a.city)
+            && Objects.equals(street, a.street);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(city, street, house);
+    }
+}
+```
+
+`Objects.hash(...)` использует `Arrays.hashCode(Object[]{...})` под капотом —
+аллоцирует varargs-массив. На горячем пути это может быть заметно (см. JFR
+профиль). Альтернатива «голыми руками»:
+
+```java
+@Override
+public int hashCode() {
+    int h = 17;
+    h = 31 * h + (city == null ? 0 : city.hashCode());
+    h = 31 * h + (street == null ? 0 : street.hashCode());
+    h = 31 * h + house;
+    return h;
+}
+```
+
+Множитель 31 — простое число, исторически выбранное Joshua Bloch (легко
+оптимизируется компилятором как `(x << 5) - x`).
+
+**Records (Java 16+, JEP 395).** Records автоматически генерируют canonical
+`equals`, `hashCode`, `toString` по полям. Это устранило 80% ручных реализаций:
+
+```java
+public record Address(String city, String street, int house) {}
+// equals/hashCode/toString — уже корректные, тестировать не нужно
+```
+
+**Lombok.** `@EqualsAndHashCode` ставит на класс — генерирует те же методы.
+Ключевые опции: `callSuper = true` (включить родительский equals в иерархии),
+`onlyExplicitlyIncluded = true` + `@EqualsAndHashCode.Include` (контроль полей).
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, Яндекс, Сбер, VK, Озон, СберDP).** Контракт
+equals/hashCode — спросят в 8/8 компаний.
+
+Структурированный ответ. Equals: 5 свойств — reflexive, symmetric, transitive,
+consistent, non-null. HashCode: если a.equals(b), то a.hashCode() == b.hashCode().
+Обратное не обязано: равенство hashCode'ов допускает коллизию.
+
+Доводка: «зачем оба переопределяют, если equals достаточно?» — потому что
+HashMap/HashSet/HashTable находят бакет по hashCode, и если он identity (не
+переопределён), put и get с «равным» объектом дадут разные бакеты — get вернёт
+null.
+
+**Вопрос 2 (Лига, T-Bank).** «Что не так?»
+
+```java
+public class Money {
+    BigDecimal amount;
+    Currency currency;
+
+    @Override public boolean equals(Object o) {
+        return o instanceof Money m && amount.equals(m.amount) && currency.equals(m.currency);
+    }
+    // hashCode не переопределён
+}
+
+Set<Money> wallet = new HashSet<>();
+wallet.add(new Money("100", USD));
+wallet.contains(new Money("100", USD));   // false
+```
+
+Без hashCode используется identity-hash. Два «равных» Money — в разных бакетах.
+Решение: `return Objects.hash(amount, currency)`.
+
+**Вопрос 3 (VK, Альфа).** «Может ли hashCode быть всегда 0? Что плохого?»
+
+Компилируется и формально не нарушает контракт (a.equals(b) => 0 == 0). Но:
+- Все объекты в одном бакете HashMap → O(n) или (с Java 8 treeify) O(log n).
+- HashSet de-facto становится отсортированным списком.
+- Производительность падает катастрофически.
+
+Контракт это **разрешает**, производительность — **запрещает**. На собесе ответ:
+«технически валидно, практически — бомба, на 8/8 проде превратит HashMap в
+LinkedList».
+
+**Вопрос 4 (T-Bank, Озон).** «Сравните `equals` и `==` для String, Integer, и
+самописного класса.»
+
+```java
+String a = "hi";  String b = "hi";       a == b → true  (String Pool)
+String c = new String("hi");             a == c → false (heap)
+                                         a.equals(c) → true
+
+Integer x = 100; Integer y = 100;        x == y → true  (Integer cache -128..127)
+Integer p = 200; Integer q = 200;        p == q → false (вне кэша, разные объекты)
+                                         p.equals(q) → true
+
+new Address(...) == new Address(...) → false  (разные ссылки)
+new Address(...).equals(...) → определяется реализацией
+```
+
+`Integer` кэш `-128..127` — `IntegerCache`, см. `Integer.valueOf`.
+
+## Один день из практики
+
+Тебя позвали разобраться: «фильтр уникальных платежей не работает, дубликаты
+проходят».
+
+```java
+public class Payment {
+    final UUID id;
+    final BigDecimal amount;
+    final Instant timestamp;
+    Status status;   // не final, меняется по жизни
+
+    // equals/hashCode — IDE-генератор, по всем полям
+}
+
+Set<Payment> seen = new HashSet<>();
+for (Payment p : incoming) {
+    if (seen.add(p)) processNew(p);
+}
+```
+
+Проблема. IDE-генератор включил `status` в equals/hashCode. `status` меняется
+после добавления в Set: payment с PENDING положили, дальше он стал PROCESSED.
+hashCode «уплыл», `seen.add(...)` вернёт true для повторного payment с тем же id
+но другим status — дубликат пройдёт.
+
+Шаг 1. Идентифицировать корень: equals/hashCode только по бизнес-identity (id),
+не по mutable-полям состояния.
+
+Шаг 2. Фикс:
+
+```java
+public class Payment {
+    final UUID id;
+    final BigDecimal amount;
+    final Instant timestamp;
+    Status status;
+
+    @Override public boolean equals(Object o) {
+        return o instanceof Payment p && id.equals(p.id);
+    }
+    @Override public int hashCode() {
+        return id.hashCode();
+    }
+}
+```
+
+Шаг 3. Регресс-тест:
+
+```java
+@Test
+void same_id_treated_as_duplicate() {
+    Payment p1 = new Payment(UUID.fromString("..."), TEN, NOW, PENDING);
+    Set<Payment> seen = new HashSet<>();
+    assertTrue(seen.add(p1));
+
+    p1.status = PROCESSED;
+    Payment p1Again = new Payment(p1.id, TEN, NOW, PENDING);
+    assertFalse(seen.add(p1Again));   // дубликат по id
+}
+```
+
+Урок: equals/hashCode для entity = по identity, для value object = по всем полям.
+Records отлично подходят для value object, и не подходят для entity (нет
+mutability, нет наследования).
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+@Entity
+public class User {
+    @Id @GeneratedValue Long id;
+    String email;
+
+    @Override public boolean equals(Object o) {
+        return o instanceof User u && Objects.equals(id, u.id);
+    }
+    @Override public int hashCode() { return Objects.hash(id); }
+}
+
+User u = new User();
+Set<User> set = new HashSet<>();
+set.add(u);
+session.persist(u);   // id присвоится Hibernate'ом
+set.contains(u);      // false — hashCode изменился
+```
+
+Hibernate entity до persist'а имеет `id = null`. После persist `id` присваивается,
+и hashCode меняется → set «теряет» объект. Каноническое решение (см.
+Vlad Mihalcea): использовать «business key» (например, email) или UUID,
+который генерится приложением до persist'а.
+
+Кейс 2. Где баг?
+
+```java
+public boolean equals(Object o) {
+    if (o == null || getClass() != o.getClass()) return false;
+    Order other = (Order) o;
+    return Objects.equals(id, other.id);
+}
+
+@Hibernate.proxy
+Order proxy = session.load(Order.class, 1L);
+proxy.equals(new Order(1L));    // false — getClass у proxy ≠ Order
+```
+
+`getClass()` ломает работу с прокси (Hibernate, Spring AOP). Решение: `instanceof`
+с pattern matching, либо `Hibernate.getClass(o)` для unwrap.
+
+Кейс 3. Где баг (Lombok)?
+
+```java
+@EqualsAndHashCode
+@Data
+public class Account extends BaseEntity {
+    String iban;
+    // не указано callSuper
+}
+```
+
+Lombok `@EqualsAndHashCode` по умолчанию НЕ учитывает родителя. Если в `BaseEntity`
+есть значимое поле — оно потеряется. Lombok даже warning'ует:
+`@EqualsAndHashCode: extends superclass but does not call super`. Решение:
+`@EqualsAndHashCode(callSuper = true)` или явный exclude.
+
+Кейс 4. Где баг (производительность)?
+
+```java
+@Override public int hashCode() {
+    return Objects.hash(field1, field2, field3, field4, field5, list, set, map);
+}
+```
+
+`Objects.hash` создаёт `Object[]` на каждый вызов — аллокация в hot path. На
+кэше из миллионов put/get это видно в JFR. Альтернатива: кэшировать hashCode
+в поле (для immutable объектов) или ручной 31 * h + ...
+
+Кейс 5. Где баг (transitivity)?
+
+```java
+public class Point2D {
+    int x, y;
+    @Override public boolean equals(Object o) {
+        return o instanceof Point2D p && x == p.x && y == p.y;
+    }
+}
+
+public class Point3D extends Point2D {
+    int z;
+    @Override public boolean equals(Object o) {
+        return o instanceof Point3D p && super.equals(p) && z == p.z;
+    }
+}
+
+Point2D a = new Point2D(1, 2);
+Point3D b = new Point3D(1, 2, 3);
+Point3D c = new Point3D(1, 2, 4);
+
+a.equals(b);  // true  (Point2D видит только x, y)
+a.equals(c);  // true
+b.equals(c);  // false (Point3D требует z)
+// нарушение транзитивности
+```
+
+Решение: композиция или getClass-вариант (см. выше).
+
+Кейс 6. Где баг?
+
+```java
+record User(String name, byte[] roles) {}
+
+User u1 = new User("alice", new byte[]{1, 2, 3});
+User u2 = new User("alice", new byte[]{1, 2, 3});
+Set.of(u1, u2).size();   // 2, ожидали 1
+```
+
+Records используют `Arrays.equals` только для полей-массивов **на уровне
+авто-методов в JDK 16+**? На самом деле — нет: records используют дефолтный
+`.equals()` для каждого компонента. Для `byte[]` это identity. Если хотим
+content-based equality, либо обернуть в `record User(String, List<Byte>)`, либо
+переопределить equals/hashCode вручную (records это позволяют).
+
+## Что почитать
+
+- *Effective Java, 3rd Edition*, Joshua Bloch — **Item 10** (Obey the equals contract), **Item 11** (Always override hashCode when you override equals), **Item 12** (Always override toString).
+- [JEP 395: Records](https://openjdk.org/jeps/395) — авто-equals/hashCode для immutable data carriers.
+- [JEP 394: Pattern Matching for instanceof](https://openjdk.org/jeps/394) — современный синтаксис в equals.
+- Vlad Mihalcea, [«How to implement equals and hashCode using the JPA entity identifier»](https://vladmihalcea.com/how-to-implement-equals-and-hashcode-using-the-jpa-entity-identifier/) — про equality в JPA-сущностях.
+- Java Object Layout (JOL) — для измерения реального overhead'а полей и memory layout.
+- [java.lang.Object Javadoc — equals/hashCode contract](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Object.html) — официальный текст контракта.
+
 ## Где в стеке
 
 **Уровень 0: Java Core.** Фундамент языка. Без него все следующие уровни рассыпаются: equals/hashCode не работает в HashMap, Stream API ломается на peek без терминалки, String Pool путается с new String.

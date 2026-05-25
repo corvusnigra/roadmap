@@ -128,6 +128,371 @@ masteryQuiz:
 - Использовать CopyOnWriteArrayList там, где много write (копия на каждый write!)
 - Думать, что отсутствие CME = thread-safety
 
+## Развёрнутое объяснение
+
+`ConcurrentModificationException` — best-effort механизм fail-fast детекции
+багов конкурентной модификации. Это не контракт, не гарантия — слово
+**«fail-fast»** означает «постараемся упасть раньше, чем испортим состояние».
+
+**Как работает modCount.** В большинстве `java.util.*` коллекций есть поле
+`int modCount` (унаследовано из `AbstractList`):
+
+```java
+// Упрощённо, java.util.ArrayList:
+public class ArrayList<E> extends AbstractList<E> {
+    protected transient int modCount = 0;
+
+    public boolean add(E e) {
+        modCount++;
+        ...
+    }
+
+    public Iterator<E> iterator() {
+        return new Itr();
+    }
+
+    private class Itr implements Iterator<E> {
+        int expectedModCount = modCount;
+
+        public E next() {
+            checkForComodification();
+            // ...
+        }
+
+        final void checkForComodification() {
+            if (modCount != expectedModCount)
+                throw new ConcurrentModificationException();
+        }
+    }
+}
+```
+
+Каждая «структурная» модификация (`add`, `remove`, `clear`, `addAll`) инкрементит
+modCount. Iterator при создании запоминает значение. На каждом `next` сверяет.
+Не совпало — `CME`. Это работает и в однопоточном коде (модификация через
+`collection.remove()` внутри for-each), и в многопоточном (но не гарантированно —
+checked-not-locked race).
+
+**Безопасные модификации во время итерации:**
+
+```java
+// 1. Iterator.remove() — единственный безопасный способ
+Iterator<Integer> it = list.iterator();
+while (it.hasNext()) {
+    Integer v = it.next();
+    if (v % 2 == 0) it.remove();    // OK, обновит modCount и expectedModCount
+}
+
+// 2. Collection.removeIf — Java 8, идиоматично
+list.removeIf(v -> v % 2 == 0);
+
+// 3. ListIterator.add / set — для List
+ListIterator<Integer> li = list.listIterator();
+while (li.hasNext()) {
+    if (li.next() == 0) li.add(100);   // OK
+}
+```
+
+**Концепции — fail-fast vs fail-safe vs weakly consistent:**
+
+```
+fail-fast (java.util.*):
+  Iterator проверяет modCount.
+  При обнаружении модификации — CME.
+  Best-effort: может не словить.
+
+fail-safe / snapshot (CopyOnWriteArrayList):
+  Iterator работает по snapshot массива на момент создания.
+  Изменения коллекции после iterator() не видны.
+  Никогда не бросает CME.
+
+weakly consistent (ConcurrentHashMap, ConcurrentLinkedQueue):
+  Iterator работает с volatile-полями.
+  Видит элементы, существовавшие на момент iterator(),
+  может видеть последующие, не обязан, не падает.
+  Никогда не бросает CME.
+```
+
+**CopyOnWriteArrayList.** Каждая мутирующая операция копирует весь массив.
+Iterator получает ссылку на исходный snapshot, никогда не падает. Но цена write
+— O(n) на каждый. Применение: подписчики/listeners (редкий subscribe, частый
+forEach), кэш read-mostly данных.
+
+```java
+// CopyOnWriteArrayList — пример из реальной практики
+private final List<Listener> listeners = new CopyOnWriteArrayList<>();
+
+public void subscribe(Listener l) { listeners.add(l); }   // O(n) — копия
+
+public void notify(Event e) {
+    for (Listener l : listeners) {            // snapshot, без CME
+        l.handle(e);
+    }
+}
+```
+
+**Что считается «структурной модификацией».** Изменение размера или
+перестановки. `list.set(i, newValue)` структурной не считается — `set` НЕ
+инкрементит modCount в `AbstractList`. Но конкретные реализации могут вести
+себя иначе.
+
+```java
+List<Integer> list = new ArrayList<>(List.of(1, 2, 3));
+for (Integer v : list) {
+    list.set(0, 100);    // OK, не CME
+}
+for (Integer v : list) {
+    list.add(4);         // CME на следующем next()
+}
+```
+
+**HashMap-iterator особенно коварен.** modCount инкрементится на `put` (даже
+если ключ уже есть и обновляется значение). Это сделано для упрощения детекции,
+но создаёт неинтуитивные CME:
+
+```java
+Map<String, Integer> m = new HashMap<>(Map.of("a", 1, "b", 2));
+for (var entry : m.entrySet()) {
+    m.put(entry.getKey(), entry.getValue() + 1);   // CME на следующем next()
+}
+```
+
+Решение: `entry.setValue(...)` (Map.Entry API, без modCount++) или сначала
+собрать ключи в List, потом обходить и менять.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank).** «Что такое ConcurrentModificationException и
+когда она бросается?»
+
+CME — runtime exception, который Iterator бросает при обнаружении структурной
+модификации коллекции в обход самого Iterator'а. Механизм — modCount, который
+инкрементируется на структурные изменения. Iterator запоминает modCount при
+создании, сравнивает на каждом next. Назначение — fail-fast detection багов
+(не synchronization). В многопоточном коде CME может НЕ возникнуть даже при
+ошибке — это best-effort.
+
+Безопасные варианты модификации: `Iterator.remove()`, `Collection.removeIf`,
+`ListIterator.add/set`, или замена коллекции на concurrent-вариант.
+
+**Вопрос 2 (Альфа, VK).** «Что не так?»
+
+```java
+List<Integer> list = new ArrayList<>(List.of(1, 2, 3, 4, 5));
+for (Integer i : list) {
+    if (i == 3) list.remove(i);   // CME
+}
+```
+
+Структурная модификация во время итерации через `collection.remove(...)`.
+Iterator на следующем next увидит modCount mismatch.
+
+Решения:
+- `list.removeIf(i -> i == 3)` — идиоматично.
+- `Iterator<Integer> it = list.iterator(); while(it.hasNext()) if (it.next() == 3) it.remove();` — ручной обход.
+- Java 21 Sequenced Collections + `list.reversed()` для обратного направления.
+
+**Вопрос 3 (Сбер, Озон).** «Чем отличаются fail-fast и fail-safe итераторы?
+Дайте примеры.»
+
+| | Fail-fast | Fail-safe / weakly consistent |
+|---|---|---|
+| Примеры | ArrayList, HashMap, HashSet, LinkedList | CopyOnWriteArrayList, ConcurrentHashMap, ConcurrentLinkedQueue |
+| При модификации | бросает CME (best-effort) | не бросает, продолжает работать |
+| Источник данных | живая коллекция + modCount | snapshot (COW) или volatile (CHM) |
+| Цена | дёшево | snapshot stoит O(n) на write, weakly — мизер |
+| Когда выбирать | однопоточный default | подписчики, read-heavy concurrent |
+
+**Вопрос 4 (T-Bank, продвинутый).** «Можно ли получить CME в однопоточном
+коде?»
+
+Да, причём это типичная причина. `Map.put` внутри `for (entry : map.entrySet())`
+— модификация в обход Iterator'а. `list.remove(value)` в for-each — то же.
+Многопоточность тут ни при чём — modCount сравнивается с expectedModCount,
+который был установлен в момент `iterator()`. CME поэтому полезен как линт-фильтр
+багов design-time, а не как защита от race.
+
+## Один день из практики
+
+Задача: добавить «массовое удаление неактивных пользователей» в админку. Первая
+версия:
+
+```java
+@Service
+public class UserService {
+    private final Map<UserId, User> users;   // in-memory кэш, HashMap
+
+    @Scheduled(fixedDelay = 1_000 * 60 * 60)   // раз в час
+    public void cleanInactive() {
+        Instant cutoff = Instant.now().minus(30, ChronoUnit.DAYS);
+        for (var entry : users.entrySet()) {
+            if (entry.getValue().lastSeen().isBefore(cutoff)) {
+                users.remove(entry.getKey());   // CME ✗
+            }
+        }
+    }
+}
+```
+
+CME сразу же на втором элементе. Кроме того, под нагрузкой users используется
+другими потоками — нужен ConcurrentHashMap, а не HashMap.
+
+Переход 1: idiomatic однопоточно.
+
+```java
+users.entrySet().removeIf(e -> e.getValue().lastSeen().isBefore(cutoff));
+```
+
+Это работает и для HashMap, и для ConcurrentHashMap. removeIf реализован через
+Iterator.remove внутри — modCount синхронизируется.
+
+Переход 2: thread-safety. users должен быть `ConcurrentHashMap` — параллельные
+запросы юзеров (login, logout, lookup) не должны блокироваться cleanup'ом.
+CHM-iterator weakly consistent — даже если cleanup идёт во время lookup, lookup
+видит согласованное состояние.
+
+Переход 3: метрика. Сколько удалили, сколько осталось:
+
+```java
+public void cleanInactive() {
+    Instant cutoff = Instant.now().minus(30, ChronoUnit.DAYS);
+    long before = users.size();
+    users.entrySet().removeIf(e -> e.getValue().lastSeen().isBefore(cutoff));
+    long after = users.size();
+    log.info("Cleanup removed {} users ({} → {})", before - after, before, after);
+}
+```
+
+Тест:
+
+```java
+@Test
+void cleanInactive_removes_old_users() {
+    cache.put(new UserId(1), new User(Instant.now().minus(45, DAYS)));
+    cache.put(new UserId(2), new User(Instant.now()));
+
+    service.cleanInactive();
+
+    assertFalse(cache.containsKey(new UserId(1)));
+    assertTrue(cache.containsKey(new UserId(2)));
+}
+```
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+Map<String, Integer> m = new HashMap<>(Map.of("a", 1, "b", 2, "c", 3));
+for (String k : m.keySet()) {
+    if (m.get(k) > 1) m.remove(k);   // CME
+}
+```
+
+`m.keySet()` — view на ключи, его iterator завязан на modCount исходного HashMap.
+Решение: `m.entrySet().removeIf(e -> e.getValue() > 1)`.
+
+Кейс 2. Где баг?
+
+```java
+List<Integer> list = new ArrayList<>(...);
+list.parallelStream().forEach(v -> {
+    if (v < 0) list.remove(v);   // непредсказуемо, иногда CME
+});
+```
+
+Concurrent модификация при parallel stream. Чаще всего CME, иногда data loss
+(IndexOutOfBoundsException, потеря записей). Решение: либо `list.removeIf` (без
+parallel), либо собирать filtered результат через stream.collect.
+
+Кейс 3. Где баг (silent CME)?
+
+```java
+// в Thread A
+List<Integer> shared = new ArrayList<>(List.of(1, 2, 3));
+
+// в Thread B
+new Thread(() -> shared.add(4)).start();
+
+// в Thread A
+for (Integer v : shared) { print(v); }   // может: CME, может: ArrayIndexOutOfBounds, может: пройти ОК
+```
+
+Без synchronization race на modCount. CME — best-effort, не гарантия. Может
+проявиться как любая ошибка или вообще не проявиться. Решение: `synchronized
+(shared) { ... }` вокруг итерации или `CopyOnWriteArrayList`.
+
+Кейс 4. Где баг?
+
+```java
+List<String> events = new ArrayList<>();
+
+@EventListener
+void onEvent(MyEvent e) { events.add(e.payload()); }
+
+@Scheduled(...)
+void flush() {
+    for (String e : events) save(e);    // если в это время прилетит event — CME
+    events.clear();
+}
+```
+
+Конкурентные `add` и iteration. Лекарство: `CopyOnWriteArrayList` (если flush
+редок) или `BlockingQueue.drainTo(...)` (если flush частый и events большой
+поток):
+
+```java
+BlockingQueue<String> events = new LinkedBlockingQueue<>();
+
+void onEvent(...) { events.offer(...); }
+
+void flush() {
+    List<String> batch = new ArrayList<>();
+    events.drainTo(batch);   // атомарно
+    for (String e : batch) save(e);
+}
+```
+
+Кейс 5. Где баг (subList)?
+
+```java
+List<Integer> list = new ArrayList<>(List.of(1, 2, 3, 4, 5));
+List<Integer> sub = list.subList(1, 4);
+list.add(6);                        // ConcurrentModificationException на sub
+System.out.println(sub.size());
+```
+
+`subList` — view, у которого свой expectedModCount = parent.modCount на момент
+создания. Любая структурная модификация parent ломает subList. Если нужен
+независимый список — `new ArrayList<>(sub)`.
+
+Кейс 6. Где баг (CopyOnWriteArrayList)?
+
+```java
+private final List<Listener> listeners = new CopyOnWriteArrayList<>();
+
+void process(Event e) {
+    Iterator<Listener> it = listeners.iterator();
+    while (it.hasNext()) {
+        Listener l = it.next();
+        if (someCondition()) it.remove();   // UnsupportedOperationException
+        else l.handle(e);
+    }
+}
+```
+
+Iterator у COW — read-only snapshot. `Iterator.remove()` не поддерживается.
+Чтобы убрать listener — вызвать `listeners.remove(l)` или `removeIf` напрямую
+на коллекции.
+
+## Что почитать
+
+- [Javadoc java.util.ConcurrentModificationException](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/ConcurrentModificationException.html) — официальное определение fail-fast.
+- [Javadoc java.util.concurrent.CopyOnWriteArrayList](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/CopyOnWriteArrayList.html) — про snapshot iterator.
+- [Javadoc java.util.concurrent.ConcurrentHashMap (Iterator section)](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/ConcurrentHashMap.html) — weakly consistent определение.
+- *Effective Java, 3rd Edition*, Joshua Bloch — **Item 81** (Prefer concurrency utilities to wait and notify), **Item 82** (Document thread safety).
+- *Java Concurrency in Practice*, Brian Goetz — глава 5, Building Blocks (про concurrent коллекции и iterator модели).
+
 ## Где в стеке
 
 **Уровень 1: Collections.** Топ-частотный блок (HashMap спросят в 8/8 компаний). Знать внутренности: treeify в Java 8, resize, cache locality LinkedList, segmenting в ConcurrentHashMap.

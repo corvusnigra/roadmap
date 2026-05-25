@@ -128,6 +128,367 @@ String в Java immutable — внутри final char[] (с Java 9 — byte[] + L
 - Конкатенация через + в цикле — каждая итерация = новый объект
 - Большой intern() без понимания — раздувает String Pool
 
+## Развёрнутое объяснение
+
+`String` в Java — один из самых «нагруженных» типов. На middle ждут понимания
+трёх вещей: immutability, String Pool, Compact Strings.
+
+**1. Immutability.** Поле, в котором хранятся символы, объявлено как `final`:
+```java
+// java.lang.String (Java 8 и раньше):
+public final class String {
+    private final char[] value;
+    private int hash;     // кэш hashCode, lazy
+}
+
+// Java 9+ (JEP 254, Compact Strings):
+public final class String {
+    private final byte[] value;
+    private final byte coder;     // LATIN1 = 0 или UTF16 = 1
+    private int hash;
+}
+```
+
+`final` поле + `private` доступ + `final` класс — String нельзя расширить, нельзя
+мутировать. Это даёт:
+- **Thread safety без synchronization** — два потока могут читать одну String
+  безопасно.
+- **Безопасные ключи HashMap** — hashCode стабилен, без шанса «уплытия».
+- **Кэширование hashCode** — считается один раз и сохраняется в `hash`.
+- **Безопасные строки в Security**: пароли, URL'ы, имена классов в ClassLoader
+  — никто не может «подделать» уже созданную строку.
+
+Известный приём атаки — изменить final char[] через reflection. Это технически
+возможно, но ломает spec и `JLS` явно запрещает: «изменение значения final поля
+после конструктора имеет неопределённое поведение». В Java 9+ с modules
+рефлексия на String requires `--add-opens java.base/java.lang=ALL-UNNAMED`.
+
+**2. String Pool.** Литералы интернируются на этапе class loading:
+
+```java
+String a = "hello";        // литерал → String Pool
+String b = "hello";        // тот же объект из пула
+a == b;                    // true
+
+String c = new String("hello");   // new — всегда новый объект в heap
+a == c;                    // false
+a.equals(c);               // true
+
+String d = c.intern();     // intern() — кладёт в пул или возвращает существующее
+a == d;                    // true
+
+String e = "hel" + "lo";   // compile-time constant — в пуле
+a == e;                    // true
+
+String f = "hel";
+String g = f + "lo";       // runtime concat — новый объект, не в пуле
+a == g;                    // false
+String h = g.intern();
+a == h;                    // true
+```
+
+**Расположение пула.** До Java 7 — в PermGen, фиксированный размер,
+переполнение могло убить JVM. Java 7 (JDK-6962931, релиз 7u40) — пул переехал
+в heap, теперь его собирает обычный GC. Размер пула — это таблица в JVM
+(`StringTable`), `-XX:StringTableSize` (default 60013 в Java 17+). Размер
+литералов в heap, ссылки на них держит StringTable.
+
+```bash
+# Размер пула на живом процессе:
+jcmd <pid> VM.stringtable
+# Output:
+# StringTable statistics:
+# Number of buckets       :     60013 =    480104 bytes, each 8
+# Number of entries       :    127892 =   3069408 bytes, each 24
+# Number of literals      :    127892 =   8493200 bytes (avg 66.41)
+```
+
+**3. Compact Strings (Java 9+, JEP 254).** До Java 9 String хранил `char[]`
+— 2 байта на символ (UTF-16 codepoint). На ASCII-нагруженных приложениях
+(а это 95% web) это было 2× overhead. JEP 254 ввёл:
+- `byte[]` вместо `char[]`.
+- Поле `coder`: `LATIN1` (0) — все символы в диапазоне 0–255, 1 байт каждый;
+  `UTF16` (1) — есть символы вне Latin-1, 2 байта каждый (как раньше).
+- Все методы (`charAt`, `length`, `substring`, etc.) принимают `coder` и
+  делают разную арифметику.
+
+На реальных нагрузках (Spring Boot, Tomcat) JEP 254 даёт 5–15% экономии heap
+без изменения API. Можно отключить флагом `-XX:-CompactStrings` (для совместимости
+с очень старым кодом, использующим внутреннее `value` через reflection — редко).
+
+**4. Конкатенация и `invokedynamic`.** До Java 9 `a + b + c` компилировалось
+в цепочку `new StringBuilder().append(a).append(b).append(c).toString()`. Это
+работало, но было неоптимально для коротких строк (создание StringBuilder,
+char[16] буфер). JEP 280 (Java 9) переписал на `invokedynamic`:
+
+```java
+String result = "Hello, " + name + "! You are " + age;
+// Java 8: new StringBuilder("Hello, ").append(name).append("! You are ").append(age).toString()
+// Java 9+: invokedynamic makeConcatWithConstants(...)
+```
+
+`invokedynamic` даёт runtime'у JVM выбрать стратегию: для коротких строк —
+prepend в один byte[], для длинных — StringBuilder. На JFR-профилях видно, что
+после Java 9 короткие concat вообще не аллоцируют StringBuilder. **Цикл** всё
+равно надо делать через явный StringBuilder:
+
+```java
+// АНТИПАТТЕРН: O(n²) копирования
+String s = "";
+for (int i = 0; i < n; i++) s += list.get(i);
+
+// ОК: O(n) с amortized грow
+StringBuilder sb = new StringBuilder(n * 8);  // hint на capacity
+for (int i = 0; i < n; i++) sb.append(list.get(i));
+String s = sb.toString();
+
+// Лучше: один Stream.collect
+String s = list.stream().collect(Collectors.joining());
+```
+
+**5. Text Blocks (JEP 378, Java 15).** Многострочные литералы через `"""`:
+
+```java
+String json = """
+    {
+      "name": "Alice",
+      "age": 30
+    }
+    """;
+```
+
+Text blocks — это compile-time литералы, попадают в String Pool по тем же
+правилам, что обычные. Полезны для JSON, SQL, HTML в коде.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, Яндекс).** «Что выведет?»
+
+```java
+String a = "hello";
+String b = "hello";
+String c = new String("hello");
+String d = "hel" + "lo";
+String e = "hel" + new String("lo");
+String f = e.intern();
+
+System.out.println(a == b);   // ?
+System.out.println(a == c);   // ?
+System.out.println(a == d);   // ?
+System.out.println(a == e);   // ?
+System.out.println(a == f);   // ?
+```
+
+Ответы:
+- `a == b` → **true** (оба литерала, один объект пула).
+- `a == c` → **false** (`new` всегда новый объект в heap).
+- `a == d` → **true** (compile-time concat литералов = compile-time const → в пуле).
+- `a == e` → **false** (runtime concat с new String — новый объект).
+- `a == f` → **true** (intern вернул каноническую ссылку из пула).
+
+Этот вопрос — лакмус: показывает, понимаете ли вы pool vs heap.
+
+**Вопрос 2 (Лига).** «Чем отличаются `s1.equals(s2)` и `s1 == s2`?»
+
+`==` сравнивает ссылки. Для String это редко нужно (только если осознанно
+работаем с пулом). `equals` сравнивает содержимое, с поддержкой null:
+
+```java
+"abc".equals("abc");      // true
+"abc" == "abc";           // true (литералы из пула)
+"abc" == new String("abc"); // false (heap)
+"abc".equals(new String("abc"));  // true
+```
+
+В Java 7+ есть `Objects.equals(a, b)` — null-safe (null-null → true).
+В Java 17 паттерн матчинг через `switch` тоже использует `equals`.
+
+**Вопрос 3 (Альфа, VK).** «Зачем `intern()`?»
+
+Если приложение обрабатывает миллионы строк, и многие из них дубликаты, можно
+сэкономить память:
+
+```java
+// читаем 10M событий, каждое содержит userType (одно из 100 значений)
+for (Event e : events) {
+    String type = e.getType().intern();   // в пуле — одна копия каждого типа
+    ...
+}
+```
+
+Но есть нюансы:
+- `intern()` не бесплатен — поиск в StringTable.
+- Большое количество уникальных строк раздувает StringTable, не уменьшая heap.
+- С Java 7+ пул в heap, GC может собирать unreferenced strings.
+
+На современных JVM с Compact Strings и G1 чаще выгоднее `Caffeine` cache или
+explicit dedupe map, чем `intern()`. Сам JVM делает `String Deduplication`
+автоматически (`-XX:+UseStringDeduplication`, G1, Java 8u20+) — фоновый процесс
+во время GC находит дубликаты и заменяет их `byte[]` на общий.
+
+**Вопрос 4 (T-Bank, продвинутый).** «Почему String final?»
+
+Несколько причин:
+1. **Безопасность**: ClassLoader использует String для имени класса, Security
+   Manager — для permissions. Расширяемая String позволила бы override методов
+   и обходить проверки.
+2. **Thread safety**: immutable объекты не требуют синхронизации.
+3. **String Pool**: возможен только для immutable. Иначе один поток мог бы
+   изменить «свою» строку и сломать чужие ссылки.
+4. **Кэширование hashCode**: возможно только для immutable. У HashMap.put и get
+   стабильный bucket.
+
+## Один день из практики
+
+Тебе говорят: «приложение ест 6 ГБ heap, на проде Java 17. В дев потребление
+2 ГБ. Что не так?» Снимаем heap dump, открываем в MAT, идём в Histogram:
+
+```
+java.lang.String                  1,200,000 instances  → 460 МБ
+byte[]                            1,200,000 instances  → 1,800 МБ
+char[]                                  120 instances  → < 1 МБ   (Compact Strings работает)
+```
+
+Подозрение — много дубликатов String. Идём в `Group by content` (MAT umbrella):
+
+```
+"OPENED"            900,000 instances    → 80 МБ
+"CLOSED"            120,000 instances    → 12 МБ
+"PROCESSED"          60,000 instances    → 6 МБ
+"user-event-..."  4,800 уникальных     → 4 МБ (id-based, ожидаемо)
+```
+
+Картина ясная: статус-строки повторяются 1M+ раз. Решения:
+
+**Вариант 1**: enum вместо String для status.
+
+```java
+public enum EventStatus {
+    OPENED, CLOSED, PROCESSED
+}
+// одна копия каждого enum value в Class metadata, потребление мизерное
+```
+
+**Вариант 2**: включить String Deduplication в G1 (если перейти на enum нельзя):
+
+```bash
+-XX:+UseStringDeduplication
+-XX:+UseG1GC                        # обязательно G1
+```
+
+Это запускает фоновый процесс при G1 mark phase, который находит String с
+одинаковым content и заменяет их `byte[]` на общую ссылку. Эффект — экономия
+30–50% памяти на String. Цена: ~2–5% throughput на heavy-string workloads.
+
+**Вариант 3**: явный `.intern()` на горячих строках. Хуже, потому что:
+- intern() даёт contention на StringTable.
+- StringTable растёт неограниченно.
+
+После релиза варианта 1 потребление упало с 6 ГБ до 2.4 ГБ. Урок: status-поля,
+type-поля, enum-кандидаты — должны быть enum, а не String.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+String role = userInput;
+if (role == "admin") grantAdmin();
+```
+
+`==` сравнивает ссылки. `userInput` приходит из сети, не из пула — никогда не
+будет `==` с литералом, даже если содержимое совпадает. Правильно: `"admin".equals(role)`
+(null-safe на role) или `Objects.equals(role, "admin")`.
+
+Кейс 2. Где баг?
+
+```java
+String log = "";
+for (Event e : events) {
+    log += e.toString() + "\n";
+}
+```
+
+На больших events это O(n²) копирование byte[]. На N=10⁵ — секунды CPU. Решение:
+StringBuilder или Stream.collect(Collectors.joining("\n")).
+
+Кейс 3. Где баг?
+
+```java
+char password[] = ...;
+String s = new String(password);
+authenticate(s);
+Arrays.fill(password, '\0');   // очистили char[]
+// s.value по-прежнему содержит пароль до GC
+```
+
+Передача пароля в `String` — антипаттерн в security context. String живёт в
+heap до GC, и в это время пароль может попасть в heap dump. Используйте
+`char[]` (можно zero после use) или библиотеки вроде `SecureString`.
+
+Кейс 4. Где баг?
+
+```java
+List<String> events = readMillionEvents();
+events.forEach(s -> System.out.println(s.intern()));
+```
+
+`intern()` на каждом из 1M элементов с большим разбросом значений раздувает
+StringTable. У StringTable дефолтный bucket count 60013 — на 1M уникальных
+строк коллизии и медленный поиск. Решение: не звать intern на high-cardinality
+данных.
+
+Кейс 5. Где баг?
+
+```java
+StringBuilder sb = new StringBuilder();
+List.of("a", "b", "c").parallelStream().forEach(sb::append);
+// результат непредсказуемый
+```
+
+`StringBuilder` не thread-safe. На parallel forEach data race, иногда CME-аналог
+(ArrayIndexOutOfBounds), иногда «исчезнувшие» строки. Решения:
+- `StringBuffer` (synchronized, медленнее).
+- `Collectors.joining()` (правильный stream).
+- Собрать в List и `String.join`.
+
+Кейс 6. Где баг (formatting)?
+
+```java
+log.debug("Processing event " + event.toString() + " in " + (System.nanoTime() - start) + "ns");
+```
+
+Формирование строки происходит **всегда**, даже если уровень debug отключён.
+Конкатенация + `event.toString()` + автобоксинг — реальная цена. Решение: SLF4J
+с шаблоном:
+
+```java
+log.debug("Processing event {} in {}ns", event, System.nanoTime() - start);
+// форматирование происходит только если debug включён
+```
+
+Кейс 7. Где баг (text blocks)?
+
+```java
+String sql = """
+    SELECT * FROM users
+    WHERE id = """ + userId;
+```
+
+Конкатенация text block с переменной — это compile-time concat-call в
+`makeConcatWithConstants`. Опасность: SQL-инъекция. Правильно:
+`PreparedStatement` или, в Spring, `NamedParameterJdbcTemplate` с `:userId`.
+
+## Что почитать
+
+- [JEP 254: Compact Strings](https://openjdk.org/jeps/254) — `byte[] + coder` вместо `char[]`.
+- [JEP 280: Indify String Concatenation](https://openjdk.org/jeps/280) — invokedynamic для `+`.
+- [JEP 192: String Deduplication in G1](https://openjdk.org/jeps/192) — фоновый dedupe.
+- [JEP 378: Text Blocks](https://openjdk.org/jeps/378) — multi-line literals.
+- *Effective Java, 3rd Edition*, Joshua Bloch — **Item 17** (Minimize mutability), **Item 63** (Beware the performance of string concatenation).
+- [Aleksey Shipilёv, «String Density»](https://shipilev.net/jvm/anatomy-quarks/10-string-intern/) — подробно про intern и StringTable.
+- [OpenJDK String source](https://github.com/openjdk/jdk/blob/jdk-21+0/src/java.base/share/classes/java/lang/String.java) — справочник по реализации.
+
 ## Где в стеке
 
 **Уровень 0: Java Core.** Фундамент языка. Без него все следующие уровни рассыпаются: equals/hashCode не работает в HashMap, Stream API ломается на peek без терминалки, String Pool путается с new String.

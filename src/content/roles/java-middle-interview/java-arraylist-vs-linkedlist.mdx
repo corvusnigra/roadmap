@@ -128,6 +128,308 @@ ArrayList — динамический массив (Object[] elementData, capac
 - Использовать LinkedList в высоконагруженном коде
 - Не задавать initialCapacity для известного размера
 
+## Развёрнутое объяснение
+
+ArrayList и LinkedList — две реализации `List`, на которые в учебниках указывают
+как на «выбор по таблице big-O»: для частых insert/delete в середине брать
+LinkedList, для random access — ArrayList. На практике это **почти всегда неверный
+выбор**: ArrayList выигрывает на современном железе из-за **cache locality**.
+
+**ArrayList.** Хранит `Object[] elementData` плюс `int size`. По индексу — прямой
+доступ в массив, O(1). При `add(e)` без явного индекса — `elementData[size++] = e`,
+тоже O(1) амортизированно. Когда массив заполнен (`size == elementData.length`),
+выделяется новый размером `oldCapacity + (oldCapacity >> 1)` (то есть × 1.5), и
+данные копируются через `System.arraycopy`. Это редкое событие, амортизированная
+сложность остаётся O(1).
+
+```java
+// java.util.ArrayList (OpenJDK 21), упрощённо:
+private Object[] elementData;
+private int size;
+
+public boolean add(E e) {
+    modCount++;
+    if (size == elementData.length)
+        elementData = grow();
+    elementData[size++] = e;
+    return true;
+}
+
+private Object[] grow() {
+    int oldCapacity = elementData.length;
+    int newCapacity = oldCapacity + (oldCapacity >> 1);  // × 1.5
+    return elementData = Arrays.copyOf(elementData, newCapacity);
+}
+```
+
+**LinkedList.** Двусвязный список. Каждый элемент — узел `Node<E>{E item, Node<E>
+next, Node<E> prev}`. Размер одного узла (на 64-битной HotSpot с CompressedOops):
+12 байт header + 3 ссылки × 4 байта = 24 байта + сам item. То есть ArrayList<Integer>
+тратит 4–8 байт на ссылку, LinkedList<Integer> — 24 байта на узел. На миллионе
+элементов разница — 16–20 МБ vs 24+ МБ только на overhead, плюс **разбросанность**
+узлов по куче.
+
+**Cache locality — главный аргумент.** Современные процессоры читают память
+кэш-линиями по 64 байта. При итерации по ArrayList кэш-линия содержит сразу
+8 ссылок — следующие 7 доступов идут уже из L1 кэша. При итерации по LinkedList
+каждый `next` — это разыменование ссылки в случайное место кучи, cache miss.
+На 1M элементов это даёт x5–x10 разрыв в чистой итерации, что показывают JMH
+benchmark'и Aleksey Shipilёv и других.
+
+**Где LinkedList всё-таки полезен?** Почти нигде:
+- **Deque/Queue с FIFO** — `ArrayDeque` лучше (та же модель, на массиве, без
+  узлов).
+- **Insert/delete в начале** — у LinkedList O(1), у ArrayList O(n). Но если N
+  маленький — копирование быстрее аллокации узла. Бенчмарк нужен.
+- **ListIterator с frequent insert** — LinkedList даёт O(1) на add через iterator.
+  Редкий кейс.
+
+Все эти случаи Joshua Bloch формализовал в Effective Java Item 28 (legacy) и
+позже в публичных интервью: «ArrayList в 99% случаев. LinkedList — если ты не
+уверен, не используй».
+
+**ArrayDeque.** Реализация Deque на циклическом массиве. Без overhead'а узлов,
+с cache locality. Лучшая замена и `LinkedList` (как Deque), и `Stack` (legacy
+Vector-based class). На JCStress и JMH benchmark'ах выигрывает x3–x10:
+
+```java
+// LinkedList как Stack — медленно:
+LinkedList<Integer> stack = new LinkedList<>();
+stack.push(1); stack.push(2); stack.pop();
+
+// ArrayDeque — каноничный выбор:
+ArrayDeque<Integer> stack = new ArrayDeque<>();
+stack.push(1); stack.push(2); stack.pop();
+```
+
+**Initial capacity и grow overhead.** ArrayList без `initialCapacity` стартует
+с default 10. Если положить 1M элементов, будет порядка 19 resize'ов (`10 → 15 → 22
+→ ... → 1.3M`), каждый — O(n) копирование. На большой коллекции это значимо.
+Если размер известен:
+
+```java
+List<Order> list = new ArrayList<>(1_000_000);   // одна аллокация
+```
+
+**Arrays.asList vs ArrayList.** Частый ляп:
+
+```java
+List<Integer> a = Arrays.asList(1, 2, 3);
+a.add(4);   // UnsupportedOperationException
+
+List<Integer> b = new ArrayList<>(Arrays.asList(1, 2, 3));
+b.add(4);   // OK
+
+List<Integer> c = List.of(1, 2, 3);   // Java 9+ immutable
+c.add(4);   // UnsupportedOperationException
+```
+
+`Arrays.asList` возвращает **fixed-size view** на массив (`Arrays.ArrayList`,
+не `java.util.ArrayList`). `List.of` (Java 9+) — полностью immutable, не разрешает
+null, ничего не разрешает менять.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank).** «В чём разница между ArrayList и LinkedList?»
+
+Структурированный ответ:
+1. **Структура**: ArrayList — динамический массив (`Object[]`), LinkedList —
+   двусвязный список.
+2. **Big-O**: ArrayList — O(1) random access, O(n) insert в середину; LinkedList —
+   O(n/2) random access, O(1) insert в произвольное место **при наличии итератора**
+   (поиск места — O(n)).
+3. **Память**: ArrayList — компактный массив, overhead 4–8 байт на ссылку;
+   LinkedList — 24 байта на узел плюс разбросанность.
+4. **Cache locality**: ArrayList выигрывает катастрофически из-за prefetch CPU.
+5. **Практика**: всегда ArrayList, кроме доказанной бенчмарком пользы LinkedList.
+
+Доводка: «а зачем тогда LinkedList в JDK?» — исторически (Java 1.2), как реализация
+`Deque` интерфейса. Сейчас для Deque — `ArrayDeque`.
+
+**Вопрос 2 (Альфа).** «У вас 10 000 операций insert в начало списка. Что
+выбрать?»
+
+Hint-вопрос, ожидают рассуждение, а не «LinkedList по таблице». Реальный ответ:
+- Если правда «insert в начало» = «всегда позиция 0» = очередь FIFO, то это
+  `ArrayDeque` (push на head — O(1) amortized).
+- Если это «всегда первый элемент позиции» в Future подобной структуре — `Deque`.
+- Если это «вставить в произвольное место через ListIterator при обходе» — да,
+  LinkedList. Но это очень редкий кейс.
+
+Без замера выбирать LinkedList = карго-культ.
+
+**Вопрос 3 (T-Bank, VK).** «У вас ArrayList на 1M элементов. Удаляете каждый
+второй. Сколько это O(?)»
+
+Тривиальный ответ: O(n²), потому что каждое удаление — O(n) сдвиг. Правильный —
+`list.removeIf(predicate)`: O(n) одним проходом, плюс одна копия в конце.
+
+```java
+// O(n^2):
+for (int i = list.size() - 1; i >= 0; i--) {
+    if (i % 2 == 0) list.remove(i);
+}
+
+// O(n):
+list.removeIf(e -> indexOf(e) % 2 == 0);  // упрощённо
+```
+
+**Вопрос 4 (Сбер).** «Какой initialCapacity у ArrayList по умолчанию?»
+
+10. С Java 7+ изменилось: ArrayList лениво аллоцирует массив только при первом
+add (`elementData = EMPTY_ELEMENTDATA`), потом сразу growToCap10. Это экономит
+память в случаях, когда ArrayList создан, но не использован.
+
+## Один день из практики
+
+Пятница, инцидент: сервис формирует ежедневный отчёт по 2M записям, latency
+выросла с 30 секунд до 4 минут. Profiling показывает 70% времени в
+`java.util.LinkedList.get(int)`.
+
+Открываем код:
+
+```java
+@Service
+public class ReportService {
+    public byte[] generate(List<Sale> sales) {
+        List<Sale> sorted = new LinkedList<>(sales);
+        Collections.sort(sorted, Comparator.comparing(Sale::getDate));
+
+        StringBuilder report = new StringBuilder();
+        for (int i = 0; i < sorted.size(); i++) {
+            report.append(sorted.get(i).toCsvRow());      // O(n) на каждый get!
+        }
+        return report.toString().getBytes(StandardCharsets.UTF_8);
+    }
+}
+```
+
+Проблемы:
+1. **LinkedList.get(i)** — O(n/2) для произвольного i. Цикл по индексу даёт
+   суммарно O(n²) = 4 × 10¹² операций. Отсюда и 4 минуты.
+2. **Collections.sort на LinkedList** — копирует в массив, сортирует, кладёт
+   обратно. То есть LinkedList даёт только overhead.
+3. **StringBuilder для 2M строк** — на больших отчётах это OOM по char[].
+
+Фикс:
+
+```java
+public void generate(List<Sale> sales, OutputStream out) throws IOException {
+    List<Sale> sorted = new ArrayList<>(sales);     // ArrayList с известной capacity
+    sorted.sort(Comparator.comparing(Sale::getDate));   // sort на ArrayList — in-place
+
+    try (Writer w = new OutputStreamWriter(out, UTF_8)) {
+        for (Sale s : sorted) {           // for-each = Iterator = O(1) шаг
+            w.write(s.toCsvRow());
+            w.write('\n');
+        }
+    }
+}
+```
+
+После релиза latency 28 секунд. Уроки:
+- `for (int i = 0; i < list.size(); i++) list.get(i)` — антипаттерн для List
+  вообще (даже на ArrayList компилятор не всегда elidet bounds check).
+- For-each на List использует Iterator, O(1) шаг на обоих типах.
+- Сортировка LinkedList не имеет смысла.
+- Стримить в OutputStream, не накапливать всю строку.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+List<Integer> a = Arrays.asList(1, 2, 3);
+a.add(4);   // UnsupportedOperationException
+a.remove(0);   // UnsupportedOperationException
+```
+
+`Arrays.asList` — fixed-size view. Чтобы получить mutable ArrayList:
+`new ArrayList<>(Arrays.asList(1, 2, 3))` или (Java 9+) `new ArrayList<>(List.of(1, 2, 3))`.
+
+Кейс 2. Где баг?
+
+```java
+List<Integer> a = new ArrayList<>(List.of(1, 2, 3, 4, 5));
+for (Integer i : a) {
+    if (i % 2 == 0) a.remove(i);   // ConcurrentModificationException
+}
+```
+
+Модификация во время итерации. Iterator увидит modCount mismatch на следующем
+`next` и бросит CME. Правильно: `a.removeIf(i -> i % 2 == 0)`.
+
+Кейс 3. Где баг?
+
+```java
+List<String> result = new ArrayList<>();
+for (int i = 0; i < 1_000_000; i++) {
+    result.add(0, "x");   // вставка в начало
+}
+```
+
+Каждый `add(0, ...)` сдвигает все элементы на 1. Итого O(n²) = 10¹² операций.
+Альтернатива: `ArrayDeque.push(...)` или `LinkedList.addFirst(...)`. Если в конце
+нужен List в обратном порядке — собрать в ArrayList с `add()` (в конец) и потом
+`Collections.reverse()`.
+
+Кейс 4. Где баг?
+
+```java
+Stack<Integer> stack = new Stack<>();
+stack.push(1); stack.push(2); stack.pop();
+```
+
+`java.util.Stack` extends `Vector` — synchronized legacy с Java 1.0. Каждый метод
+заплачет монитором. Канонично: `ArrayDeque` (как Deque/Stack).
+
+Кейс 5. Где баг (память)?
+
+```java
+ArrayList<Integer> list = new ArrayList<>();
+for (int i = 0; i < 1_000_000; i++) list.add(i);
+list.subList(0, 100).clear();   // удалить первые 100
+```
+
+`subList(0, 100).clear()` — корректный способ удалить диапазон. Распространённая
+ошибка: использовать subList и держать на него ссылку — он не самостоятельный
+ArrayList, а view на родителя. Любая модификация родителя ломает subList.
+
+Кейс 6. Где баг (concurrent)?
+
+```java
+@Service
+public class EventRouter {
+    private final List<Event> queue = new LinkedList<>();   // не thread-safe!
+
+    public void enqueue(Event e) { queue.add(e); }
+    public Event dequeue() { return queue.poll(); }
+}
+```
+
+LinkedList не thread-safe. Concurrent enqueue/dequeue — data race. Замена:
+`ConcurrentLinkedQueue` (lock-free) или `LinkedBlockingQueue` (с capacity и
+блокировками для backpressure).
+
+Кейс 7. Где баг?
+
+```java
+List<Integer> l1 = new ArrayList<>(1_000_000);
+System.out.println(l1.size());   // 0
+```
+
+Конструктор `ArrayList(int)` задаёт **capacity**, а не size. Список пустой.
+Чтобы заполнить нулями: `new ArrayList<>(Collections.nCopies(1_000_000, 0))`.
+
+## Что почитать
+
+- [OpenJDK 21 ArrayList source](https://github.com/openjdk/jdk/blob/jdk-21+0/src/java.base/share/classes/java/util/ArrayList.java) — обязательно: `grow`, `arraycopy`, `removeIf`.
+- [OpenJDK 21 LinkedList source](https://github.com/openjdk/jdk/blob/jdk-21+0/src/java.base/share/classes/java/util/LinkedList.java) — для понимания, почему он редко нужен.
+- Aleksey Shipilёv, [«Java Collections Disorder»](https://shipilev.net/blog/2014/all-fields-are-final/) — о cache locality и реальном перфе.
+- *Effective Java, 3rd Edition*, Joshua Bloch — **Item 64** (Refer to objects by their interfaces).
+- Joshua Bloch, [«Performance Pitfalls in Java»](https://youtu.be/W2qfRH6oqfg) — на тему ArrayList vs LinkedList.
+- [JMH (Java Microbenchmark Harness)](https://openjdk.org/projects/code-tools/jmh/) — единственно правильный способ замерять Java perf.
+
 ## Где в стеке
 
 **Уровень 1: Collections.** Топ-частотный блок (HashMap спросят в 8/8 компаний). Знать внутренности: treeify в Java 8, resize, cache locality LinkedList, segmenting в ConcurrentHashMap.

@@ -128,6 +128,411 @@ masteryQuiz:
 - Бросать checked Exception на каждый чих (контракт раздут)
 - Использовать исключение для control flow
 
+## Развёрнутое объяснение
+
+Иерархия исключений — фундамент того, как Java сообщает об ошибках. На middle
+ждут понимания всей иерархии и сценариев, когда какой тип уместен.
+
+```
+java.lang.Throwable
+├── java.lang.Error            (фатальные, не ловим)
+│   ├── OutOfMemoryError
+│   ├── StackOverflowError
+│   ├── NoClassDefFoundError       (отличается от ClassNotFoundException)
+│   ├── LinkageError
+│   └── VirtualMachineError
+├── java.lang.Exception
+│   ├── IOException              (checked)
+│   ├── SQLException             (checked)
+│   ├── ClassNotFoundException   (checked)
+│   ├── ReflectiveOperationException
+│   ├── InterruptedException     (checked, особый)
+│   └── java.lang.RuntimeException   (unchecked, всё ниже)
+│       ├── NullPointerException
+│       ├── IllegalArgumentException
+│       ├── IllegalStateException
+│       ├── IndexOutOfBoundsException
+│       ├── ClassCastException
+│       ├── NumberFormatException
+│       ├── ConcurrentModificationException
+│       ├── ArithmeticException
+│       └── UnsupportedOperationException
+```
+
+**Error vs Exception vs RuntimeException — главная дихотомия:**
+
+- **Error** — фатальные системные ошибки. Ловить не имеет смысла: OOM значит,
+  что heap кончился, и даже `catch (OutOfMemoryError)` блок может не выполниться
+  (потребует аллокации). `StackOverflowError` — рекурсия без базы. Эти ошибки
+  «не должны бы случаться», и приложение должно перезапуститься.
+
+- **Checked Exception** (`extends Exception`, не `RuntimeException`) — компилятор
+  заставляет либо catch, либо `throws` в сигнатуре. Замысел Sun Microsystems
+  (1996): сделать обработку IO/SQL обязательной. На практике checked exceptions
+  считаются **спорным решением** — много кода с `throws IOException` без
+  реальной семантики, обёртки в `RuntimeException` лишь чтобы пройти через
+  `Stream`/lambda, который checked не пропускает. Современный Java-community
+  склоняется к unchecked-first для большинства бизнес-ошибок (см. Spring,
+  Hibernate — у них всё через `RuntimeException`).
+
+- **RuntimeException** — unchecked, не требует объявления. Используется для
+  «программных ошибок» (NPE, IllegalArgumentException) и большей части
+  бизнес-исключений.
+
+**Try-with-resources (Java 7, JEP 213).** До Java 7 типичный pattern был:
+
+```java
+// До Java 7 — ручной try-finally:
+Connection conn = null;
+try {
+    conn = ds.getConnection();
+    // ...
+} finally {
+    if (conn != null) {
+        try { conn.close(); }
+        catch (SQLException e) { /* что делать?! */ }
+    }
+}
+```
+
+Try-with-resources делает это автоматически:
+
+```java
+// Java 7+:
+try (Connection conn = ds.getConnection();
+     PreparedStatement ps = conn.prepareStatement("...")) {
+    ps.execute();
+}  // ps.close(), потом conn.close() — порядок обратный объявлению
+```
+
+Любой `AutoCloseable` или `Closeable` (extends AutoCloseable, добавляет throws
+IOException вместо общего Exception) подходит. Закрытие гарантированно даже
+при exception. Если и tryblock, и close бросают — exception из tryblock уходит
+наружу, а exception из close становится `suppressed` (доступен через
+`.getSuppressed()`).
+
+```java
+try (var r = new MyResource()) {
+    r.work();    // бросает IllegalStateException
+}  // close() бросает IOException
+// наружу уйдёт IllegalStateException
+// getSuppressed() = [IOException]
+```
+
+**Java 9 enhancement (JEP 213):** effectively-final переменные можно использовать
+в try-with-resources без объявления внутри try:
+
+```java
+Connection conn = ds.getConnection();
+try (conn) {     // Java 9+, без переменной
+    // ...
+}
+```
+
+**Multi-catch и rethrow.** Java 7 позволил группировать catch:
+
+```java
+// Старый стиль:
+try { ... }
+catch (IOException e)  { handle(e); }
+catch (SQLException e) { handle(e); }
+
+// Multi-catch (Java 7+):
+try { ... }
+catch (IOException | SQLException e) {
+    handle(e);   // e имеет тип ближайшего общего родителя
+}
+```
+
+**Exception chaining.** Контекст важен. Никогда:
+
+```java
+catch (SQLException e) {
+    throw new ServiceException("DB failed");   // потеряли stacktrace!
+}
+```
+
+Всегда:
+
+```java
+catch (SQLException e) {
+    throw new ServiceException("DB failed for user " + userId, e);  // cause = e
+}
+```
+
+Тогда в stack trace вы увидите `Caused by: SQLException: ...` с оригиналом.
+
+**InterruptedException — особый.** Когда поток в `Thread.sleep`/`wait`/`Lock.lockInterruptibly`,
+другой поток может позвать `thread.interrupt()`. InterruptedException бросается,
+**и interrupt flag сбрасывается**. Если вы поглотили исключение и не восстановили
+флаг — поток продолжит работать, проигнорировав сигнал отмены. Канонический
+паттерн:
+
+```java
+try {
+    Thread.sleep(1000);
+} catch (InterruptedException e) {
+    Thread.currentThread().interrupt();   // ВОССТАНОВИТЬ флаг
+    // graceful shutdown, return и т.д.
+    return;
+}
+```
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank, Альфа).** «Расскажи иерархию исключений в Java.»
+
+Сверху Throwable, два потомка: Error (фатальный) и Exception. У Exception две
+важные ветки: checked (IOException, SQLException) — компилятор заставляет
+catch/throws, и RuntimeException — unchecked. Главные unchecked: NullPointerException,
+IllegalArgumentException, IllegalStateException, ClassCastException,
+IndexOutOfBoundsException, ArithmeticException.
+
+Доводка: «когда выбирать checked vs unchecked?» — современная практика
+склоняется к unchecked-first (Spring, Hibernate, JOOQ). Checked используют, когда
+вы хотите, чтобы клиент API **обязан** обработать ошибку (например, IO операции
+сетевой библиотеки).
+
+**Вопрос 2 (Альфа, VK).** «В чём разница try-finally и try-with-resources?»
+
+Try-finally — ручное закрытие ресурсов; нужно null-checks, try внутри finally
+(если close сам может бросить), правильный порядок закрытия в обратной
+последовательности. Try-with-resources делает это автоматически: ресурсы
+объявляются в `try (...)`, должны реализовать AutoCloseable, закрываются в
+обратном порядке объявления, исключения в close становятся suppressed (не
+теряются). Меньше boilerplate, корректное поведение из коробки.
+
+**Вопрос 3 (T-Bank, Сбер).** «Что не так?»
+
+```java
+public void process(File f) {
+    try {
+        doWork(f);
+    } catch (Exception e) {
+        log.error("Failed");
+    }
+}
+```
+
+Несколько проблем:
+1. `catch (Exception e)` ловит всё, включая ошибки, которые не должны быть
+   подавлены (например, `InterruptedException`).
+2. Сообщение `"Failed"` без контекста (какой файл, какая операция).
+3. `e` не залогирован — потеряли stacktrace.
+4. После catch метод тихо вернётся успешно — caller не узнает об ошибке.
+
+Правильнее:
+
+```java
+public void process(File f) {
+    try {
+        doWork(f);
+    } catch (IOException e) {
+        throw new ProcessingException("Failed to process " + f, e);
+    }
+}
+```
+
+Если нужно swallow (graceful retry, например), хотя бы залогировать с уровнем
+WARN и контекстом.
+
+**Вопрос 4 (Озон, продвинутый).** «Что такое suppressed exceptions?»
+
+В try-with-resources, если и блок try, и метод close бросают исключение, в
+старом try-finally исключение из tryblock терялось — наружу шло из finally.
+Java 7+ исправил: исключение из close `addSuppressed(...)` к основному, и
+доступно через `e.getSuppressed()`. Например:
+
+```java
+try (var r = new R1(); var r2 = new R2()) {
+    throw new IOException("A");
+} catch (IOException e) {
+    e.getMessage();           // "A"
+    e.getSuppressed();        // [from r2.close(), from r1.close()]
+}
+```
+
+## Один день из практики
+
+Тебя позвали разобраться: «сервис тихо игнорирует ошибки, но в логах ничего».
+Подсветка глобальная: алёрт на 5xx ушёл, в Sentry пусто.
+
+Открываем код:
+
+```java
+@RestController
+public class ReportController {
+    @GetMapping("/report")
+    public Report build(@RequestParam Long userId) {
+        try {
+            return reportService.generate(userId);
+        } catch (Exception e) {
+            return null;       // дальше Spring сериализует null → 200 OK с пустым body
+        }
+    }
+}
+```
+
+Проблемы:
+1. `catch (Exception)` ловит **всё**, включая `RuntimeException`, которые должны
+   были долететь до глобального обработчика.
+2. Логирование отсутствует — невозможно понять, что упало.
+3. Ответ `null` сериализуется в `{}` или `null`, клиент думает, что всё ок.
+4. HTTP-код **200**, а должно быть 500 (или 400, если userId невалидный).
+
+Фикс — убрать локальный catch, дать долететь до `@ControllerAdvice`:
+
+```java
+@RestController
+public class ReportController {
+    @GetMapping("/report")
+    public Report build(@RequestParam Long userId) {
+        return reportService.generate(userId);   // exception летит наружу
+    }
+}
+
+@ControllerAdvice
+@Slf4j
+public class GlobalExceptionHandler {
+    @ExceptionHandler(EntityNotFoundException.class)
+    public ResponseEntity<ErrorBody> handleNotFound(EntityNotFoundException e) {
+        log.warn("Not found: {}", e.getMessage());
+        return ResponseEntity.status(404).body(new ErrorBody("NOT_FOUND", e.getMessage()));
+    }
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorBody> handleBadRequest(IllegalArgumentException e) {
+        log.warn("Bad request: {}", e.getMessage());
+        return ResponseEntity.status(400).body(new ErrorBody("BAD_REQUEST", e.getMessage()));
+    }
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorBody> handleUnexpected(Exception e) {
+        log.error("Unhandled exception", e);  // STACKTRACE — ключевое
+        return ResponseEntity.status(500).body(new ErrorBody("INTERNAL", "Try again later"));
+    }
+}
+```
+
+После релиза в Sentry посыпались 500-стек-трейсы — оказалось, falsely-positive
+`NullPointerException` в `userId == null` (controller принимал null без
+validation). Это починили `@NotNull Long userId`.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+try {
+    Thread.sleep(1000);
+} catch (InterruptedException e) {
+    // ignore
+}
+```
+
+InterruptedException сбросил interrupt flag, теперь поток не знает, что его
+прервали. В пуле потоков это значит, что shutdown будет ждать его вечно. Фикс:
+`Thread.currentThread().interrupt();` в catch.
+
+Кейс 2. Где баг?
+
+```java
+catch (RuntimeException e) {
+    throw new RuntimeException("oops");
+}
+```
+
+Потеряли cause. В stack trace будет только новый RuntimeException с
+бесполезным «oops». Правильно: `throw new RuntimeException("ctx: " + ..., e)`.
+
+Кейс 3. Где баг?
+
+```java
+try {
+    return someMap.get(key);
+} catch (NullPointerException e) {
+    return defaultValue;
+}
+```
+
+Exception-driven control flow. NPE дорогая (filling stacktrace = traversal),
+плюс catch ловит и NPE из любых других мест (внутри `someMap.get(...)`, если
+ключ невалидный или функция nullable). Правильно: `Optional.ofNullable(someMap.get(key)).orElse(defaultValue)`.
+
+Кейс 4. Где баг?
+
+```java
+FileInputStream in = new FileInputStream(f);
+try {
+    return readAll(in);
+} finally {
+    in.close();
+}
+```
+
+Если `readAll` бросит и `in.close` тоже бросит — оригинальное исключение
+теряется. Try-with-resources решает:
+
+```java
+try (FileInputStream in = new FileInputStream(f)) {
+    return readAll(in);
+}
+```
+
+Кейс 5. Где баг?
+
+```java
+public List<Order> findAll() throws IOException, SQLException, ClassNotFoundException, ParseException {
+    ...
+}
+```
+
+«Throws-bloat». Сигнатура с 4+ checked exception обычно значит «лень обернуть в
+RuntimeException». Это засоряет API caller'а. Решение: завернуть в один
+`ServiceException` или `RuntimeException`-обёртку.
+
+Кейс 6. Где баг (Stream + checked)?
+
+```java
+List<String> data = files.stream()
+    .map(Files::readString)   // throws IOException
+    .toList();
+```
+
+Stream API не поддерживает checked. Компилятор требует обернуть:
+
+```java
+List<String> data = files.stream()
+    .map(f -> {
+        try { return Files.readString(f); }
+        catch (IOException e) { throw new UncheckedIOException(e); }
+    })
+    .toList();
+```
+
+Стандарт `UncheckedIOException` для IO специально создан для этого case.
+
+Кейс 7. Где баг?
+
+```java
+catch (NoClassDefFoundError e) {
+    log.warn("Class not loaded, skipping");
+}
+```
+
+`NoClassDefFoundError` — `Error`, не `Exception`. Ловить его «технически можно»,
+но обычно это значит, что classpath сломан в рантайме — приложение в нестабильном
+состоянии. Лучше дать ему долететь и упасть. `ClassNotFoundException` — это
+checked-exception, которая бросается при динамической загрузке (`Class.forName`),
+и её ловить уместно.
+
+## Что почитать
+
+- *Effective Java, 3rd Edition*, Joshua Bloch — **Items 69–77** (вся глава Exceptions).
+- [JEP 213: Milling Project Coin](https://openjdk.org/jeps/213) — try-with-resources, multi-catch.
+- [JEP 358: Helpful NullPointerExceptions](https://openjdk.org/jeps/358) — улучшенные NPE с указанием поля (Java 14+).
+- [Java Language Specification, §11 Exceptions](https://docs.oracle.com/javase/specs/jls/se21/html/jls-11.html) — формальные правила.
+- Brian Goetz, [«Exceptional Java»](https://wiki.openjdk.org/display/HotSpot/Exceptional+Java) — про unchecked-first философию.
+- [Javadoc java.lang.Throwable](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Throwable.html) — про addSuppressed/getSuppressed.
+
 ## Где в стеке
 
 **Уровень 0: Java Core.** Фундамент языка. Без него все следующие уровни рассыпаются: equals/hashCode не работает в HashMap, Stream API ломается на peek без терминалки, String Pool путается с new String.

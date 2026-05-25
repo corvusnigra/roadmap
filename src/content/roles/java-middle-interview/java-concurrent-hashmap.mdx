@@ -128,6 +128,354 @@ HashMap не thread-safe: при concurrent put возможна потеря д
 - if (!map.containsKey(k)) map.put(k, v) — race condition
 - Думать, что ConcurrentHashMap снимает все вопросы концурентности (атомарность отдельных операций ≠ атомарность последовательности)
 
+## Развёрнутое объяснение
+
+`ConcurrentHashMap` — главный многопоточный коллекшен в Java, со своей историей.
+
+**Java 5–7: сегменты.** Doug Lea (`java.util.concurrent`, JSR-166) спроектировал
+CHM как массив из `Segment[]` (16 по умолчанию). Каждый Segment — мини-HashMap
+со своим `ReentrantLock`. Put в Segment A не блокирует Segment B. Read был
+non-blocking через volatile-поля. Минусы: 16 потоков было «потолком»
+параллелизма, плюс отдельная служебная память на сегменты.
+
+**Java 8: полный редизайн.** Doug Lea переписал CHM без сегментов:
+
+```java
+// Упрощённый псевдокод put (OpenJDK 21, java.util.concurrent.ConcurrentHashMap)
+final V putVal(K key, V value, boolean onlyIfAbsent) {
+    if (key == null || value == null) throw new NullPointerException();
+    int hash = spread(key.hashCode());
+    Node<K,V>[] tab = table;
+    for (;;) {
+        if (tab == null) tab = initTable();
+        int i = (n - 1) & hash;
+        Node<K,V> f = tabAt(tab, i);                // volatile read
+        if (f == null) {
+            if (casTabAt(tab, i, null, new Node<>(hash, key, value)))
+                break;                              // CAS на пустом бакете
+        } else {
+            synchronized (f) {                       // блок только на голове цепочки
+                if (tabAt(tab, i) == f) {            // двойная проверка после lock
+                    // вставка в цепочку или дерево
+                }
+            }
+            // treeify если binCount >= TREEIFY_THRESHOLD
+            break;
+        }
+    }
+    addCount(1L, binCount);                          // обновление striped counter
+    return null;
+}
+```
+
+Ключевые свойства:
+- **Read без локов** — volatile-чтение головы бакета через `tabAt(Unsafe.getObjectVolatile)`.
+- **CAS** на вставке в пустой бакет. Если CAS не прошёл — retry в цикле (другой
+  поток успел вставить).
+- **`synchronized` на голове цепочки/дерева** при коллизии — короткая критическая
+  секция, не глобальный лок.
+- **Размер хранится в `CounterCell[]` (striped counter)** — каждое ядро пишет в
+  свою ячейку, чтобы избежать contention на едином AtomicLong. `size()` —
+  приблизительный, читает все ячейки.
+- **null запрещён** (для ключа и для значения). Причина — невозможность отличить
+  «ключа нет» от «ключ есть, значение null» в lock-free read.
+
+**Атомарные операции.** На CHM можно безопасно делать составные действия —
+именно для них CHM и создан:
+
+```java
+// putIfAbsent — атомарно
+cache.putIfAbsent(key, defaultValue);
+
+// computeIfAbsent — атомарно, value создаётся только если ключа нет
+cache.computeIfAbsent(key, k -> loadFromDb(k));
+
+// merge — атомарно для счётчиков
+counts.merge(word, 1L, Long::sum);
+
+// compute — общий случай
+cache.compute(key, (k, v) -> v == null ? init() : update(v));
+```
+
+**Важная гарантия:** для одной key операция `computeIfAbsent`/`merge`/`compute`
+выполняется в `synchronized` на голове бакета — никто другой одновременно не
+будет вычислять value для того же key. Это значит, можно использовать CHM как
+«memoization cache» без CAS-loop'а вручную.
+
+**Спецификации стандартов.** Iterator CHM — **weakly consistent**:
+- не бросает `ConcurrentModificationException`;
+- гарантированно видит элементы, существовавшие на момент `iterator()`;
+- может, но не обязан видеть последующие модификации;
+- не блокирует write'ы.
+
+Это отличается от `Collections.synchronizedMap(new HashMap<>())`, который использует
+fail-fast iterator и требует ручной синхронизации вокруг итерации.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank, Альфа, Озон).** «Чем ConcurrentHashMap отличается от HashMap?»
+
+Структурированный ответ:
+1. **Thread-safety**: CHM безопасна для concurrent put/get, HashMap — нет (data race,
+   потеря записей, в Java 7 — infinite loop при resize).
+2. **Гранулярность блокировки** в CHM: до Java 8 — сегменты, начиная с Java 8 —
+   CAS на пустых бакетах + `synchronized` на голове бакета.
+3. **Read без локов** — volatile-чтение.
+4. **Запрет null** ключа/значения — чтобы лок-фри read был детерминированным.
+5. **Атомарные составные операции**: `putIfAbsent`, `computeIfAbsent`, `merge`,
+   `compute`.
+6. **`size()` приблизительный** — через CounterCell[]/striped counter.
+7. **Iterator weakly consistent**, не fail-fast.
+
+**Вопрос 2 (Альфа).** «В чём разница между `Collections.synchronizedMap(new HashMap<>())`
+и `ConcurrentHashMap`?»
+
+```java
+Map<K, V> sync = Collections.synchronizedMap(new HashMap<>());
+Map<K, V> chm = new ConcurrentHashMap<>();
+```
+
+- `synchronizedMap` оборачивает каждый метод в `synchronized(this)` — один глобальный
+  monitor. Под нагрузкой все put сериализуются.
+- CHM использует striped locks (segmented подход + CAS) — параллельный put в разные
+  бакеты идёт параллельно.
+- Iterator `synchronizedMap` fail-fast, и для безопасной итерации нужен **ручной**
+  `synchronized(map) { for (... : map.entrySet()) ... }`. У CHM weakly consistent.
+
+`Hashtable` — Java 1.0 legacy, та же стратегия что synchronizedMap, но дороже из-за
+старого API.
+
+**Вопрос 3 (VK, T-Bank).** «Что не так?»
+
+```java
+private Map<String, Integer> counts = new ConcurrentHashMap<>();
+
+public void increment(String word) {
+    if (counts.containsKey(word)) {
+        counts.put(word, counts.get(word) + 1);
+    } else {
+        counts.put(word, 1);
+    }
+}
+```
+
+`containsKey` + `get` + `put` — три отдельные операции. Между ними другой поток
+может изменить значение. Под нагрузкой — потеря инкрементов. Атомарность отдельной
+операции в CHM **не** даёт атомарности их последовательности.
+
+Правильно:
+```java
+counts.merge(word, 1, Integer::sum);
+// или:
+counts.compute(word, (k, v) -> v == null ? 1 : v + 1);
+```
+
+**Вопрос 4 (Сбер, продвинутый).** «Почему CHM запрещает null значения?»
+
+В HashMap `get(k)` возвращает null в двух случаях: «ключа нет» и «ключ есть,
+значение null». Чтобы их различить, нужен `containsKey`. В CHM read non-blocking,
+и пара «containsKey + get» не атомарна — между ними другой поток может удалить
+ключ. Если разрешить null значения, lock-free read становится семантически
+неоднозначным. Doug Lea решил это запретом null.
+
+## Один день из практики
+
+Тебе пришёл тикет: «при пиковой нагрузке сервис кэширования ключей JWT даёт rate
+limit на внешний JWKS endpoint. Видимо, кэш не работает». Открываем сервис:
+
+```java
+@Service
+public class JwksCache {
+    private final Map<String, PublicKey> keys = new ConcurrentHashMap<>();
+    private final JwksClient client;
+
+    public PublicKey get(String kid) {
+        if (keys.containsKey(kid)) {
+            return keys.get(kid);
+        }
+        PublicKey k = client.fetch(kid);     // HTTP вызов к JWKS endpoint
+        keys.put(kid, k);
+        return k;
+    }
+}
+```
+
+При первом cache miss параллельные запросы делают `fetch` независимо — JWKS
+endpoint получает N запросов на один kid. Проблема в том, что **проверка-вставка
+не атомарна**.
+
+Фикс:
+
+```java
+public PublicKey get(String kid) {
+    return keys.computeIfAbsent(kid, this::fetchKey);
+}
+```
+
+Внутри `computeIfAbsent` берётся `synchronized` на голове бакета этого kid —
+параллельные запросы к одному kid сериализуются, JWKS дёргается ровно один раз.
+К разным kid — идут параллельно.
+
+**Ловушка**: лямбда в `computeIfAbsent` не должна делать **повторный** вызов к
+тому же CHM (модифицировать его), иначе deadlock:
+
+```java
+// АНТИПАТТЕРН — модификация map внутри computeIfAbsent
+keys.computeIfAbsent("x", k -> {
+    keys.put("y", load("y"));   // possible livelock/CME-аналог
+    return load("x");
+});
+```
+
+С Java 9 CHM детектит такие случаи и бросает `IllegalStateException: Recursive
+update`. В Java 8 это была серая зона.
+
+Регресс-тест:
+
+```java
+@Test
+void concurrent_get_makes_single_fetch() throws Exception {
+    JwksClient mockClient = mock(JwksClient.class);
+    when(mockClient.fetch("kid-1")).thenReturn(testKey);
+    JwksCache cache = new JwksCache(mockClient);
+
+    int N = 100;
+    var pool = Executors.newFixedThreadPool(N);
+    var latch = new CountDownLatch(1);
+    var futures = IntStream.range(0, N)
+        .mapToObj(i -> pool.submit(() -> {
+            latch.await();
+            return cache.get("kid-1");
+        }))
+        .toList();
+    latch.countDown();   // одновременный старт
+    for (var f : futures) f.get();
+    verify(mockClient, times(1)).fetch("kid-1");   // ровно один вызов
+}
+```
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+ConcurrentHashMap<String, AtomicInteger> counts = new ConcurrentHashMap<>();
+
+public void inc(String k) {
+    if (!counts.containsKey(k)) {
+        counts.put(k, new AtomicInteger(0));
+    }
+    counts.get(k).incrementAndGet();
+}
+```
+
+Между containsKey и put — гонка: два потока могут создать два разных
+`AtomicInteger(0)`, последний put перетрёт первый, оба inc уйдут в перетёртый.
+Правильно: `counts.computeIfAbsent(k, kk -> new AtomicInteger(0)).incrementAndGet()`.
+
+Кейс 2. Где баг?
+
+```java
+Map<String, Integer> m = new ConcurrentHashMap<>();
+m.put("k", 1);
+m.put("k", null);   // NullPointerException
+```
+
+CHM не разрешает null. Ловится сразу — но если значение приходит из nullable
+source, баг проявится в проде на первом null.
+
+Кейс 3. Где баг?
+
+```java
+int total = 0;
+for (Integer v : chm.values()) {
+    total += v;
+}
+return total;
+```
+
+Iterator CHM weakly consistent. Если во время итерации идёт `put`/`remove`, вы
+можете посчитать половину старого и половину нового — снапшот несогласованный.
+Если нужна точная сумма — используйте `LongAdder` как счётчик отдельно, или
+вынесите `Collectors.summingInt` снаружи операций модификации, или используйте
+`reduceValues(parallelismThreshold, ...)` — он построен на CHM и согласован
+с её моделью.
+
+Кейс 4. Где баг (deadlock)?
+
+```java
+ConcurrentHashMap<String, String> map = new ConcurrentHashMap<>();
+map.computeIfAbsent("a", k -> {
+    return map.computeIfAbsent("b", k2 -> "v");   // потенциальный deadlock
+});
+```
+
+Java 9+: бросает `IllegalStateException: Recursive update` (JDK-8062841). Java 8:
+живой блок, плюс возможный stack overflow или нарушение инвариантов. Никогда не
+вызывать CHM-мутацию внутри computeIfAbsent/merge.
+
+Кейс 5. Где баг?
+
+```java
+ConcurrentMap<String, List<Order>> grouped = new ConcurrentHashMap<>();
+
+void add(Order o) {
+    grouped.computeIfAbsent(o.userId(), k -> new ArrayList<>()).add(o);
+}
+```
+
+`ArrayList` не thread-safe. CHM гарантирует атомарность создания List, но `add`
+на ArrayList идёт уже вне синхронизации. Два потока с одинаковым userId могут
+добавить одновременно — data race в ArrayList. Лекарство: `new CopyOnWriteArrayList<>()`
+(если read >> write) или `Collections.synchronizedList(new ArrayList<>())` (если
+часто write), либо `grouped.compute(...)` с блоком, что весь add делается под
+лок головы CHM-бакета.
+
+Кейс 6. Где баг?
+
+```java
+Map<String, Cache> caches = new ConcurrentHashMap<>();
+
+void refresh() {
+    caches.clear();
+    for (String name : configuredCaches) {
+        caches.put(name, buildCache(name));
+    }
+}
+```
+
+`clear` + цикл put не атомарны. Между ними другие потоки видят пустую map. Если
+надо «горячая замена» — построить новую map, потом атомарный swap через volatile
+поле:
+
+```java
+private volatile Map<String, Cache> caches = new ConcurrentHashMap<>();
+
+void refresh() {
+    Map<String, Cache> next = new ConcurrentHashMap<>();
+    for (String name : configuredCaches) next.put(name, buildCache(name));
+    this.caches = next;          // атомарный volatile-store
+}
+```
+
+Кейс 7. Где баг (производительность)?
+
+```java
+return Collections.synchronizedMap(new HashMap<>());   // в singleton-кэше, 5000 RPS
+```
+
+Под нагрузкой все put/get сериализуются через один monitor — bottleneck. Перейти
+на `ConcurrentHashMap`. Простая замена, x10–x20 throughput на нагрузочном тесте.
+
+## Что почитать
+
+- [OpenJDK 21 ConcurrentHashMap source](https://github.com/openjdk/jdk/blob/jdk-21+0/src/java.base/share/classes/java/util/concurrent/ConcurrentHashMap.java) — 7000+ строк Doug Lea, читать `putVal`, `transfer`, `addCount`.
+- Doug Lea, [«Striped64 / LongAdder»](https://gee.cs.oswego.edu/dl/jsr166/dist/jsr166edocs/jsr166e/Striped64.html) — про `CounterCell[]` и contention-mitigation.
+- [JDK-8062841: ConcurrentHashMap.computeIfAbsent recursive call detection](https://bugs.openjdk.org/browse/JDK-8062841) — баг и фикс recursive update.
+- Brian Goetz et al., *Java Concurrency in Practice*, глава 5 — Concurrent Collections.
+- *Effective Java, 3rd Edition*, Joshua Bloch — **Item 81** (Prefer concurrency utilities to wait and notify), **Item 82** (Document thread safety).
+- [JSR-166 archive](https://gee.cs.oswego.edu/cgi-bin/viewcvs.cgi/jsr166/) — исходники concurrent utilities до публикации в JDK.
+
 ## Где в стеке
 
 **Уровень 1: Collections.** Топ-частотный блок (HashMap спросят в 8/8 компаний). Знать внутренности: treeify в Java 8, resize, cache locality LinkedList, segmenting в ConcurrentHashMap.
