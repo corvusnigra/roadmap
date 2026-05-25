@@ -128,6 +128,488 @@ Spring MVC: @RestController = @Controller + @ResponseBody. @RequestMapping и sh
 - Голый ResponseEntity.ok(error) на каждый чих
 - Stack trace в response body — leak внутренностей
 
+## Развёрнутое объяснение
+
+REST + валидация в Spring — must-know на middle. На собесе ждут: знаете
+аннотации Bean Validation (JSR-380), пишите `@Valid` без напоминаний,
+обрабатываете ошибки через `@RestControllerAdvice`, возвращаете правильные
+HTTP-коды.
+
+**Spring MVC routing.** Базовые аннотации:
+
+```java
+@RestController
+@RequestMapping("/api/users")    // префикс для всего класса
+public class UserController {
+
+    @GetMapping("/{id}")
+    public UserDto get(@PathVariable Long id) { ... }
+
+    @GetMapping
+    public Page<UserDto> list(@RequestParam(defaultValue = "0") int page,
+                              @RequestParam(required = false) String q,
+                              @PageableDefault(size = 20) Pageable pageable) { ... }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public UserDto create(@Valid @RequestBody CreateUserDto dto) { ... }
+
+    @PutMapping("/{id}")
+    public UserDto replace(@PathVariable Long id, @Valid @RequestBody UpdateUserDto dto) { ... }
+
+    @PatchMapping("/{id}")
+    public UserDto patch(@PathVariable Long id, @RequestBody Map<String, Object> patches) { ... }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) { ... }
+}
+```
+
+**Bean Validation 3.0 (Jakarta Validation, JSR-380).** Аннотации на DTO:
+
+```java
+public record CreateUserDto(
+    @NotBlank(message = "Name is required")
+    @Size(min = 2, max = 100)
+    String name,
+
+    @NotBlank
+    @Email(message = "Must be a valid email")
+    String email,
+
+    @NotNull
+    @Min(0) @Max(150)
+    Integer age,
+
+    @Pattern(regexp = "^\\+?[0-9 ()-]{7,20}$")
+    String phone,
+
+    @Past
+    LocalDate birthDate,
+
+    @PositiveOrZero
+    BigDecimal balance,
+
+    @Valid                          // каскадная валидация
+    List<@NotNull AddressDto> addresses
+) {}
+```
+
+Аннотация `@Valid` на параметре контроллера запускает валидацию. Без `@Valid`
+аннотации на полях DTO **игнорируются**, валидация не происходит.
+
+**Кастомные constraints:**
+
+```java
+@Documented
+@Constraint(validatedBy = PhoneValidator.class)
+@Target({ElementType.FIELD, ElementType.PARAMETER})
+@Retention(RetentionPolicy.RUNTIME)
+public @interface ValidPhone {
+    String message() default "Invalid phone format";
+    Class<?>[] groups() default {};
+    Class<? extends Payload>[] payload() default {};
+}
+
+public class PhoneValidator implements ConstraintValidator<ValidPhone, String> {
+    @Override
+    public boolean isValid(String value, ConstraintValidatorContext ctx) {
+        return value == null || value.matches("^\\+\\d{10,15}$");
+    }
+}
+
+// Use:
+public record UserDto(@ValidPhone String phone) {}
+```
+
+**Validation groups** — разная валидация для create / update:
+
+```java
+public interface Create {}
+public interface Update {}
+
+public record UserDto(
+    @Null(groups = Create.class)
+    @NotNull(groups = Update.class)
+    Long id,
+
+    @NotBlank(groups = {Create.class, Update.class})
+    String name
+) {}
+
+@PostMapping
+public UserDto create(@Validated(Create.class) @RequestBody UserDto dto) { ... }
+
+@PutMapping("/{id}")
+public UserDto update(@Validated(Update.class) @RequestBody UserDto dto) { ... }
+```
+
+**Global ExceptionHandler.** Главное место для конвертации exception → HTTP:
+
+```java
+@RestControllerAdvice
+@Slf4j
+public class GlobalExceptionHandler {
+
+    // 400 Bad Request — validation failed
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ProblemDetail> handleValidation(MethodArgumentNotValidException e) {
+        Map<String, String> errors = e.getBindingResult().getFieldErrors().stream()
+            .collect(Collectors.toMap(
+                FieldError::getField,
+                fe -> fe.getDefaultMessage() == null ? "invalid" : fe.getDefaultMessage(),
+                (a, b) -> a + "; " + b
+            ));
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        pd.setTitle("Validation Failed");
+        pd.setProperty("errors", errors);
+        return ResponseEntity.badRequest().body(pd);
+    }
+
+    // 400 Bad Request — body parsing failed (malformed JSON, wrong type)
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail handleBodyParse(HttpMessageNotReadableException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Malformed request body");
+    }
+
+    // 400 Bad Request — @PathVariable / @RequestParam validation
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail handleConstraint(ConstraintViolationException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    // 404 Not Found
+    @ExceptionHandler(NotFoundException.class)
+    public ProblemDetail handleNotFound(NotFoundException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
+    // 409 Conflict — duplicate, version mismatch
+    @ExceptionHandler(ConflictException.class)
+    public ProblemDetail handleConflict(ConflictException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    // 500 Internal Server Error — fallback
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail handleUnexpected(Exception e) {
+        log.error("Unhandled exception", e);
+        return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Try again later");
+    }
+}
+```
+
+**ProblemDetail (RFC 7807, Spring 6+).** Стандартный формат для error response:
+
+```json
+{
+  "type": "https://example.com/probs/validation",
+  "title": "Validation Failed",
+  "status": 400,
+  "detail": "Two fields failed validation",
+  "instance": "/api/users",
+  "errors": { "name": "is required", "email": "must be a valid email" }
+}
+```
+
+Поддерживается из коробки в Spring 6 / Spring Boot 3+. Возвращает
+`Content-Type: application/problem+json`. Это стандартный способ — клиент
+парсит по схеме, локализация через ResourceBundle, инструменты типа Postman
+понимают.
+
+**HTTP коды — чёткая семантика:**
+
+```
+200 OK                    — успех с body
+201 Created               — POST создал ресурс + Location header
+202 Accepted              — async обработка принята
+204 No Content            — DELETE/PUT успех, нет body
+400 Bad Request           — невалидный input (validation, malformed JSON)
+401 Unauthorized          — нет auth credentials
+403 Forbidden             — auth есть, но прав нет
+404 Not Found             — ресурс не существует
+405 Method Not Allowed    — endpoint есть, метод не поддерживается
+409 Conflict              — duplicate / version mismatch
+410 Gone                  — ресурс удалён насовсем
+415 Unsupported Media Type — Content-Type не поддерживается
+422 Unprocessable Entity  — body OK, но семантически невалиден
+429 Too Many Requests     — rate limit
+500 Internal Server Error — server error (наш баг)
+502 Bad Gateway           — внешний сервис недоступен
+503 Service Unavailable   — temporary overload, попробуй позже
+504 Gateway Timeout       — external call timed out
+```
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank).** «Реализуй POST /users с валидацией.»
+
+Стандартный live coding. Ожидают:
+1. Request DTO (record) с `@NotBlank/@Email/@Size`.
+2. `@Valid` на параметре контроллера.
+3. `@RestControllerAdvice` с handlers для validation/notfound/conflict/generic.
+4. Возврат `201 Created` с Location header.
+5. ProblemDetail в Spring 6 / custom ApiError в более старых.
+
+**Вопрос 2 (Альфа).** «Чем отличается `MethodArgumentNotValidException` от
+`ConstraintViolationException`?»
+
+- `MethodArgumentNotValidException` — бросается при провале `@Valid @RequestBody`.
+  Имеет `BindingResult` с FieldError'ами. Spring сам ловит и оборачивает.
+- `ConstraintViolationException` — при провале валидации `@PathVariable` /
+  `@RequestParam` (нужно `@Validated` на классе контроллера) или из service-слоя.
+  Имеет `ConstraintViolations` без field name (только path).
+
+Оба нужно обрабатывать отдельно в `@RestControllerAdvice`.
+
+**Вопрос 3 (T-Bank).** «Что не так?»
+
+```java
+@PostMapping("/users")
+public User create(@RequestBody CreateUserDto dto) {     // без @Valid
+    return userService.create(dto);
+}
+```
+
+Без `@Valid` аннотации на DTO игнорируются. Невалидный JSON сохранится. Также
+проблемы:
+- Возвращает entity → leak.
+- Нет `@ResponseStatus(CREATED)` — будет 200 вместо 201.
+- Нет Location header.
+
+**Вопрос 4 (Сбер).** «Какой HTTP-код для дубликата email при создании?»
+
+`409 Conflict`. Альтернатива — `422 Unprocessable Entity` (если считать
+дубликат «семантическим» поражением, а не «структурным»). 400 не подходит —
+body валиден.
+
+## Один день из практики
+
+Live coding в Лиге: «Реализуй CRUD для Order. 25 минут».
+
+```java
+// Request DTO
+public record CreateOrderDto(
+    @NotBlank @Size(min = 5, max = 50)
+    String orderNumber,
+    @NotNull @Min(1)
+    Long customerId,
+    @NotEmpty @Valid
+    List<OrderItemDto> items
+) {}
+
+public record OrderItemDto(
+    @NotNull Long productId,
+    @NotNull @Positive Integer quantity
+) {}
+
+// Response DTO
+public record OrderDto(Long id, String orderNumber, Long customerId,
+                       BigDecimal total, OrderStatus status, Instant createdAt) {
+    public static OrderDto from(Order o) { ... }
+}
+
+// Controller
+@RestController
+@RequestMapping("/api/orders")
+@RequiredArgsConstructor
+public class OrderController {
+    private final OrderService service;
+
+    @PostMapping
+    public ResponseEntity<OrderDto> create(@Valid @RequestBody CreateOrderDto dto) {
+        OrderDto created = service.create(dto);
+        return ResponseEntity
+            .created(URI.create("/api/orders/" + created.id()))
+            .body(created);
+    }
+
+    @GetMapping("/{id}")
+    public OrderDto get(@PathVariable @Positive Long id) {
+        return service.findById(id);
+    }
+
+    @GetMapping
+    public Page<OrderDto> list(
+            @RequestParam(required = false) OrderStatus status,
+            @PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
+        return service.search(status, pageable);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cancel(@PathVariable Long id) {
+        service.cancel(id);
+    }
+}
+
+// Service
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class OrderService {
+    private final OrderRepository orderRepo;
+    private final ProductRepository productRepo;
+
+    @Transactional
+    public OrderDto create(CreateOrderDto dto) {
+        if (orderRepo.existsByOrderNumber(dto.orderNumber())) {
+            throw new ConflictException("Order exists: " + dto.orderNumber());
+        }
+        Order o = new Order();
+        o.setOrderNumber(dto.orderNumber());
+        o.setCustomerId(dto.customerId());
+        for (OrderItemDto i : dto.items()) {
+            Product p = productRepo.findById(i.productId())
+                .orElseThrow(() -> new NotFoundException("Product " + i.productId()));
+            o.addItem(new OrderItem(p, i.quantity()));
+        }
+        return OrderDto.from(orderRepo.save(o));
+    }
+
+    @Transactional(readOnly = true)
+    public OrderDto findById(Long id) {
+        return orderRepo.findById(id)
+            .map(OrderDto::from)
+            .orElseThrow(() -> new NotFoundException("Order " + id));
+    }
+}
+
+// GlobalExceptionHandler
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    @ExceptionHandler(NotFoundException.class)
+    public ProblemDetail handleNotFound(NotFoundException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ProblemDetail handleConflict(ConflictException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ProblemDetail handleValidation(MethodArgumentNotValidException e) {
+        Map<String, String> errors = e.getBindingResult().getFieldErrors().stream()
+            .collect(Collectors.toMap(FieldError::getField, FieldError::getDefaultMessage));
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        pd.setTitle("Validation Failed");
+        pd.setProperty("errors", errors);
+        return pd;
+    }
+}
+```
+
+Интервьюер видит: DTO ≠ entity, валидация в DTO, @Valid, ProblemDetail,
+ResponseEntity.created с Location, @Positive на path, @PageableDefault,
+правильные HTTP-коды для каждого случая.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+@PostMapping("/users")
+public User create(@RequestBody CreateUserDto dto) { ... }
+```
+
+Нет `@Valid` → аннотации игнорятся. Невалидный JSON принимается.
+
+Кейс 2. Где баг?
+
+```java
+@PostMapping
+public ResponseEntity<UserDto> create(@Valid @RequestBody CreateUserDto dto) {
+    UserDto u = service.create(dto);
+    return ResponseEntity.ok(u);   // 200 Ok
+}
+```
+
+POST с созданием — должен быть `201 Created` + Location.
+
+Кейс 3. Где баг (security)?
+
+```java
+@PostMapping
+public User create(@RequestBody @Valid User user) {   // Entity как DTO!
+    return userService.create(user);
+}
+```
+
+Принимать `User` entity в request — leak. Клиент может выставить любое поле
+(`isAdmin`, `id`, `version`). DTO обязателен.
+
+Кейс 4. Где баг?
+
+```java
+@GetMapping("/users/{id}")
+public User get(@PathVariable Long id) {
+    return userRepo.findById(id).get();    // .get() на пустом Optional
+}
+```
+
+NoSuchElementException → 500. Должно быть 404. Использовать `.orElseThrow(NotFoundException::new)`.
+
+Кейс 5. Где баг?
+
+```java
+@GetMapping("/users")
+public List<User> findByEmail(@RequestParam String email) {
+    // нет validation на параметр
+    return userRepo.findByEmailContaining(email);
+}
+```
+
+Без `@Validated` на классе или `@Email`/`@Size`/`@NotBlank` на параметре —
+любой email принимается. На длинных строках SQL Injection-risk (если raw SQL),
+плюс таймаут.
+
+```java
+@Validated
+@RestController
+public class UserController {
+    @GetMapping("/users")
+    public List<User> findByEmail(@RequestParam @Size(min = 3, max = 100) @Email String email) { ... }
+}
+```
+
+Кейс 6. Где баг (cascade)?
+
+```java
+public record OrderDto(
+    @NotEmpty
+    List<OrderItemDto> items   // нет @Valid на element
+) {}
+```
+
+`@NotEmpty` проверяет список, но не валидирует элементы. Решение:
+`List<@Valid OrderItemDto> items`. Или (старый стиль): `@Valid List<OrderItemDto>`.
+
+Кейс 7. Где баг?
+
+```java
+@ExceptionHandler(Exception.class)
+public ResponseEntity<String> handleAll(Exception e) {
+    return ResponseEntity.ok(e.getMessage());   // ✗ 200 OK + stack message
+}
+```
+
+- 200 OK на error.
+- Сообщение exception — leak (например, "Column 'password' must not be null").
+- Stack trace мог бы leak'нуть в `getMessage` от framework'ов.
+
+Правильно: 500 + generic message + log полную ошибку.
+
+## Что почитать
+
+- [Spring Web MVC Reference](https://docs.spring.io/spring-framework/reference/web/webmvc.html) — основа.
+- [Jakarta Validation 3.0 spec](https://jakarta.ee/specifications/bean-validation/3.0/) — все constraint аннотации.
+- [RFC 7807: Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc7807) — стандарт error format.
+- [Spring 6 ProblemDetail](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/http/ProblemDetail.html) — Javadoc.
+- *Spring Boot in Practice*, Somnath Musib — главы 4–5 про REST.
+- [HTTP Status Codes — MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) — каноничная справка.
+
 ## Где в стеке
 
 **Уровень 4: Spring и Spring Boot.** Любая работа с Java middle = Spring. Ключевая ловушка — self-invocation @Transactional/@Async через прокси: спросят с вероятностью 100%.

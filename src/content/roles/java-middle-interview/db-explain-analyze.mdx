@@ -128,6 +128,410 @@ EXPLAIN — план без исполнения, EXPLAIN ANALYZE — план +
 - Игнорировать BUFFERS — реальная стоимость = disk IO
 - Не запускать EXPLAIN ANALYZE на проде из-за «опасно» (только не write-операции)
 
+## Развёрнутое объяснение
+
+EXPLAIN — главный диагностический инструмент в PostgreSQL. На middle ждут,
+что вы умеете прочитать план запроса и предложить оптимизацию.
+
+**EXPLAIN vs EXPLAIN ANALYZE:**
+
+```sql
+EXPLAIN SELECT ...;
+-- Показывает план + cost estimate, БЕЗ исполнения.
+-- Дёшево, безопасно даже для тяжёлых запросов.
+
+EXPLAIN ANALYZE SELECT ...;
+-- Реально выполняет запрос + показывает actual time per node.
+-- Дорого — DELETE/UPDATE/INSERT тоже реально выполнятся!
+-- Для write — оборачивать в BEGIN ... ROLLBACK или использовать EXPLAIN (без ANALYZE).
+
+EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) SELECT ...;
+-- ANALYZE  — real time
+-- BUFFERS  — IO статистика (shared hit / read / dirtied)
+-- VERBOSE  — output schema каждого узла
+-- FORMAT JSON — для парсинга tools (pgMustard, depesz)
+```
+
+**Узлы плана:**
+
+```
+Seq Scan      — полный последовательный скан таблицы.
+                Хорошо: маленькая таблица, > 10-20% строк нужно, нет индекса.
+                Плохо: большая таблица + узкий фильтр без индекса.
+
+Index Scan    — поиск через B-tree + fetch строки из heap.
+                Хорошо: узкий фильтр, < 5-10% строк.
+
+Index Only Scan — поиск через индекс БЕЗ обращения к heap.
+                Возможно если все колонки SELECT покрыты индексом (включая INCLUDE).
+                Требует VACUUM-up-to-date visibility map.
+
+Bitmap Index Scan + Bitmap Heap Scan — для middle selectivity (1-30%).
+                Сначала строит битмап TID'ов, потом fetch из heap в физическом порядке.
+                Уменьшает random IO.
+
+Nested Loop   — для каждого row из outer, scan inner по фильтру.
+                Хорошо: маленький outer (≤ 1000) + индекс на inner.
+                Cost: O(outer × inner_scan_cost).
+
+Hash Join     — build hash таблицу по меньшей relation, scan большую и lookup.
+                Хорошо: middle × middle, нет ORDER BY.
+                Требует RAM для hash таблицы.
+
+Merge Join    — обе relation отсортированы; merge.
+                Хорошо: обе уже отсортированы (или index scan уже даёт sort).
+                Самый быстрый для больших × больших.
+
+Sort          — explicit sort. Cost = O(n log n) CPU + возможный disk spill.
+
+Aggregate     — group + agg.
+HashAggregate — через hash map в памяти.
+GroupAggregate — требует sorted input.
+
+CTE Scan      — материализация WITH-CTE (в PG <= 11 всегда; PG 12+ inlining
+                для non-recursive CTE если не было `MATERIALIZED`).
+
+Gather / Gather Merge — parallel workers.
+```
+
+**Чтение плана:**
+
+```
+EXPLAIN ANALYZE SELECT * FROM orders WHERE user_id = 42 AND status = 'NEW';
+
+QUERY PLAN
+--------------------------------------------------------------------------
+Bitmap Heap Scan on orders  (cost=4.50..48.99 rows=20 width=120)
+                            (actual time=0.085..0.158 rows=15 loops=1)
+  Recheck Cond: ((user_id = 42) AND (status = 'NEW'))
+  Heap Blocks: exact=15
+  ->  BitmapAnd  (cost=4.50..4.50 rows=20 width=0)
+        (actual time=0.080..0.080 rows=0 loops=1)
+        ->  Bitmap Index Scan on idx_orders_user_id
+              (cost=0.00..2.00 rows=120 width=0)
+        ->  Bitmap Index Scan on idx_orders_status
+              (cost=0.00..2.00 rows=2000 width=0)
+Planning Time: 0.150 ms
+Execution Time: 0.198 ms
+```
+
+Что читать:
+- **cost** — оценка planner'а в условных единицах. `..48.99` — startup..total.
+- **rows** — estimate vs actual. Если разница в 10+ раз — статистика устарела,
+  нужен `ANALYZE table`.
+- **width** — средний размер row в байтах.
+- **actual time** — реальное (для ANALYZE).
+- **loops** — сколько раз узел выполнялся (внутри Nested Loop важно).
+
+**Buffers — IO статистика:**
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM orders WHERE id = 42;
+
+  Buffers: shared hit=4 read=2 dirtied=0
+-- shared hit  — нашли в shared buffer (RAM, быстро)
+-- shared read — пришлось читать с диска (slow!)
+-- dirtied     — modified page (write)
+```
+
+Если `read` много — данные не в кэше, реальная стоимость query выше, чем
+estimate. После VACUUM/после рестарта прогрев нужен.
+
+**Когда Seq Scan быстрее Index Scan:**
+
+1. Таблица маленькая (< 1000 строк) — Seq Scan in-cache почти бесплатен.
+2. Selectivity низкая (> 20% строк) — random IO Index'а съест выигрыш.
+3. Statistics устарели — planner ошибочно оценил, выбрал Seq Scan «на всякий
+   случай».
+
+Тестировать: `SET enable_seqscan = OFF;` принуждает Index, сравните plans.
+
+**Когда Index НЕ используется (несмотря на наличие):**
+
+```sql
+-- Function на колонке:
+WHERE LOWER(name) = 'john';   -- индекс на name НЕ работает; нужен functional
+
+-- Implicit cast:
+WHERE col = '42';   -- если col is INTEGER, '42' string — может не использовать индекс
+WHERE col::text = '42';   -- явный cast — индекс не работает
+
+-- OR с разными колонками:
+WHERE a = 1 OR b = 1;   -- одиночные индексы используются плохо, лучше UNION ALL
+
+-- Negation:
+WHERE col != 'X';   -- почти всегда seq scan
+
+-- LIKE без анкера:
+WHERE name LIKE '%john%';   -- нужен trigram
+
+-- Composite index, нет первой колонки:
+CREATE INDEX ON tbl (a, b, c);
+WHERE b = 5;   -- индекс не помогает (leftmost prefix rule)
+
+-- Outdated statistics:
+INSERT 1M rows;
+SELECT WHERE ...;   -- planner думает, что строк мало → Seq Scan
+ANALYZE tbl;   -- лекарство
+```
+
+**ANALYZE и autovacuum:**
+
+```sql
+-- Обновить статистику вручную:
+ANALYZE users;
+ANALYZE users (col1, col2);   -- только эти колонки
+
+-- VACUUM ANALYZE — full
+VACUUM ANALYZE users;
+```
+
+PostgreSQL делает autovacuum/autoanalyze автоматически после каждой ~20%
+изменений. Параметры в `postgresql.conf`. Без статистики planner делает
+догадки → плохие планы.
+
+**pg_stat_statements — топ медленных запросов:**
+
+```sql
+SELECT
+    query,
+    calls,
+    total_exec_time,
+    mean_exec_time,
+    rows
+FROM pg_stat_statements
+ORDER BY total_exec_time DESC
+LIMIT 20;
+```
+
+Расширение, которое агрегирует статистику по нормализованным query.
+Включается через `shared_preload_libraries`. На prod must-have.
+
+**auto_explain** — логирование планов медленных запросов:
+
+```
+session_preload_libraries = 'auto_explain'
+auto_explain.log_min_duration = '1s'
+auto_explain.log_analyze = on
+auto_explain.log_buffers = on
+```
+
+Любой запрос > 1 сек попадает в лог с полным `EXPLAIN ANALYZE`.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank, Альфа, VK).** «Что такое EXPLAIN и чем отличается
+EXPLAIN ANALYZE?»
+
+EXPLAIN — план без исполнения, cost estimate. EXPLAIN ANALYZE — реально
+выполняет, добавляет actual time per node. ANALYZE реально пишет на write —
+для UPDATE/DELETE/INSERT оборачивать в `BEGIN ... ROLLBACK` или избегать.
+
+**Вопрос 2 (T-Bank).** «Когда Seq Scan лучше Index Scan?»
+
+1. Маленькая таблица (< 1K строк).
+2. Выборка большой части (> 10-20%) строк.
+3. Статистика устарела — planner неправильно оценил.
+
+Random IO Index Scan'а дороже sequential read'а — для широкого фильтра Seq
+Scan быстрее.
+
+**Вопрос 3 (Альфа, Сбер).** «У вас запрос вдруг стал медленным после INSERT'а
+1M строк. Не понимаю.»
+
+Скорее всего устарели статистики. Planner думает «таблица маленькая, делаем
+Seq Scan» — но теперь она 1M строк. Лекарство: `ANALYZE table;`. Или
+включить более агрессивный autovacuum для этой таблицы.
+
+**Вопрос 4 (Озон, продвинутый).** «Покажи мне три типа JOIN'а в планах и
+когда какой.»
+
+- **Nested Loop**: outer × inner. Хорошо для маленьких outer (≤ 1000) +
+  индекс на inner. Часто после Index Scan'а на outer.
+- **Hash Join**: build hash от меньшего, scan большего. Хорошо для middle ×
+  middle без ORDER BY. Требует RAM.
+- **Merge Join**: обе sorted, merge. Самый быстрый для больших × больших, но
+  требует sort.
+
+Planner выбирает по cost estimate. Можно повлиять через `enable_nestloop = off`
+для теста.
+
+## Один день из практики
+
+Тебе пришёл тикет: «эндпоинт `/orders/dashboard` — 3.5 секунды. Раньше было
+50мс. Что произошло?» Включаешь auto_explain в проде, перехватываешь план:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS) SELECT o.*, u.name, c.title
+FROM orders o
+JOIN users u ON o.user_id = u.id
+JOIN categories c ON o.category_id = c.id
+WHERE o.created_at >= '2026-05-01'
+  AND o.status = 'COMPLETED'
+ORDER BY o.created_at DESC
+LIMIT 50;
+
+-- План:
+Limit  (cost=0.42..2500.10 rows=50 width=200) (actual time=3431.50..3499.99)
+  ->  Nested Loop  (cost=0.42..950000.00 rows=18000)
+        ->  Nested Loop  (cost=0.42..900000.00 rows=18000)
+              ->  Seq Scan on orders o  (...rows=2_000_000 actual rows=1_800_000)
+                    Filter: status = 'COMPLETED' AND created_at >= ...
+                    Rows Removed by Filter: 6_500_000
+              ->  Index Scan on users_pkey   (...)
+        ->  Index Scan on categories_pkey  (...)
+  Buffers: shared hit=2400 read=18500 dirtied=0
+Planning Time: 0.5 ms
+Execution Time: 3500 ms
+```
+
+Симптомы:
+1. **Seq Scan на orders** с filter — 1.8M строк прочитаны, 6.5M отсеяны.
+2. **18500 buffer reads** — много IO с диска.
+3. Estimate 18000 строк, actual 1.8M — статистика устарела.
+
+Шаг 1. ANALYZE:
+
+```sql
+ANALYZE orders;
+```
+
+После — план изменился, но ещё медленный. Проблема глубже.
+
+Шаг 2. Индекс отсутствует. Создаём:
+
+```sql
+CREATE INDEX CONCURRENTLY idx_orders_status_created
+ON orders (status, created_at DESC);
+```
+
+Шаг 3. После создания:
+
+```
+Limit  (cost=0.43..100.00 rows=50 width=200) (actual time=0.12..1.85)
+  ->  Index Scan using idx_orders_status_created on orders o
+        Index Cond: status = 'COMPLETED' AND created_at >= '2026-05-01'
+  Buffers: shared hit=58 read=0
+Planning Time: 0.4 ms
+Execution Time: 1.9 ms
+```
+
+1.9мс. Урок: чтение плана сразу указало на узкое место (Seq Scan + много
+buffer reads). Без EXPLAIN — гадали бы.
+
+**Дополнительные оптимизации:**
+
+```sql
+-- INCLUDE для covering — если запрос только select id, user_id, total:
+CREATE INDEX idx_orders_status_created_covering
+ON orders (status, created_at DESC)
+INCLUDE (id, user_id, total);
+-- Index Only Scan, ещё быстрее.
+
+-- Partial — если 80% queries по 'COMPLETED':
+CREATE INDEX idx_completed_orders ON orders (created_at DESC)
+WHERE status = 'COMPLETED';
+-- Меньше размер, дешевле обслуживать.
+```
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```sql
+EXPLAIN ANALYZE DELETE FROM logs WHERE created_at < '2025-01-01';
+-- реально удалилось!
+```
+
+`ANALYZE` выполняет запрос. На DELETE/UPDATE/INSERT — это разрушительно.
+Лекарство: `BEGIN; EXPLAIN ANALYZE DELETE ...; ROLLBACK;` либо `EXPLAIN` без
+ANALYZE.
+
+Кейс 2. Где баг?
+
+```sql
+EXPLAIN SELECT * FROM users WHERE id = 42;
+-- plan: Index Scan, cost 0.42..8.44
+-- Я доверяю — индекс работает!
+```
+
+Cost — estimate. На устаревшей статистике estimate может быть в N раз меньше
+реального. Доверять только `EXPLAIN ANALYZE` actual time.
+
+Кейс 3. Где баг (loops)?
+
+```
+->  Index Scan on inner  (cost=0.42..8.44 rows=1) (actual time=0.05..0.05 rows=1 loops=2000)
+```
+
+`loops=2000` означает, что узел выполнился 2000 раз (для каждого outer row).
+Total cost = 0.05мс × 2000 = 100мс. Видно из Nested Loop. Если outer большой —
+catastrophic. Лекарство: Hash Join.
+
+Кейс 4. Где баг?
+
+```sql
+SELECT * FROM orders WHERE EXTRACT(YEAR FROM created_at) = 2026;
+-- индекс на created_at не используется
+```
+
+Функция на колонке ломает индекс. Лекарство:
+
+```sql
+WHERE created_at >= '2026-01-01' AND created_at < '2027-01-01';
+-- или functional index:
+CREATE INDEX ON orders (EXTRACT(YEAR FROM created_at));
+```
+
+Кейс 5. Где баг (parameterized plan)?
+
+```sql
+PREPARE p AS SELECT * FROM orders WHERE status = $1;
+EXECUTE p('NEW');     -- planner generic plan, sub-optimal для status с high selectivity
+```
+
+Prepared statements делают generic plan на 5 раз, потом — fixed. Если
+distribution разная для разных значений — плохой план. Лекарство:
+`plan_cache_mode = 'force_custom_plan'` в pgbouncer или Spring property.
+
+Кейс 6. Где баг (buffer reads)?
+
+```
+EXPLAIN (ANALYZE, BUFFERS) SELECT ...
+Buffers: shared hit=10 read=50000
+Execution Time: 250ms
+```
+
+50K block reads — большая часть данных с диска. Если этот же query быстрее
+второй раз (всё в кэше — shared hit), реальная performance в проде зависит от
+working set'а. Может потребоваться больше RAM или partial индекс.
+
+Кейс 7. Где баг (CTE materialization)?
+
+```sql
+WITH heavy AS (SELECT ... FROM ... WHERE ...)   -- 1M строк
+SELECT * FROM heavy LIMIT 10;
+```
+
+В PG ≤ 11 CTE всегда **материализуется** — все 1M строк сохраняются во
+временной таблице, потом из них LIMIT 10. Catastrophic. С PG 12+ CTE
+inlining'ит (только non-recursive, без `MATERIALIZED`). Если query старая
+или PG старая — переписать в subquery:
+
+```sql
+SELECT * FROM (SELECT ... FROM ... WHERE ...) sub LIMIT 10;
+```
+
+## Что почитать
+
+- [PostgreSQL Documentation — EXPLAIN](https://www.postgresql.org/docs/current/sql-explain.html) — полная справка.
+- [Use The Index, Luke!](https://use-the-index-luke.com/) — Markus Winand.
+- [depesz.com — Explaining the unexplainable](https://www.depesz.com/2013/04/16/explaining-the-unexplainable/) — глубокий разбор формата EXPLAIN.
+- [pgMustard](https://www.pgmustard.com/) — coolь для анализа планов с рекомендациями.
+- [pgBadger](https://pgbadger.darold.net/) — анализатор логов PG.
+- Markus Winand, *SQL Performance Explained* — печатная версия.
+- [EXPLAIN.depesz.com](https://explain.depesz.com/) — визуальный анализ JSON-плана.
+
 ## Где в стеке
 
 **Уровень 5: Database, JPA, Hibernate.** После Spring — самый частый блок. N+1 спросят в 8/8 компаний. Уровни изоляции, planner B-tree, lazy/eager — must-know.

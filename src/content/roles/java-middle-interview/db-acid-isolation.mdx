@@ -128,6 +128,353 @@ ACID: Atomicity (commit или rollback целиком), Consistency (валид
 - READ UNCOMMITTED для скорости — dirty reads = баги в логике
 - Считать default RC безопасным для всех сценариев
 
+## Развёрнутое объяснение
+
+ACID — четыре свойства транзакций реляционной БД, гарантирующие корректность
+данных при параллельных операциях и сбоях. На middle ждут понимания, **что
+именно каждое из 4 свойств защищает**, и **какие аномалии видны на каком уровне
+изоляции**.
+
+**A — Atomicity.** Транзакция либо целиком, либо никак. Если в середине
+сбой — все изменения откатываются. Реализуется через WAL (Write-Ahead Log) /
+redo/undo логи. Если приложение упало после `BEGIN` но до `COMMIT`, БД
+автоматически откатит при recovery.
+
+**C — Consistency.** До и после транзакции данные удовлетворяют всем
+ограничениям (constraints): foreign key, unique, check, not null, кастомные
+триггеры. Если COMMIT нарушит — БД откатит транзакцию. ВАЖНО: «consistency»
+здесь не та же, что в CAP теореме. В ACID это **бизнес-инварианты**, в CAP —
+**синхронизация replicas**.
+
+**I — Isolation.** Несколько параллельных транзакций не видят
+промежуточных состояний друг друга. Уровень изоляции определяет «насколько
+сильно» — компромисс между корректностью и performance.
+
+**D — Durability.** После COMMIT данные надёжно сохранены, переживают
+crash. Реализуется через `fsync` WAL'а на диск перед подтверждением commit.
+
+**Уровни изоляции SQL standard:**
+
+```
+                                 Dirty   Non-repeatable  Phantom
+                                 read    read            read
+  READ UNCOMMITTED               ✓       ✓               ✓
+  READ COMMITTED (PG, Oracle)    ✗       ✓               ✓
+  REPEATABLE READ (MySQL)        ✗       ✗               ✓ (стандарт)
+  SERIALIZABLE                   ✗       ✗               ✗
+```
+
+**4 аномалии — с примерами:**
+
+```
+1. Dirty Read:
+   T1: UPDATE users SET balance = 200 WHERE id = 1     (не commit ещё)
+   T2: SELECT balance FROM users WHERE id = 1    → 200 (видит uncommitted!)
+   T1: ROLLBACK
+   → T2 принял решение на основе значения, которого не существует.
+
+2. Non-repeatable Read:
+   T1: SELECT balance FROM users WHERE id = 1  → 100
+   T2: UPDATE users SET balance = 200 WHERE id = 1; COMMIT
+   T1: SELECT balance FROM users WHERE id = 1  → 200
+   → внутри T1 одна и та же row показала разное значение.
+
+3. Phantom Read:
+   T1: SELECT COUNT(*) FROM orders WHERE status = 'NEW'  → 5
+   T2: INSERT INTO orders (status) VALUES ('NEW'); COMMIT
+   T1: SELECT COUNT(*) FROM orders WHERE status = 'NEW'  → 6
+   → запрос по диапазону вернул разное число строк.
+
+4. Lost Update (не в SQL standard, но критично):
+   T1: SELECT balance WHERE id = 1   → 100
+   T2: SELECT balance WHERE id = 1   → 100
+   T1: UPDATE balance = 100 + 50 → 150
+   T2: UPDATE balance = 100 + 30 → 130
+   → инкремент T1 потерян. Должно быть 180.
+```
+
+**MVCC (Multi-Version Concurrency Control)** — реализация изоляции в
+PostgreSQL и Oracle (через rollback segments). Каждая транзакция работает с
+своим «snapshot» базы на момент начала. Writers не блокируют readers, readers
+не блокируют writers. На запись — locks на уровне row только при write/write
+конфликте.
+
+В отличие от MySQL InnoDB, который использует locking + MVCC mix.
+
+**Сравнение default уровней:**
+
+| СУБД | Default | Заметка |
+|---|---|---|
+| PostgreSQL | READ COMMITTED | REPEATABLE READ исключает phantom (сильнее стандарта) |
+| Oracle | READ COMMITTED | нет REPEATABLE READ — только RC и SERIALIZABLE |
+| MySQL InnoDB | REPEATABLE READ | phantom исключён через next-key locks |
+| MS SQL Server | READ COMMITTED | с SNAPSHOT-вариантом |
+| H2 (тесты) | READ COMMITTED | |
+
+**PostgreSQL особенности:**
+- `REPEATABLE READ` использует **snapshot isolation** — нет phantom, но
+  есть **serialization anomalies** (write skew).
+- `SERIALIZABLE` — `Serializable Snapshot Isolation` (SSI), бросает
+  `serialization_failure (40001)` при конфликте; приложение должно retry'ить.
+
+**Оптимистическая блокировка (Optimistic Locking)** — самый частый паттерн
+для предотвращения lost update без долгих блокировок:
+
+```java
+@Entity
+public class Account {
+    @Id Long id;
+    BigDecimal balance;
+    @Version Long version;        // Hibernate инкрементит автоматически
+}
+
+// UPDATE accounts SET balance = ?, version = version + 1
+//   WHERE id = ? AND version = ?
+// Если version не совпадает — OptimisticLockException.
+```
+
+**Пессимистическая блокировка** — `SELECT ... FOR UPDATE`:
+
+```sql
+SELECT * FROM accounts WHERE id = 1 FOR UPDATE;   -- block other writers
+```
+
+В JPA — `@Lock(LockModeType.PESSIMISTIC_WRITE)`.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank, Альфа, Сбер, Озон).** «Что такое ACID?»
+
+Atomicity, Consistency, Isolation, Durability. Через каждое идёт fundamental
+свойство:
+- A: транзакция либо целиком, либо никак (rollback при сбое).
+- C: инварианты БД (constraints) — до и после.
+- I: параллельные транзакции не видят промежуточных состояний друг друга.
+- D: после commit данные на диске (выживают crash).
+
+**Вопрос 2 (Лига, Альфа, T-Bank).** «Какие уровни изоляции и аномалии?»
+
+| | Dirty | Non-repeatable | Phantom |
+|---|---|---|---|
+| READ UNCOMMITTED | ✓ | ✓ | ✓ |
+| READ COMMITTED | ✗ | ✓ | ✓ |
+| REPEATABLE READ | ✗ | ✗ | ✓ (по стандарту) |
+| SERIALIZABLE | ✗ | ✗ | ✗ |
+
+**Вопрос 3 (T-Bank, VK).** «Чем PostgreSQL default отличается от MySQL?»
+
+PostgreSQL: `READ COMMITTED`. MySQL: `REPEATABLE READ`. На одном и том же
+коде поведение различается:
+- На PG два SELECT'а внутри одной TX могут видеть разное.
+- На MySQL — будут видеть одно и то же.
+
+Если код мигрирует — баги «иногда».
+
+**Вопрос 4 (Сбер).** «Как избежать lost update?»
+
+Три способа:
+1. **Optimistic locking** через `@Version` — UPDATE ... WHERE version = ?
+   ↑ дёшево, но требует retry на конфликте.
+2. **Pessimistic locking** через `SELECT ... FOR UPDATE` — блокировка на чтение.
+   ↑ простой, но блокирующий.
+3. **Atomic update** (если возможно): `UPDATE balance = balance + 50 WHERE id = 1`.
+   ↑ самый дёшев, без read-modify-write.
+
+**Вопрос 5 (Озон).** «Когда SERIALIZABLE?»
+
+- Финансовые операции с инвариантами через несколько таблиц (т.н. write skew).
+- Batch-задачи, где throughput не критичен.
+- Когда явно не понятно, какие аномалии возможны — лучше начать с SERIALIZABLE,
+  потом ослабить.
+
+Никогда «по умолчанию для всех методов» — это убивает throughput, плюс на PG
+будут постоянные `serialization_failure` при contention.
+
+## Один день из практики
+
+Тебя попросили исправить баг: «банк показывает баланс 100 рублей, но после
+перевода 50 + 30 одновременно с двух устройств — баланс 70, а не 20».
+
+```java
+@Service
+public class AccountService {
+    @Transactional   // default RC
+    public void withdraw(Long id, BigDecimal amount) {
+        Account a = repo.findById(id).orElseThrow();
+        if (a.getBalance().compareTo(amount) < 0)
+            throw new InsufficientFundsException();
+        a.setBalance(a.getBalance().subtract(amount));
+        // Hibernate dirty-checking сам сделает UPDATE при flush
+    }
+}
+```
+
+Lost update. Два запроса на withdraw одновременно. Оба читают balance=100,
+оба вычитают, оба коммитят. Final = 100 - 30 = 70 (потерян withdraw 50).
+
+Решение 1 — `@Version`:
+
+```java
+@Entity
+public class Account {
+    @Id Long id;
+    BigDecimal balance;
+    @Version Long version;
+}
+```
+
+При параллельном update второй получит `OptimisticLockException` → retry или
+показать ошибку пользователю.
+
+Решение 2 — Pessimistic Lock:
+
+```java
+public interface AccountRepository extends JpaRepository<Account, Long> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Account> findById(Long id);
+}
+```
+
+Второй запрос будет ждать первого. Простой но блокирующий.
+
+Решение 3 — Atomic SQL:
+
+```java
+@Modifying
+@Query("UPDATE Account a SET a.balance = a.balance - :amount WHERE a.id = :id AND a.balance >= :amount")
+int withdraw(@Param("id") Long id, @Param("amount") BigDecimal amount);
+
+// в service:
+int affected = repo.withdraw(id, amount);
+if (affected == 0) throw new InsufficientFundsException();
+```
+
+Атомарно: WHERE проверяет balance, SET вычитает. Если balance не хватает —
+строка не обновится, `affected == 0`.
+
+Регресс-тест:
+
+```java
+@Test
+void concurrent_withdraws_keep_balance_consistent() throws Exception {
+    Account a = new Account(); a.setBalance(new BigDecimal("100"));
+    repo.save(a);
+    var pool = Executors.newFixedThreadPool(2);
+    pool.submit(() -> service.withdraw(a.getId(), new BigDecimal("50")));
+    pool.submit(() -> service.withdraw(a.getId(), new BigDecimal("30")));
+    pool.shutdown(); pool.awaitTermination(10, SECONDS);
+    BigDecimal final_ = repo.findById(a.getId()).orElseThrow().getBalance();
+    assertEquals(new BigDecimal("20"), final_);
+}
+```
+
+С Решением 3 этот тест стабильно проходит. С default RC — теряется withdraw,
+final = 70.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+@Transactional   // RC
+public void increment(Long id) {
+    Counter c = repo.findById(id).orElseThrow();
+    c.setValue(c.getValue() + 1);
+}
+```
+
+Lost update под параллельными вызовами. Лекарство: `@Version`, FOR UPDATE,
+или atomic SQL `UPDATE ... SET value = value + 1`.
+
+Кейс 2. Где баг?
+
+```java
+@Transactional(isolation = Isolation.SERIALIZABLE)
+public Report buildReport() { ... }
+```
+
+`SERIALIZABLE` на read-only отчёте. На PG — лишний overhead (создание snapshot
++ SSI tracking). Лекарство: `@Transactional(readOnly = true)`, default
+isolation.
+
+Кейс 3. Где баг?
+
+```java
+@Transactional
+public void transfer(Long fromId, Long toId, BigDecimal amount) {
+    Account from = repo.findById(fromId).orElseThrow();
+    Account to = repo.findById(toId).orElseThrow();
+    if (from.getBalance().compareTo(amount) < 0) throw new IFE();
+    from.setBalance(from.getBalance().subtract(amount));
+    to.setBalance(to.getBalance().add(amount));
+}
+```
+
+Lost update на обоих аккаунтах. Лекарство: `@Version` или Lock в repo. Плюс
+ordering для deadlock prevention (см. java-synchronized).
+
+Кейс 4. Где баг?
+
+```java
+@Transactional(readOnly = true)
+public void reload() {
+    var data = repo.findAll();
+    cache.put(data);   // ✗ модификация под readOnly
+}
+```
+
+`readOnly = true` — promise, что не будет модификации. На некоторых
+конфигурациях (read replica routing) запись упадёт. Лекарство: убрать
+`readOnly` или вынести `cache.put` за TX.
+
+Кейс 5. Где баг?
+
+```java
+@Transactional(isolation = Isolation.READ_UNCOMMITTED)
+public Report fastSummary() { ... }
+```
+
+`READ UNCOMMITTED` для скорости. PostgreSQL **игнорирует** — всегда работает
+как RC (MVCC). На MySQL — реально работает, dirty reads возможны → отчёт
+покажет данные неудавшейся транзакции.
+
+Кейс 6. Где баг (PG SERIALIZABLE retry)?
+
+```java
+@Transactional(isolation = Isolation.SERIALIZABLE)
+public void process() { ... }
+// под нагрузкой постоянно бросает CannotAcquireLockException / serialization_failure
+```
+
+PG SERIALIZABLE через SSI бросает `serialization_failure (SQLSTATE 40001)` при
+конфликте. Приложение должно retry'ить:
+
+```java
+@Retryable(retryFor = CannotAcquireLockException.class, maxAttempts = 3,
+           backoff = @Backoff(delay = 100))
+@Transactional(isolation = Isolation.SERIALIZABLE)
+public void process() { ... }
+```
+
+Кейс 7. Где баг (durability через async commit)?
+
+```sql
+SET synchronous_commit = OFF;     -- !
+```
+
+PostgreSQL: `synchronous_commit = off` означает «не fsync WAL перед ACK
+клиенту». Быстрее на 10–20%, но на crash потеряются последние ~200мс
+коммитов. Для financial — нет. Для analytics, где ОК потерять — может.
+
+## Что почитать
+
+- *Designing Data-Intensive Applications*, Martin Kleppmann — глава 7 (Transactions), главная книга по теме.
+- [PostgreSQL docs — Concurrency Control](https://www.postgresql.org/docs/current/mvcc.html) — про MVCC, изоляцию, SSI.
+- [Vlad Mihalcea, «A Beginner's Guide to JPA/Hibernate Locking»](https://vladmihalcea.com/jpa-hibernate-locking/) — practical.
+- *High-Performance Java Persistence*, Vlad Mihalcea — главы 7–8.
+- [Jepsen.io — Transaction Isolation Levels](https://jepsen.io/consistency) — каноничный справочник.
+- [Postgres weekly: SSI explained](https://wiki.postgresql.org/wiki/SSI) — Serializable Snapshot Isolation в деталях.
+
 ## Где в стеке
 
 **Уровень 5: Database, JPA, Hibernate.** После Spring — самый частый блок. N+1 спросят в 8/8 компаний. Уровни изоляции, planner B-tree, lazy/eager — must-know.

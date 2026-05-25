@@ -128,6 +128,366 @@ B-tree — балансированное дерево, O(log n) поиск. Def
 - Индекс на boolean — selectivity слишком низкая
 - Использовать LIKE 'abc%' для prefix search без поняти, что 'a%' уже работает
 
+## Развёрнутое объяснение
+
+Индексы — структура данных, позволяющая БД находить строки без полного скана
+таблицы. На middle ждут понимания B-tree (универсальный, default), правил
+работы составных индексов, и когда планировщик НЕ использует индекс.
+
+**B-tree (Balanced Tree) — стандартный индекс.** Сбалансированное дерево
+поиска: O(log n) на поиск, insert, delete. В PostgreSQL/MySQL — default
+тип. Поддерживает:
+
+- Equality: `WHERE id = 5`.
+- Range: `WHERE age > 18 AND age < 65`.
+- Sorting: `ORDER BY name` (если index покрывает).
+- Prefix LIKE: `WHERE name LIKE 'John%'` (анкорено к началу).
+
+НЕ поддерживает:
+- Suffix LIKE: `WHERE name LIKE '%John'` (бесполезен — индекс начинается с
+  префикса).
+- Negation: `WHERE name != 'John'` (часто полный скан).
+- Functions: `WHERE LOWER(name) = 'john'` (нужен **functional index** на
+  `LOWER(name)`).
+- `IS NULL` на default индекс (PG нужно `WHERE col IS NULL` отдельно
+  обрабатывать; есть partial index).
+
+**Составной индекс и leftmost prefix rule:**
+
+```sql
+CREATE INDEX idx_orders ON orders (customer_id, status, created_at);
+```
+
+Этот индекс **используется** для:
+- `WHERE customer_id = 5`
+- `WHERE customer_id = 5 AND status = 'NEW'`
+- `WHERE customer_id = 5 AND status = 'NEW' AND created_at > '2026-01-01'`
+- `WHERE customer_id = 5 ORDER BY status`
+
+**Не используется** (или используется как Bitmap Scan, медленнее) для:
+- `WHERE status = 'NEW'` (нет первой колонки)
+- `WHERE created_at > '2026-01-01'` (нет первых двух)
+- `WHERE status = 'NEW' AND created_at > ...` (нет первой)
+
+Правило: индекс работает по «префиксу» колонок слева направо.
+
+**Покрывающий индекс (Covering / Include):**
+
+```sql
+CREATE INDEX idx_orders_status_ic
+ON orders (status)
+INCLUDE (customer_id, total);     -- INCLUDE — PG 11+, MySQL не поддерживает
+
+-- Запрос:
+SELECT customer_id, total FROM orders WHERE status = 'NEW';
+-- PG может сделать Index Only Scan — все данные из индекса, без heap.
+```
+
+`INCLUDE` колонки не участвуют в сортировке, но включены в leaf-страницах
+индекса. Главный выигрыш: BD не делает «table lookup» (heap fetch) для
+получения данных — все в индексе.
+
+**Selectivity и почему индекс на boolean бесполезен.** Селективность =
+доля уникальных значений в колонке. У boolean её обычно 2/N → planner
+выберет Seq Scan почти всегда. Index Scan имеет накладные расходы (random
+IO), и оправдан только при выборке < 5-20% таблицы.
+
+Хорошие кандидаты для индекса:
+- High-cardinality: id, email, UUID.
+- WHERE-фильтр со значимой селективностью.
+- JOIN-колонки (foreign key — почти всегда индекс).
+- ORDER BY на больших таблицах.
+
+Плохие кандидаты:
+- Boolean / enum с 2-3 значениями.
+- Часто меняющиеся колонки (status в кибер-учётной системе) — update индекса
+  стоит каждый раз.
+- Малые таблицы (< 1000 строк) — Seq Scan всегда быстрее.
+
+**Другие типы индексов в PostgreSQL:**
+
+```
+B-tree     — default, для =, <, >, BETWEEN, IN, ORDER BY, LIKE prefix.
+Hash       — только =, in-memory лучше. С PG 10+ WAL'д. Реально не нужен.
+GIN        — для JSONB, массивов, full-text. Generalized Inverted Index.
+GiST       — для геометрии (PostGIS), range types, full-text. Generalized Search Tree.
+SP-GiST    — для non-balanced (radix tree, quad-tree).
+BRIN       — Block Range Index. Для огромных append-only таблиц с физическим
+             порядком (logs by time). Маленький index, sequential scan in-block.
+```
+
+```sql
+-- JSONB-индекс:
+CREATE INDEX idx_data ON tbl USING GIN (data_jsonb);
+-- WHERE data_jsonb @> '{"role": "admin"}'   ← быстро
+
+-- Trigram (PG-spec):
+CREATE EXTENSION pg_trgm;
+CREATE INDEX idx_name_trgm ON users USING GIN (name gin_trgm_ops);
+-- WHERE name LIKE '%middle%'   ← теперь работает с индексом
+
+-- Geo (PostGIS):
+CREATE INDEX idx_loc ON tbl USING GIST (location);
+-- WHERE ST_DWithin(location, point, 1000)
+```
+
+**Functional / Partial индексы:**
+
+```sql
+-- Functional:
+CREATE INDEX idx_lower_email ON users (LOWER(email));
+-- WHERE LOWER(email) = 'a@b.c'
+
+-- Partial (только часть строк):
+CREATE INDEX idx_active_orders ON orders (created_at)
+WHERE status = 'ACTIVE';
+-- Маленький индекс, только активные заказы.
+
+-- Unique partial:
+CREATE UNIQUE INDEX idx_one_default_card ON cards (user_id)
+WHERE is_default = TRUE;
+-- Только одна default карта на user.
+```
+
+**CREATE INDEX CONCURRENTLY** — без блокировки таблицы:
+
+```sql
+-- BLOCK CONCURRENT WRITES (медленнее, но безопаснее на проде)
+CREATE INDEX CONCURRENTLY idx_users_email ON users (email);
+```
+
+Без CONCURRENTLY на большой таблице — `ACCESS EXCLUSIVE` lock на всё время
+создания. На прод этого никогда не делать.
+
+**Cost of index — на каждом WRITE:**
+
+```
+INSERT row:
+  1. Insert в heap.
+  2. Update каждого индекса (+1 leaf entry).
+
+UPDATE col1:
+  1. Hot update (если значения col1 не изменились) — только heap.
+  2. Cold update — heap + индексы col1 + индексы, ссылающиеся на page.
+
+DELETE row:
+  1. Помечает как deleted (vacuum позже).
+```
+
+5+ индексов на таблице — write-throughput падает в 2-5 раз. Каждый индекс
+должен иметь обоснование.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, Сбер, Озон).** «Какие типы индексов
+знаешь?»
+
+B-tree (default, =/range/order), Hash (только =, редко нужен), GIN (JSONB,
+массивы, full-text), GiST (геометрия, range), BRIN (огромные append-only).
+На middle хватит знать B-tree глубоко и GIN/GiST по верхам.
+
+**Вопрос 2 (Лига, T-Bank).** «Что такое составной индекс и leftmost prefix
+rule?»
+
+Индекс на (a, b, c) — это лексикографический порядок по этим колонкам. Можно
+использовать для запросов, где условие включает префикс: a, (a, b), (a, b, c).
+**Не** для b в одиночку, c в одиночку, (b, c).
+
+**Вопрос 3 (Альфа, VK).** «Чем индекс на boolean плох?»
+
+Селективность 50/50 (или 5/95) — planner почти всегда выберет Seq Scan, индекс
+не используется. Зато на каждый INSERT/UPDATE этого поля идёт обновление
+индекса. Лекарство: partial index (только нужные строки).
+
+**Вопрос 4 (T-Bank, Озон).** «Что такое covering index?»
+
+Индекс, который содержит **все** колонки, нужные запросу. Planner может
+сделать Index Only Scan — не идти в heap за дополнительными колонками.
+Особенно полезно для запросов «SELECT a, b WHERE c = ?»:
+
+```sql
+CREATE INDEX idx_c_ab ON tbl (c) INCLUDE (a, b);
+SELECT a, b FROM tbl WHERE c = 1;   -- Index Only Scan
+```
+
+**Вопрос 5 (Сбер, продвинутый).** «Почему `WHERE LOWER(email) = 'a@b.c'` не
+использует обычный индекс?»
+
+Индекс хранит значения колонки **как они есть**. `LOWER(email)` — функция,
+её результат в индексе не хранится. Лекарство: functional index
+`CREATE INDEX ON tbl (LOWER(email))`.
+
+## Один день из практики
+
+Тебя позвали разобраться: «после релиза endpoint `/users/search?q=...`
+тормозит — 1.2 секунды на запрос вместо 50мс». Открываем:
+
+```sql
+SELECT * FROM users
+WHERE LOWER(name) LIKE LOWER('%' || $1 || '%')
+ORDER BY name LIMIT 20;
+```
+
+Шаг 1. `EXPLAIN ANALYZE`:
+
+```
+Limit  (cost=51823.92..51823.96 rows=20 width=80) (actual time=1187.41..1187.45)
+  Sort Key: name
+  ->  Seq Scan on users  (cost=0.00..51721.00 rows=12500 width=80)
+        Filter: lower(name) ~~ lower('%...%')
+        Rows Removed by Filter: 2487500
+```
+
+Seq Scan на 2.5M строк → 1.2 сек. Несколько проблем:
+1. `LOWER(name)` без functional index.
+2. `%...%` (двусторонний LIKE) — обычный B-tree не помогает (нет анкера слева).
+
+Решение — pg_trgm:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX CONCURRENTLY idx_users_name_trgm ON users
+USING GIN (LOWER(name) gin_trgm_ops);
+```
+
+Trigram-индекс разбивает строку на 3-граммы и индексирует их. `'%john%'` —
+ищем строки с грамом `joh` или `ohn`.
+
+После `CREATE`:
+
+```
+Limit  (cost=83.34..83.38 rows=20 width=80) (actual time=12.41..12.45)
+  Sort Key: name
+  ->  Bitmap Heap Scan on users
+        Filter: lower(name) ~~ '%john%'
+        ->  Bitmap Index Scan on idx_users_name_trgm
+              Index Cond: lower(name) ~~* '%john%'
+```
+
+12.4мс. ОК.
+
+Альтернатива для PostgreSQL: full-text search через `tsvector`:
+
+```sql
+ALTER TABLE users ADD COLUMN name_tsv tsvector;
+CREATE INDEX idx_users_name_tsv ON users USING GIN (name_tsv);
+UPDATE users SET name_tsv = to_tsvector('russian', name);
+-- + trigger на UPDATE
+
+SELECT * FROM users
+WHERE name_tsv @@ plainto_tsquery('russian', $1)
+ORDER BY name LIMIT 20;
+```
+
+Full-text быстрее на длинных текстах, поддерживает стемминг, ранжирование.
+Для коротких name полей trigram проще.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```sql
+CREATE INDEX idx_users_a_b ON users (a, b);
+
+SELECT * FROM users WHERE b = 5;   -- индекс почти не помогает
+```
+
+`b` — не первая колонка составного индекса. Planner либо делает Seq Scan,
+либо Bitmap Index Scan (если indexscan возможен), но всё равно дольше, чем
+с индексом по `b`. Лекарство: либо `(b, a)` отдельным индексом, либо
+два отдельных индекса.
+
+Кейс 2. Где баг?
+
+```sql
+CREATE INDEX idx_active ON orders (active);   -- boolean
+```
+
+Selectivity 1-2%. Если active=true редок (например, только активные нужны):
+
+```sql
+CREATE INDEX idx_active_orders ON orders (created_at) WHERE active = TRUE;
+```
+
+Кейс 3. Где баг?
+
+```sql
+SELECT * FROM products WHERE name LIKE '%phone%';   -- без trigram-индекса
+```
+
+`%anywhere%` не использует B-tree. Plan: Seq Scan + Filter. На 10M строк —
+секунды. Лекарство: pg_trgm GIN или Full-Text Search.
+
+Кейс 4. Где баг (in production)?
+
+```sql
+CREATE INDEX idx_users_email ON users (email);
+```
+
+Без `CONCURRENTLY` — `ACCESS EXCLUSIVE` lock на всю таблицу. Прод стоит на
+коленях, пока создаётся (могут быть минуты на большой). Лекарство:
+
+```sql
+CREATE INDEX CONCURRENTLY idx_users_email ON users (email);
+```
+
+Кейс 5. Где баг?
+
+```sql
+CREATE INDEX ON users (email);
+SELECT * FROM users WHERE email = '   Foo@Bar.com  ';   -- whitespace + case
+```
+
+Индекс не сработает из-за `  ` и регистра — `'foo@bar.com'` в БД не совпадает
+с `'  Foo@Bar.com  '`. Решение: нормализовать email при INSERT (LOWER + TRIM)
+плюс functional index `LOWER(email)`.
+
+Кейс 6. Где баг (write-heavy)?
+
+```sql
+-- На таблице orders:
+CREATE INDEX ix1 ON orders (a);
+CREATE INDEX ix2 ON orders (b);
+CREATE INDEX ix3 ON orders (c);
+CREATE INDEX ix4 ON orders (d);
+CREATE INDEX ix5 ON orders (e);
+CREATE INDEX ix6 ON orders (f);
+CREATE INDEX ix7 ON orders (g);
+-- INSERT в orders медленный
+```
+
+7 индексов = 7 leaf-узлов на каждый INSERT, плюс WAL overhead. Throughput
+падает в 3-5 раз. Лекарство: оценить usage через `pg_stat_user_indexes`,
+удалить неиспользуемые.
+
+Кейс 7. Где баг (Java ORM-side)?
+
+```java
+@Entity
+public class Order {
+    @Id Long id;
+    String status;
+    @Column Instant createdAt;
+}
+
+// Запрос: orders by status + period:
+List<Order> orders = repo.findByStatusAndCreatedAtBetween("NEW", from, to);
+```
+
+Hibernate сделает SQL по этим колонкам. Если индекс есть только по `status`,
+planner может выбрать Seq Scan для больших дат. Лекарство: композитный
+индекс `(status, created_at)`.
+
+## Что почитать
+
+- [Use The Index, Luke!](https://use-the-index-luke.com/) — Markus Winand, классический гид по индексам.
+- *SQL Performance Explained*, Markus Winand — печатная версия + углубление.
+- [PostgreSQL Documentation — Indexes](https://www.postgresql.org/docs/current/indexes.html) — все типы, syntactically.
+- [PostgreSQL Wiki — Index Maintenance](https://wiki.postgresql.org/wiki/Index_Maintenance) — bloat, REINDEX.
+- *High Performance MySQL*, Baron Schwartz et al. — главы 5–6 про индексы.
+- [pg_trgm extension docs](https://www.postgresql.org/docs/current/pgtrgm.html) — для wildcard LIKE.
+- Vlad Mihalcea, [«Hibernate Indexing Tips»](https://vladmihalcea.com/database-indexes-and-hibernate-performance/) — JPA-side.
+
 ## Где в стеке
 
 **Уровень 5: Database, JPA, Hibernate.** После Spring — самый частый блок. N+1 спросят в 8/8 компаний. Уровни изоляции, planner B-tree, lazy/eager — must-know.
