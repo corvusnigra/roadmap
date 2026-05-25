@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-happens-before
+title: "JMM happens-before — мост между потоками"
+summary: "Когда я уверен, что поток B увидит запись потока A?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Можешь назвать 5 источников HB без подглядывания"
+  - "Понимаешь, почему final-поля HB читателя после конструктора"
+  - "Не пишешь свой lock-free алгоритм без понимания HB"
+  - "Выполнять регулярно: Написать пример double-checked-locking без volatile — увидеть, что не работает (теоретически)"
+  - "Выполнять регулярно: Прочитать JLS §17.4 — Memory Model"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «JMM happens-before — мост между потоками» начала работать?"
+    options:
+      - "Можешь назвать 5 источников HB без подглядывания"
+      - "Использовать non-volatile поле для signal flag — поток никогда не увидит изменение"
+      - "Полагаться на «сначала write, потом read» без HB — JIT переставит"
+      - "Тестировать concurrency «один раз прошло — значит работает»"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Можешь назвать 5 источников HB без подглядывания» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Synchronizes-with (volatile, monitor, final) ↔ Happens-before (транзитивное замыкание)»?"
+    back: "Synchronizes-with (volatile, monitor, final) ↔ Happens-before (транзитивное замыкание). Java Memory Model (JMM, JSR-133, Java 5+) определяет, когда action A happens-before action B"
+  - front: "Что стоит за различением «Program order (внутри потока) ↔ Inter-thread (между потоками через synchronizes-with)»?"
+    back: "Program order (внутри потока) ↔ Inter-thread (между потоками через synchronizes-with). Если HB(A, B), то результат A виден в B"
+  - front: "Что стоит за различением «JMM (абстракция) ↔ Cache coherence на CPU (реализация)»?"
+    back: "JMM (абстракция) ↔ Cache coherence на CPU (реализация). Гарантии: (1) program order — внутри одного потока всё HB по порядку; (2) monitor lock — unlock HB lock того же монитора; (3) volatile — write HB read того же поля; (4) Thread.start HB первой операции запущенного потока; (5) Thread join HB следующих операций ожидающего; (6) final-поле HB чтения после конструктора"
+  - front: "Что стоит за различением «Reordering by compiler/CPU/JIT — разрешено, если не нарушает HB»?"
+    back: "Reordering by compiler/CPU/JIT — разрешено, если не нарушает HB. Без HB — нет гарантий видимости: поток B может вечно читать stale значение"
+  - front: "По какому маркеру понять, что освоено: «Можешь назвать 5 источников HB без подглядывания»?"
+    back: "Можешь назвать 5 источников HB без подглядывания"
+  - front: "По какому маркеру понять, что освоено: «Понимаешь, почему final-поля HB читателя после конструктора»?"
+    back: "Понимаешь, почему final-поля HB читателя после конструктора"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «JMM happens-before — мост между потоками» в центр?"
+    options:
+      - "Когда я уверен, что поток B увидит запись потока A?"
+      - "Использовать non-volatile поле для signal flag — поток никогда не увидит изменение"
+      - "Полагаться на «сначала write, потом read» без HB — JIT переставит"
+      - "Тестировать concurrency «один раз прошло — значит работает»"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Когда я уверен, что поток B увидит запись потока A?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «JMM happens-before — мост между потоками»?"
+    options:
+      - "Использовать non-volatile поле для signal flag — поток никогда не увидит изменение"
+      - "Написать пример double-checked-locking без volatile — увидеть, что не работает (теоретически)"
+      - "Можешь назвать 5 источников HB без подглядывания"
+      - "Понимаешь, почему final-поля HB читателя после конструктора"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Использовать non-volatile поле для signal flag — поток никогда не увидит изменение»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «JMM happens-before — мост между потоками»?"
+    options:
+      - "Synchronizes-with (volatile, monitor, final) ↔ Happens-before (транзитивное замыкание)"
+      - "Использовать non-volatile поле для signal flag — поток никогда не увидит изменение"
+      - "Полагаться на «сначала write, потом read» без HB — JIT переставит"
+      - "Тестировать concurrency «один раз прошло — значит работает»"
+    answerIndex: 0
+    explanation: "Различение «Synchronizes-with (volatile, monitor, final) ↔ Happens-before (транзитивное замыкание)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «JMM happens-before — мост между потоками»?"
+    options:
+      - "Написать пример double-checked-locking без volatile — увидеть, что не работает (теоретически)"
+      - "Использовать non-volatile поле для signal flag — поток никогда не увидит изменение"
+      - "Полагаться на «сначала write, потом read» без HB — JIT переставит"
+      - "Тестировать concurrency «один раз прошло — значит работает»"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Написать пример double-checked-locking без volatile — увидеть, что не работает (теоретически)»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «JMM happens-before — мост между потоками» работает?"
+    options:
+      - "Можешь назвать 5 источников HB без подглядывания"
+      - "Использовать non-volatile поле для signal flag — поток никогда не увидит изменение"
+      - "Полагаться на «сначала write, потом read» без HB — JIT переставит"
+      - "Тестировать concurrency «один раз прошло — значит работает»"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Можешь назвать 5 источников HB без подглядывания». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «JMM happens-before — мост между потоками» как опору?"
+    options:
+      - "synchronized — full barrier (unlock HB lock)"
+      - "Использовать non-volatile поле для signal flag — поток никогда не увидит изменение"
+      - "Полагаться на «сначала write, потом read» без HB — JIT переставит"
+      - "Тестировать concurrency «один раз прошло — значит работает»"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «synchronized — full barrier (unlock HB lock)»"
+---
+
+## Зачем
+
+Java Memory Model (JMM, JSR-133, Java 5+) определяет, когда action A happens-before action B. Если HB(A, B), то результат A виден в B. Гарантии: (1) program order — внутри одного потока всё HB по порядку; (2) monitor lock — unlock HB lock того же монитора; (3) volatile — write HB read того же поля; (4) Thread.start HB первой операции запущенного потока; (5) Thread join HB следующих операций ожидающего; (6) final-поле HB чтения после конструктора. Без HB — нет гарантий видимости: поток B может вечно читать stale значение. JMM ≠ модель памяти процессора; JIT-оптимизации могут переставлять операции, если HB не запрещает.
+
+## Ключевые различения
+
+- Synchronizes-with (volatile, monitor, final) ↔ Happens-before (транзитивное замыкание)
+- Program order (внутри потока) ↔ Inter-thread (между потоками через synchronizes-with)
+- JMM (абстракция) ↔ Cache coherence на CPU (реализация)
+- Reordering by compiler/CPU/JIT — разрешено, если не нарушает HB
+
+## Технология
+
+- synchronized — full barrier (unlock HB lock)
+- volatile — write HB read
+- AtomicXxx — наследует HB через volatile
+- Thread.start / Thread.join — HB гарантии
+
+## Практика (упражнения)
+
+- Написать пример double-checked-locking без volatile — увидеть, что не работает (теоретически)
+- Прочитать JLS §17.4 — Memory Model
+- Реализовать pub/sub очередь через volatile + happens-before
+
+## Маркеры освоения
+
+- Можешь назвать 5 источников HB без подглядывания
+- Понимаешь, почему final-поля HB читателя после конструктора
+- Не пишешь свой lock-free алгоритм без понимания HB
+
+## Антипаттерны
+
+- Использовать non-volatile поле для signal flag — поток никогда не увидит изменение
+- Полагаться на «сначала write, потом read» без HB — JIT переставит
+- Тестировать concurrency «один раз прошло — значит работает»
+
+## Где в стеке
+
+**Уровень 2: Concurrency и JMM.** Самый «отсевочный» блок. JMM happens-before и контракт volatile различают junior от middle. На middle ожидают понимание ABA, ThreadPool параметров, и почему counter++ с volatile не атомарен.

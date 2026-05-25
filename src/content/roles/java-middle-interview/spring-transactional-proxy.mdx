@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: spring-transactional-proxy
+title: "@Transactional через прокси и self-invocation"
+summary: "Почему this.transactionalMethod() не открывает транзакцию?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Не вызываешь @Transactional через this"
+  - "Используешь rollbackFor = Exception.class или Throwable.class"
+  - "Знаешь, почему final-класс ломает CGLIB прокси"
+  - "Выполнять регулярно: Создать @Transactional метод A, который зовёт this.transactionalB() — увидеть, что B не в своей транзакции"
+  - "Выполнять регулярно: Бросить IOException в @Transactional без rollbackFor — увидеть commit"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «@Transactional через прокси и self-invocation» начала работать?"
+    options:
+      - "Не вызываешь @Transactional через this"
+      - "this.transactionalMethod() и ожидание новой транзакции"
+      - "Полагаться на default rollback для checked exceptions"
+      - "@Transactional на private методе — Spring молча игнорирует"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Не вызываешь @Transactional через this» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «JDK Dynamic Proxy (на interface) ↔ CGLIB (на класс, требует non-final)»?"
+    back: "JDK Dynamic Proxy (на interface) ↔ CGLIB (на класс, требует non-final). @Transactional реализован через AOP: Spring оборачивает бин в прокси (JDK Dynamic Proxy если есть interface, CGLIB иначе)"
+  - front: "Что стоит за различением «External call (через прокси) ↔ Self-invocation (мимо прокси)»?"
+    back: "External call (через прокси) ↔ Self-invocation (мимо прокси). Прокси перехватывает внешние вызовы, открывает транзакцию через PlatformTransactionManager, после метода commit или rollback"
+  - front: "Что стоит за различением «Default rollback: RuntimeException + Error ↔ rollbackFor = Exception.class»?"
+    back: "Default rollback: RuntimeException + Error ↔ rollbackFor = Exception.class. Self-invocation: вызов this.method() внутри того же бина идёт мимо прокси — транзакция НЕ открывается"
+  - front: "Что стоит за различением «@Transactional на public методах (default proxy access)»?"
+    back: "@Transactional на public методах (default proxy access). То же самое для @Async, @Cacheable, @Retryable — все proxy-based"
+  - front: "По какому маркеру понять, что освоено: «Не вызываешь @Transactional через this»?"
+    back: "Не вызываешь @Transactional через this"
+  - front: "По какому маркеру понять, что освоено: «Используешь rollbackFor = Exception.class или Throwable.class»?"
+    back: "Используешь rollbackFor = Exception.class или Throwable.class"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «@Transactional через прокси и self-invocation» в центр?"
+    options:
+      - "Почему this.transactionalMethod() не открывает транзакцию?"
+      - "this.transactionalMethod() и ожидание новой транзакции"
+      - "Полагаться на default rollback для checked exceptions"
+      - "@Transactional на private методе — Spring молча игнорирует"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Почему this.transactionalMethod() не открывает транзакцию?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «@Transactional через прокси и self-invocation»?"
+    options:
+      - "this.transactionalMethod() и ожидание новой транзакции"
+      - "Создать @Transactional метод A, который зовёт this.transactionalB() — увидеть, что B не в своей транзакции"
+      - "Не вызываешь @Transactional через this"
+      - "Используешь rollbackFor = Exception.class или Throwable.class"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «this.transactionalMethod() и ожидание новой транзакции»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «@Transactional через прокси и self-invocation»?"
+    options:
+      - "JDK Dynamic Proxy (на interface) ↔ CGLIB (на класс, требует non-final)"
+      - "this.transactionalMethod() и ожидание новой транзакции"
+      - "Полагаться на default rollback для checked exceptions"
+      - "@Transactional на private методе — Spring молча игнорирует"
+    answerIndex: 0
+    explanation: "Различение «JDK Dynamic Proxy (на interface) ↔ CGLIB (на класс, требует non-final)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «@Transactional через прокси и self-invocation»?"
+    options:
+      - "Создать @Transactional метод A, который зовёт this.transactionalB() — увидеть, что B не в своей транзакции"
+      - "this.transactionalMethod() и ожидание новой транзакции"
+      - "Полагаться на default rollback для checked exceptions"
+      - "@Transactional на private методе — Spring молча игнорирует"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Создать @Transactional метод A, который зовёт this.transactionalB() — увидеть, что B не в своей транзакции»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «@Transactional через прокси и self-invocation» работает?"
+    options:
+      - "Не вызываешь @Transactional через this"
+      - "this.transactionalMethod() и ожидание новой транзакции"
+      - "Полагаться на default rollback для checked exceptions"
+      - "@Transactional на private методе — Spring молча игнорирует"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Не вызываешь @Transactional через this». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «@Transactional через прокси и self-invocation» как опору?"
+    options:
+      - "@Transactional с параметрами: propagation, isolation, rollbackFor, readOnly, timeout"
+      - "this.transactionalMethod() и ожидание новой транзакции"
+      - "Полагаться на default rollback для checked exceptions"
+      - "@Transactional на private методе — Spring молча игнорирует"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «@Transactional с параметрами: propagation, isolation, rollbackFor, readOnly, timeout»"
+---
+
+## Зачем
+
+@Transactional реализован через AOP: Spring оборачивает бин в прокси (JDK Dynamic Proxy если есть interface, CGLIB иначе). Прокси перехватывает внешние вызовы, открывает транзакцию через PlatformTransactionManager, после метода commit или rollback. Self-invocation: вызов this.method() внутри того же бина идёт мимо прокси — транзакция НЕ открывается. То же самое для @Async, @Cacheable, @Retryable — все proxy-based. Решения: (1) разнести в два бина; (2) AopContext.currentProxy().method(); (3) @Self-inject через ObjectProvider или setter. С Spring 6 (AOT, native) — прокси частично заменены direct invocation. rollbackFor: по умолчанию откатывает только на RuntimeException и Error; checked — НЕ откатывает! Поэтому @Transactional(rollbackFor = Exception.class) — must для большинства случаев.
+
+## Ключевые различения
+
+- JDK Dynamic Proxy (на interface) ↔ CGLIB (на класс, требует non-final)
+- External call (через прокси) ↔ Self-invocation (мимо прокси)
+- Default rollback: RuntimeException + Error ↔ rollbackFor = Exception.class
+- @Transactional на public методах (default proxy access)
+
+## Технология
+
+- @Transactional с параметрами: propagation, isolation, rollbackFor, readOnly, timeout
+- PlatformTransactionManager (DataSourceTransactionManager / JpaTransactionManager)
+- TransactionTemplate (программный API)
+- AopContext.currentProxy() (требует @EnableAspectJAutoProxy(exposeProxy = true))
+
+## Практика (упражнения)
+
+- Создать @Transactional метод A, который зовёт this.transactionalB() — увидеть, что B не в своей транзакции
+- Бросить IOException в @Transactional без rollbackFor — увидеть commit
+- Разнести A и B в два сервиса — увидеть, что работает
+
+## Маркеры освоения
+
+- Не вызываешь @Transactional через this
+- Используешь rollbackFor = Exception.class или Throwable.class
+- Знаешь, почему final-класс ломает CGLIB прокси
+
+## Антипаттерны
+
+- this.transactionalMethod() и ожидание новой транзакции
+- Полагаться на default rollback для checked exceptions
+- @Transactional на private методе — Spring молча игнорирует
+
+## Где в стеке
+
+**Уровень 4: Spring и Spring Boot.** Любая работа с Java middle = Spring. Ключевая ловушка — self-invocation @Transactional/@Async через прокси: спросят с вероятностью 100%.

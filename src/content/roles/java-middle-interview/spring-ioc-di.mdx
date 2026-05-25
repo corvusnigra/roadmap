@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: spring-ioc-di
+title: "IoC, DI и Constructor injection"
+summary: "Почему constructor injection лучше field injection?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Используешь только constructor injection в новом коде"
+  - "Можешь объяснить, почему @Autowired на поле — антипаттерн"
+  - "Знаешь разницу @Autowired / @Inject / @Resource"
+  - "Выполнять регулярно: Переписать field injection класс на constructor injection — увидеть, что тесты проще"
+  - "Выполнять регулярно: Создать circular dependency через field, потом через constructor — увидеть failure mode"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «IoC, DI и Constructor injection» начала работать?"
+    options:
+      - "Используешь только constructor injection в новом коде"
+      - "@Autowired на private field — невозможно протестировать без reflection или Spring"
+      - "Circular dependency через setter / field — Spring «починит» молча"
+      - "ApplicationContext.getBean() в обычном бизнес-коде"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Используешь только constructor injection в новом коде» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «IoC (контейнер управляет) ↔ DI (передача зависимостей)»?"
+    back: "IoC (контейнер управляет) ↔ DI (передача зависимостей). IoC (Inversion of Control) — контейнер управляет жизненным циклом, а не код"
+  - front: "Что стоит за различением «Constructor injection (best) ↔ Setter (optional) ↔ Field (worst)»?"
+    back: "Constructor injection (best) ↔ Setter (optional) ↔ Field (worst). DI (Dependency Injection) — частный случай IoC, зависимости передаются извне"
+  - front: "Что стоит за различением «Singleton (default scope) ↔ Prototype»?"
+    back: "Singleton (default scope) ↔ Prototype. Три варианта в Spring: constructor (Constructor injection — рекомендуется), setter (для optional / circular), field (через @Autowired на поле — самый плохой)"
+  - front: "Что стоит за различением «@Autowired ↔ @Inject (JSR-330) ↔ @Resource (JSR-250)»?"
+    back: "@Autowired ↔ @Inject (JSR-330) ↔ @Resource (JSR-250). Constructor injection: (1) делает зависимости видимыми в сигнатуре, (2) позволяет final-поля (immutable bean), (3) ловит circular dependency на старте, не в рантайме, (4) проще тестировать (просто new Service(mock, mock))"
+  - front: "По какому маркеру понять, что освоено: «Используешь только constructor injection в новом коде»?"
+    back: "Используешь только constructor injection в новом коде"
+  - front: "По какому маркеру понять, что освоено: «Можешь объяснить, почему @Autowired на поле — антипаттерн»?"
+    back: "Можешь объяснить, почему @Autowired на поле — антипаттерн"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «IoC, DI и Constructor injection» в центр?"
+    options:
+      - "Почему constructor injection лучше field injection?"
+      - "@Autowired на private field — невозможно протестировать без reflection или Spring"
+      - "Circular dependency через setter / field — Spring «починит» молча"
+      - "ApplicationContext.getBean() в обычном бизнес-коде"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Почему constructor injection лучше field injection?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «IoC, DI и Constructor injection»?"
+    options:
+      - "@Autowired на private field — невозможно протестировать без reflection или Spring"
+      - "Переписать field injection класс на constructor injection — увидеть, что тесты проще"
+      - "Используешь только constructor injection в новом коде"
+      - "Можешь объяснить, почему @Autowired на поле — антипаттерн"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «@Autowired на private field — невозможно протестировать без reflection или Spring»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «IoC, DI и Constructor injection»?"
+    options:
+      - "IoC (контейнер управляет) ↔ DI (передача зависимостей)"
+      - "@Autowired на private field — невозможно протестировать без reflection или Spring"
+      - "Circular dependency через setter / field — Spring «починит» молча"
+      - "ApplicationContext.getBean() в обычном бизнес-коде"
+    answerIndex: 0
+    explanation: "Различение «IoC (контейнер управляет) ↔ DI (передача зависимостей)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «IoC, DI и Constructor injection»?"
+    options:
+      - "Переписать field injection класс на constructor injection — увидеть, что тесты проще"
+      - "@Autowired на private field — невозможно протестировать без reflection или Spring"
+      - "Circular dependency через setter / field — Spring «починит» молча"
+      - "ApplicationContext.getBean() в обычном бизнес-коде"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Переписать field injection класс на constructor injection — увидеть, что тесты проще»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «IoC, DI и Constructor injection» работает?"
+    options:
+      - "Используешь только constructor injection в новом коде"
+      - "@Autowired на private field — невозможно протестировать без reflection или Spring"
+      - "Circular dependency через setter / field — Spring «починит» молча"
+      - "ApplicationContext.getBean() в обычном бизнес-коде"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Используешь только constructor injection в новом коде». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «IoC, DI и Constructor injection» как опору?"
+    options:
+      - "@Component / @Service / @Repository / @Controller / @RestController"
+      - "@Autowired на private field — невозможно протестировать без reflection или Spring"
+      - "Circular dependency через setter / field — Spring «починит» молча"
+      - "ApplicationContext.getBean() в обычном бизнес-коде"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «@Component / @Service / @Repository / @Controller / @RestController»"
+---
+
+## Зачем
+
+IoC (Inversion of Control) — контейнер управляет жизненным циклом, а не код. DI (Dependency Injection) — частный случай IoC, зависимости передаются извне. Три варианта в Spring: constructor (Constructor injection — рекомендуется), setter (для optional / circular), field (через @Autowired на поле — самый плохой). Constructor injection: (1) делает зависимости видимыми в сигнатуре, (2) позволяет final-поля (immutable bean), (3) ловит circular dependency на старте, не в рантайме, (4) проще тестировать (просто new Service(mock, mock)). Field injection: (1) скрывает зависимости, (2) ломает immutability, (3) не работает в plain unit-test без Spring контейнера, (4) разрешает circular cycle. Начиная с Spring 4.3 @Autowired не нужен на единственном конструкторе.
+
+## Ключевые различения
+
+- IoC (контейнер управляет) ↔ DI (передача зависимостей)
+- Constructor injection (best) ↔ Setter (optional) ↔ Field (worst)
+- Singleton (default scope) ↔ Prototype
+- @Autowired ↔ @Inject (JSR-330) ↔ @Resource (JSR-250)
+
+## Технология
+
+- @Component / @Service / @Repository / @Controller / @RestController
+- @Configuration + @Bean — manual bean definition
+- @Autowired + @Qualifier + @Primary
+- ApplicationContext.getBean() (для тестов и edge cases)
+
+## Практика (упражнения)
+
+- Переписать field injection класс на constructor injection — увидеть, что тесты проще
+- Создать circular dependency через field, потом через constructor — увидеть failure mode
+- Реализовать @Bean в @Configuration с условиями (@ConditionalOnProperty)
+
+## Маркеры освоения
+
+- Используешь только constructor injection в новом коде
+- Можешь объяснить, почему @Autowired на поле — антипаттерн
+- Знаешь разницу @Autowired / @Inject / @Resource
+
+## Антипаттерны
+
+- @Autowired на private field — невозможно протестировать без reflection или Spring
+- Circular dependency через setter / field — Spring «починит» молча
+- ApplicationContext.getBean() в обычном бизнес-коде
+
+## Где в стеке
+
+**Уровень 4: Spring и Spring Boot.** Любая работа с Java middle = Spring. Ключевая ловушка — self-invocation @Transactional/@Async через прокси: спросят с вероятностью 100%.

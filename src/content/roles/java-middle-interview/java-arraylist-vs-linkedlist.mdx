@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-arraylist-vs-linkedlist
+title: "ArrayList vs LinkedList — cache locality и реальность"
+summary: "Когда LinkedList реально выгоднее ArrayList? (Почти никогда.)"
+status: published
+estimatedMinutes: 20
+prerequisites: []
+learningOutcomes:
+  - "Не выбираешь LinkedList «потому что вставка в середину быстрая»"
+  - "Используешь ArrayDeque вместо LinkedList как очередь/стек"
+  - "Знаешь, что ArrayList grow — это копия массива"
+  - "Выполнять регулярно: Benchmark (jmh) добавление 1M в середину для обоих"
+  - "Выполнять регулярно: Профилировать cache miss через perf stat для итерации"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «ArrayList vs LinkedList — cache locality и реальность» начала работать?"
+    options:
+      - "Не выбираешь LinkedList «потому что вставка в середину быстрая»"
+      - "Выбирать LinkedList по таблице сложностей без замера"
+      - "Использовать LinkedList в высоконагруженном коде"
+      - "Не задавать initialCapacity для известного размера"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Не выбираешь LinkedList «потому что вставка в середину быстрая»» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «ArrayList (Object[]) ↔ LinkedList (двусвязный список)»?"
+    back: "ArrayList (Object[]) ↔ LinkedList (двусвязный список). ArrayList — динамический массив (Object[] elementData, capacity, size)"
+  - front: "Что стоит за различением «Random access: O(1) ↔ O(n/2)»?"
+    back: "Random access: O(1) ↔ O(n/2). Insert/delete в середине — O(n) из-за сдвига"
+  - front: "Что стоит за различением «Cache locality: высокая ↔ низкая (узлы разбросаны)»?"
+    back: "Cache locality: высокая ↔ низкая (узлы разбросаны). LinkedList — двусвязный список (head/tail + Node<E>{prev, item, next})"
+  - front: "Что стоит за различением «Capacity grow: × 1.5 (50%) при заполнении»?"
+    back: "Capacity grow: × 1.5 (50%) при заполнении. Insert/delete в произвольном месте — O(1), но найти место — O(n)"
+  - front: "По какому маркеру понять, что освоено: «Не выбираешь LinkedList «потому что вставка в середину быстрая»»?"
+    back: "Не выбираешь LinkedList «потому что вставка в середину быстрая»"
+  - front: "По какому маркеру понять, что освоено: «Используешь ArrayDeque вместо LinkedList как очередь/стек»?"
+    back: "Используешь ArrayDeque вместо LinkedList как очередь/стек"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «ArrayList vs LinkedList — cache locality и реальность» в центр?"
+    options:
+      - "Когда LinkedList реально выгоднее ArrayList? (Почти никогда.)"
+      - "Выбирать LinkedList по таблице сложностей без замера"
+      - "Использовать LinkedList в высоконагруженном коде"
+      - "Не задавать initialCapacity для известного размера"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Когда LinkedList реально выгоднее ArrayList? (Почти никогда.)»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «ArrayList vs LinkedList — cache locality и реальность»?"
+    options:
+      - "Выбирать LinkedList по таблице сложностей без замера"
+      - "Benchmark (jmh) добавление 1M в середину для обоих"
+      - "Не выбираешь LinkedList «потому что вставка в середину быстрая»"
+      - "Используешь ArrayDeque вместо LinkedList как очередь/стек"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Выбирать LinkedList по таблице сложностей без замера»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «ArrayList vs LinkedList — cache locality и реальность»?"
+    options:
+      - "ArrayList (Object[]) ↔ LinkedList (двусвязный список)"
+      - "Выбирать LinkedList по таблице сложностей без замера"
+      - "Использовать LinkedList в высоконагруженном коде"
+      - "Не задавать initialCapacity для известного размера"
+    answerIndex: 0
+    explanation: "Различение «ArrayList (Object[]) ↔ LinkedList (двусвязный список)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «ArrayList vs LinkedList — cache locality и реальность»?"
+    options:
+      - "Benchmark (jmh) добавление 1M в середину для обоих"
+      - "Выбирать LinkedList по таблице сложностей без замера"
+      - "Использовать LinkedList в высоконагруженном коде"
+      - "Не задавать initialCapacity для известного размера"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Benchmark (jmh) добавление 1M в середину для обоих»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «ArrayList vs LinkedList — cache locality и реальность» работает?"
+    options:
+      - "Не выбираешь LinkedList «потому что вставка в середину быстрая»"
+      - "Выбирать LinkedList по таблице сложностей без замера"
+      - "Использовать LinkedList в высоконагруженном коде"
+      - "Не задавать initialCapacity для известного размера"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Не выбираешь LinkedList «потому что вставка в середину быстрая»». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «ArrayList vs LinkedList — cache locality и реальность» как опору?"
+    options:
+      - "ArrayList(initialCapacity) — задать заранее, избежать grow"
+      - "Выбирать LinkedList по таблице сложностей без замера"
+      - "Использовать LinkedList в высоконагруженном коде"
+      - "Не задавать initialCapacity для известного размера"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «ArrayList(initialCapacity) — задать заранее, избежать grow»"
+---
+
+## Зачем
+
+ArrayList — динамический массив (Object[] elementData, capacity, size). Доступ по индексу — O(1). Insert/delete в середине — O(n) из-за сдвига. LinkedList — двусвязный список (head/tail + Node<E>{prev, item, next}). Доступ по индексу — O(n/2). Insert/delete в произвольном месте — O(1), но найти место — O(n). На практике ArrayList почти всегда быстрее даже там, где LinkedList выглядит лучше алгоритмически: cache locality (массив = последовательная память, prefetch CPU работает; список = разбросанные узлы по куче). LinkedList оправдан только при insert/delete в начало через ListIterator, и то Deque/ArrayDeque лучше.
+
+## Ключевые различения
+
+- ArrayList (Object[]) ↔ LinkedList (двусвязный список)
+- Random access: O(1) ↔ O(n/2)
+- Cache locality: высокая ↔ низкая (узлы разбросаны)
+- Capacity grow: × 1.5 (50%) при заполнении
+
+## Технология
+
+- ArrayList(initialCapacity) — задать заранее, избежать grow
+- Arrays.asList — fixed size, не ArrayList!
+- List.copyOf — immutable, throw UOE на add
+- ArrayDeque — лучший выбор как deque/stack
+
+## Практика (упражнения)
+
+- Benchmark (jmh) добавление 1M в середину для обоих
+- Профилировать cache miss через perf stat для итерации
+- Заменить LinkedList в legacy-коде на ArrayList, измерить разницу
+
+## Маркеры освоения
+
+- Не выбираешь LinkedList «потому что вставка в середину быстрая»
+- Используешь ArrayDeque вместо LinkedList как очередь/стек
+- Знаешь, что ArrayList grow — это копия массива
+
+## Антипаттерны
+
+- Выбирать LinkedList по таблице сложностей без замера
+- Использовать LinkedList в высоконагруженном коде
+- Не задавать initialCapacity для известного размера
+
+## Где в стеке
+
+**Уровень 1: Collections.** Топ-частотный блок (HashMap спросят в 8/8 компаний). Знать внутренности: treeify в Java 8, resize, cache locality LinkedList, segmenting в ConcurrentHashMap.

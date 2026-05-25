@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: docker-image
+title: "Docker: image vs container, multi-stage build"
+summary: "Зачем multi-stage build для Java приложения?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Используешь multi-stage по умолчанию"
+  - "Знаешь разницу CMD vs ENTRYPOINT"
+  - "Заботишься о размере image (alpine, distroless)"
+  - "Выполнять регулярно: Написать Dockerfile single-stage для Spring Boot → измерить размер (~600MB)"
+  - "Выполнять регулярно: Переписать на multi-stage с jre-alpine → ~150MB"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Docker: image vs container, multi-stage build» начала работать?"
+    options:
+      - "Используешь multi-stage по умолчанию"
+      - "FROM ubuntu + apt install для прода — гигантский attack surface"
+      - "Запуск под root — нарушение security"
+      - "Копировать .git / target в image — ненужно, раздувает"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Используешь multi-stage по умолчанию» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Image (immutable) ↔ Container (runtime + writable layer)»?"
+    back: "Image (immutable) ↔ Container (runtime + writable layer). Image — immutable шаблон, слоистая файловая система (overlayFS)"
+  - front: "Что стоит за различением «RUN (build time) ↔ CMD (default runtime) ↔ ENTRYPOINT (всегда)»?"
+    back: "RUN (build time) ↔ CMD (default runtime) ↔ ENTRYPOINT (всегда). Container — runtime-инстанс image + writable layer"
+  - front: "Что стоит за различением «Single-stage ↔ Multi-stage (отдельные стадии build и runtime)»?"
+    back: "Single-stage ↔ Multi-stage (отдельные стадии build и runtime). Dockerfile инструкции: FROM (base image), COPY (файлы), RUN (команды в build-time, создаёт layer), CMD (default command, переопределяется), ENTRYPOINT (всегда выполняется), ENV, EXPOSE, USER, WORKDIR"
+  - front: "Что стоит за различением «Layer cache — реюз по hash инструкции»?"
+    back: "Layer cache — реюз по hash инструкции. Layer cache: каждая инструкция = layer; если изменилась только верхняя — нижние реюзаются"
+  - front: "По какому маркеру понять, что освоено: «Используешь multi-stage по умолчанию»?"
+    back: "Используешь multi-stage по умолчанию"
+  - front: "По какому маркеру понять, что освоено: «Знаешь разницу CMD vs ENTRYPOINT»?"
+    back: "Знаешь разницу CMD vs ENTRYPOINT"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Docker: image vs container, multi-stage build» в центр?"
+    options:
+      - "Зачем multi-stage build для Java приложения?"
+      - "FROM ubuntu + apt install для прода — гигантский attack surface"
+      - "Запуск под root — нарушение security"
+      - "Копировать .git / target в image — ненужно, раздувает"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Зачем multi-stage build для Java приложения?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Docker: image vs container, multi-stage build»?"
+    options:
+      - "FROM ubuntu + apt install для прода — гигантский attack surface"
+      - "Написать Dockerfile single-stage для Spring Boot → измерить размер (~600MB)"
+      - "Используешь multi-stage по умолчанию"
+      - "Знаешь разницу CMD vs ENTRYPOINT"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «FROM ubuntu + apt install для прода — гигантский attack surface»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Docker: image vs container, multi-stage build»?"
+    options:
+      - "Image (immutable) ↔ Container (runtime + writable layer)"
+      - "FROM ubuntu + apt install для прода — гигантский attack surface"
+      - "Запуск под root — нарушение security"
+      - "Копировать .git / target в image — ненужно, раздувает"
+    answerIndex: 0
+    explanation: "Различение «Image (immutable) ↔ Container (runtime + writable layer)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Docker: image vs container, multi-stage build»?"
+    options:
+      - "Написать Dockerfile single-stage для Spring Boot → измерить размер (~600MB)"
+      - "FROM ubuntu + apt install для прода — гигантский attack surface"
+      - "Запуск под root — нарушение security"
+      - "Копировать .git / target в image — ненужно, раздувает"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Написать Dockerfile single-stage для Spring Boot → измерить размер (~600MB)»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Docker: image vs container, multi-stage build» работает?"
+    options:
+      - "Используешь multi-stage по умолчанию"
+      - "FROM ubuntu + apt install для прода — гигантский attack surface"
+      - "Запуск под root — нарушение security"
+      - "Копировать .git / target в image — ненужно, раздувает"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Используешь multi-stage по умолчанию». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Docker: image vs container, multi-stage build» как опору?"
+    options:
+      - "Dockerfile — FROM, COPY, RUN, CMD, ENTRYPOINT, ENV"
+      - "FROM ubuntu + apt install для прода — гигантский attack surface"
+      - "Запуск под root — нарушение security"
+      - "Копировать .git / target в image — ненужно, раздувает"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Dockerfile — FROM, COPY, RUN, CMD, ENTRYPOINT, ENV»"
+---
+
+## Зачем
+
+Image — immutable шаблон, слоистая файловая система (overlayFS). Container — runtime-инстанс image + writable layer. Один image → N container. Dockerfile инструкции: FROM (base image), COPY (файлы), RUN (команды в build-time, создаёт layer), CMD (default command, переопределяется), ENTRYPOINT (всегда выполняется), ENV, EXPOSE, USER, WORKDIR. Layer cache: каждая инструкция = layer; если изменилась только верхняя — нижние реюзаются. Multi-stage build для Java: FROM maven:3.9 AS build → COPY pom.xml → RUN mvn dependency:go-offline → COPY src → RUN mvn package; FROM eclipse-temurin:21-jre-alpine → COPY --from=build /app/target/*.jar app.jar — финальный image меньше в разы и не содержит maven/JDK. CMD vs ENTRYPOINT: CMD легко переопределить (`docker run image other-cmd`), ENTRYPOINT — нет, аргументы передаются в него.
+
+## Ключевые различения
+
+- Image (immutable) ↔ Container (runtime + writable layer)
+- RUN (build time) ↔ CMD (default runtime) ↔ ENTRYPOINT (всегда)
+- Single-stage ↔ Multi-stage (отдельные стадии build и runtime)
+- Layer cache — реюз по hash инструкции
+
+## Технология
+
+- Dockerfile — FROM, COPY, RUN, CMD, ENTRYPOINT, ENV
+- .dockerignore — исключить файлы из context
+- BuildKit (DOCKER_BUILDKIT=1) — параллельные stages
+- Jib (Spring Boot) — build image без Dockerfile
+
+## Практика (упражнения)
+
+- Написать Dockerfile single-stage для Spring Boot → измерить размер (~600MB)
+- Переписать на multi-stage с jre-alpine → ~150MB
+- Замерить time-to-build с layer cache и без
+
+## Маркеры освоения
+
+- Используешь multi-stage по умолчанию
+- Знаешь разницу CMD vs ENTRYPOINT
+- Заботишься о размере image (alpine, distroless)
+
+## Антипаттерны
+
+- FROM ubuntu + apt install для прода — гигантский attack surface
+- Запуск под root — нарушение security
+- Копировать .git / target в image — ненужно, раздувает
+
+## Где в стеке
+
+**Уровень 6: System Design, Tools, DevOps.** Прикладная часть. На middle — концептуальное понимание Kafka ordering, Circuit Breaker состояний, Docker multi-stage. JUnit+Mockito — практика на live coding.

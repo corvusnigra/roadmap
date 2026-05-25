@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: design-cache
+title: "Кэширование: Caffeine vs Redis, паттерны"
+summary: "Когда локальный кэш, а когда распределённый?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Знаешь, когда локальный, когда распределённый"
+  - "Всегда задаёшь TTL"
+  - "Понимаешь различия паттернов и trade-offs"
+  - "Выполнять регулярно: Обернуть @Cacheable + Caffeine на медленный метод"
+  - "Выполнять регулярно: Заменить на Redis backend — измерить overhead"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Кэширование: Caffeine vs Redis, паттерны» начала работать?"
+    options:
+      - "Знаешь, когда локальный, когда распределённый"
+      - "Кэш без TTL — утечка"
+      - "Write-behind для денег / критичных данных — потеря"
+      - "Локальный кэш в multi-instance кластере с ожиданием consistency"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь, когда локальный, когда распределённый» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Локальный (Caffeine, in-process) ↔ Распределённый (Redis, Hazelcast)»?"
+    back: "Локальный (Caffeine, in-process) ↔ Распределённый (Redis, Hazelcast). Локальный кэш (Caffeine) — в JVM-памяти процесса, мгновенный доступ (ns), но: (1) каждый инстанс свой → не консистентен; (2) умирает с процессом; (3) кушает heap"
+  - front: "Что стоит за различением «Cache-aside (pull) ↔ Read-through (push) ↔ Write-through ↔ Write-behind»?"
+    back: "Cache-aside (pull) ↔ Read-through (push) ↔ Write-through ↔ Write-behind. Подходит: lookup-кэш, конфигурация, immutable справочники"
+  - front: "Что стоит за различением «TTL ↔ LRU/LFU eviction»?"
+    back: "TTL ↔ LRU/LFU eviction. Распределённый (Redis, Hazelcast) — общий на все инстансы, durable, но network hop (ms)"
+  - front: "Что стоит за различением «Strong consistency ↔ Eventual consistency (cache stale)»?"
+    back: "Strong consistency ↔ Eventual consistency (cache stale). Паттерны: (1) Cache-aside (lazy load) — приложение проверяет cache, если miss — query БД, кладёт в cache; (2) Read-through — cache сам подгружает (через loader); (3) Write-through — write идёт в cache → cache синхронно в БД; (4) Write-behind — write в cache, async flush в БД (потеря при crash!); (5) Refresh-ahead — proactive refresh до expiration"
+  - front: "По какому маркеру понять, что освоено: «Знаешь, когда локальный, когда распределённый»?"
+    back: "Знаешь, когда локальный, когда распределённый"
+  - front: "По какому маркеру понять, что освоено: «Всегда задаёшь TTL»?"
+    back: "Всегда задаёшь TTL"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Кэширование: Caffeine vs Redis, паттерны» в центр?"
+    options:
+      - "Когда локальный кэш, а когда распределённый?"
+      - "Кэш без TTL — утечка"
+      - "Write-behind для денег / критичных данных — потеря"
+      - "Локальный кэш в multi-instance кластере с ожиданием consistency"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Когда локальный кэш, а когда распределённый?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Кэширование: Caffeine vs Redis, паттерны»?"
+    options:
+      - "Кэш без TTL — утечка"
+      - "Обернуть @Cacheable + Caffeine на медленный метод"
+      - "Знаешь, когда локальный, когда распределённый"
+      - "Всегда задаёшь TTL"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Кэш без TTL — утечка»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Кэширование: Caffeine vs Redis, паттерны»?"
+    options:
+      - "Локальный (Caffeine, in-process) ↔ Распределённый (Redis, Hazelcast)"
+      - "Кэш без TTL — утечка"
+      - "Write-behind для денег / критичных данных — потеря"
+      - "Локальный кэш в multi-instance кластере с ожиданием consistency"
+    answerIndex: 0
+    explanation: "Различение «Локальный (Caffeine, in-process) ↔ Распределённый (Redis, Hazelcast)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Кэширование: Caffeine vs Redis, паттерны»?"
+    options:
+      - "Обернуть @Cacheable + Caffeine на медленный метод"
+      - "Кэш без TTL — утечка"
+      - "Write-behind для денег / критичных данных — потеря"
+      - "Локальный кэш в multi-instance кластере с ожиданием consistency"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Обернуть @Cacheable + Caffeine на медленный метод»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Кэширование: Caffeine vs Redis, паттерны» работает?"
+    options:
+      - "Знаешь, когда локальный, когда распределённый"
+      - "Кэш без TTL — утечка"
+      - "Write-behind для денег / критичных данных — потеря"
+      - "Локальный кэш в multi-instance кластере с ожиданием consistency"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь, когда локальный, когда распределённый». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Кэширование: Caffeine vs Redis, паттерны» как опору?"
+    options:
+      - "Caffeine — лучший локальный (LRU + LFU, async load)"
+      - "Кэш без TTL — утечка"
+      - "Write-behind для денег / критичных данных — потеря"
+      - "Локальный кэш в multi-instance кластере с ожиданием consistency"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Caffeine — лучший локальный (LRU + LFU, async load)»"
+---
+
+## Зачем
+
+Локальный кэш (Caffeine) — в JVM-памяти процесса, мгновенный доступ (ns), но: (1) каждый инстанс свой → не консистентен; (2) умирает с процессом; (3) кушает heap. Подходит: lookup-кэш, конфигурация, immutable справочники. Распределённый (Redis, Hazelcast) — общий на все инстансы, durable, но network hop (ms). Паттерны: (1) Cache-aside (lazy load) — приложение проверяет cache, если miss — query БД, кладёт в cache; (2) Read-through — cache сам подгружает (через loader); (3) Write-through — write идёт в cache → cache синхронно в БД; (4) Write-behind — write в cache, async flush в БД (потеря при crash!); (5) Refresh-ahead — proactive refresh до expiration. TTL — обязательно для всех кэшей (без него — утечка). Invalidation — самое сложное; cache-aside проще всех. Кэш отображения на чтение — оставит хвост stale данных; принять или пушить инвалидацию через pub/sub.
+
+## Ключевые различения
+
+- Локальный (Caffeine, in-process) ↔ Распределённый (Redis, Hazelcast)
+- Cache-aside (pull) ↔ Read-through (push) ↔ Write-through ↔ Write-behind
+- TTL ↔ LRU/LFU eviction
+- Strong consistency ↔ Eventual consistency (cache stale)
+
+## Технология
+
+- Caffeine — лучший локальный (LRU + LFU, async load)
+- Spring Cache @Cacheable / @CacheEvict / @CachePut
+- Redis (RedisTemplate) для distributed
+- Hazelcast / Apache Ignite для embedded distributed
+
+## Практика (упражнения)
+
+- Обернуть @Cacheable + Caffeine на медленный метод
+- Заменить на Redis backend — измерить overhead
+- Реализовать invalidation через @CacheEvict + Redis pub/sub
+
+## Маркеры освоения
+
+- Знаешь, когда локальный, когда распределённый
+- Всегда задаёшь TTL
+- Понимаешь различия паттернов и trade-offs
+
+## Антипаттерны
+
+- Кэш без TTL — утечка
+- Write-behind для денег / критичных данных — потеря
+- Локальный кэш в multi-instance кластере с ожиданием consistency
+
+## Где в стеке
+
+**Уровень 6: System Design, Tools, DevOps.** Прикладная часть. На middle — концептуальное понимание Kafka ordering, Circuit Breaker состояний, Docker multi-stage. JUnit+Mockito — практика на live coding.

@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-executor-service
+title: "ExecutorService и ThreadPoolExecutor параметры"
+summary: "Чем опасен newCachedThreadPool в проде?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Знаешь все 7 параметров ThreadPoolExecutor"
+  - "Не используешь Executors.newCachedThreadPool в проде"
+  - "Понимаешь, почему очередь должна быть bounded"
+  - "Выполнять регулярно: Создать ThreadPoolExecutor с queue=10 + AbortPolicy — увидеть RejectedExecutionException"
+  - "Выполнять регулярно: Заменить newCachedThreadPool на ThreadPoolExecutor с правильными параметрами"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «ExecutorService и ThreadPoolExecutor параметры» начала работать?"
+    options:
+      - "Знаешь все 7 параметров ThreadPoolExecutor"
+      - "newCachedThreadPool на публичном API"
+      - "newFixedThreadPool с дефолтной queue (Integer.MAX_VALUE)"
+      - "Игнорировать RejectionPolicy — задачи теряются молча"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь все 7 параметров ThreadPoolExecutor» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «newCachedThreadPool (опасно) ↔ ThreadPoolExecutor (вручную)»?"
+    back: "newCachedThreadPool (опасно) ↔ ThreadPoolExecutor (вручную). ThreadPoolExecutor — 7 параметров: corePoolSize, maxPoolSize, keepAliveTime, BlockingQueue<Runnable>, ThreadFactory, RejectedExecutionHandler, (allowCoreThreadTimeOut)"
+  - front: "Что стоит за различением «SynchronousQueue (нет буфера) ↔ LinkedBlockingQueue (MAX_VALUE) ↔ ArrayBlockingQueue (фикс)»?"
+    back: "SynchronousQueue (нет буфера) ↔ LinkedBlockingQueue (MAX_VALUE) ↔ ArrayBlockingQueue (фикс). Логика приёма task: (1) если живых потоков < core — создать новый; (2) иначе — в очередь; (3) если очередь полна — создать поток до max; (4) если max достигнут — RejectionPolicy"
+  - front: "Что стоит за различением «AbortPolicy (default) / CallerRunsPolicy / DiscardPolicy / DiscardOldestPolicy»?"
+    back: "AbortPolicy (default) / CallerRunsPolicy / DiscardPolicy / DiscardOldestPolicy. Executors.newCachedThreadPool — max=Integer.MAX_VALUE + SynchronousQueue — DoS-friendly, может породить тысячи потоков"
+  - front: "Что стоит за различением «Future ↔ CompletableFuture (composable)»?"
+    back: "Future ↔ CompletableFuture (composable). Executors.newFixedThreadPool — corePool=max + LinkedBlockingQueue(MAX_VALUE) — может OOM по очереди"
+  - front: "По какому маркеру понять, что освоено: «Знаешь все 7 параметров ThreadPoolExecutor»?"
+    back: "Знаешь все 7 параметров ThreadPoolExecutor"
+  - front: "По какому маркеру понять, что освоено: «Не используешь Executors.newCachedThreadPool в проде»?"
+    back: "Не используешь Executors.newCachedThreadPool в проде"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «ExecutorService и ThreadPoolExecutor параметры» в центр?"
+    options:
+      - "Чем опасен newCachedThreadPool в проде?"
+      - "newCachedThreadPool на публичном API"
+      - "newFixedThreadPool с дефолтной queue (Integer.MAX_VALUE)"
+      - "Игнорировать RejectionPolicy — задачи теряются молча"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Чем опасен newCachedThreadPool в проде?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «ExecutorService и ThreadPoolExecutor параметры»?"
+    options:
+      - "newCachedThreadPool на публичном API"
+      - "Создать ThreadPoolExecutor с queue=10 + AbortPolicy — увидеть RejectedExecutionException"
+      - "Знаешь все 7 параметров ThreadPoolExecutor"
+      - "Не используешь Executors.newCachedThreadPool в проде"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «newCachedThreadPool на публичном API»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «ExecutorService и ThreadPoolExecutor параметры»?"
+    options:
+      - "newCachedThreadPool (опасно) ↔ ThreadPoolExecutor (вручную)"
+      - "newCachedThreadPool на публичном API"
+      - "newFixedThreadPool с дефолтной queue (Integer.MAX_VALUE)"
+      - "Игнорировать RejectionPolicy — задачи теряются молча"
+    answerIndex: 0
+    explanation: "Различение «newCachedThreadPool (опасно) ↔ ThreadPoolExecutor (вручную)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «ExecutorService и ThreadPoolExecutor параметры»?"
+    options:
+      - "Создать ThreadPoolExecutor с queue=10 + AbortPolicy — увидеть RejectedExecutionException"
+      - "newCachedThreadPool на публичном API"
+      - "newFixedThreadPool с дефолтной queue (Integer.MAX_VALUE)"
+      - "Игнорировать RejectionPolicy — задачи теряются молча"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Создать ThreadPoolExecutor с queue=10 + AbortPolicy — увидеть RejectedExecutionException»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «ExecutorService и ThreadPoolExecutor параметры» работает?"
+    options:
+      - "Знаешь все 7 параметров ThreadPoolExecutor"
+      - "newCachedThreadPool на публичном API"
+      - "newFixedThreadPool с дефолтной queue (Integer.MAX_VALUE)"
+      - "Игнорировать RejectionPolicy — задачи теряются молча"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь все 7 параметров ThreadPoolExecutor». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «ExecutorService и ThreadPoolExecutor параметры» как опору?"
+    options:
+      - "ThreadPoolExecutor(core, max, keepAlive, unit, queue, factory, handler)"
+      - "newCachedThreadPool на публичном API"
+      - "newFixedThreadPool с дефолтной queue (Integer.MAX_VALUE)"
+      - "Игнорировать RejectionPolicy — задачи теряются молча"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «ThreadPoolExecutor(core, max, keepAlive, unit, queue, factory, handler)»"
+---
+
+## Зачем
+
+ThreadPoolExecutor — 7 параметров: corePoolSize, maxPoolSize, keepAliveTime, BlockingQueue<Runnable>, ThreadFactory, RejectedExecutionHandler, (allowCoreThreadTimeOut). Логика приёма task: (1) если живых потоков < core — создать новый; (2) иначе — в очередь; (3) если очередь полна — создать поток до max; (4) если max достигнут — RejectionPolicy. Executors.newCachedThreadPool — max=Integer.MAX_VALUE + SynchronousQueue — DoS-friendly, может породить тысячи потоков. Executors.newFixedThreadPool — corePool=max + LinkedBlockingQueue(MAX_VALUE) — может OOM по очереди. В проде — ThreadPoolExecutor вручную с ограниченной очередью + AbortPolicy/CallerRunsPolicy. Формула размера пула: CPU-bound — N = #cores + 1, IO-bound — N = #cores × (1 + W/C).
+
+## Ключевые различения
+
+- newCachedThreadPool (опасно) ↔ ThreadPoolExecutor (вручную)
+- SynchronousQueue (нет буфера) ↔ LinkedBlockingQueue (MAX_VALUE) ↔ ArrayBlockingQueue (фикс)
+- AbortPolicy (default) / CallerRunsPolicy / DiscardPolicy / DiscardOldestPolicy
+- Future ↔ CompletableFuture (composable)
+
+## Технология
+
+- ThreadPoolExecutor(core, max, keepAlive, unit, queue, factory, handler)
+- ScheduledThreadPoolExecutor — для periodic tasks
+- ForkJoinPool — work-stealing, для parallel streams
+- Executors factory методы — для прототипирования, не для прода
+
+## Практика (упражнения)
+
+- Создать ThreadPoolExecutor с queue=10 + AbortPolicy — увидеть RejectedExecutionException
+- Заменить newCachedThreadPool на ThreadPoolExecutor с правильными параметрами
+- Замерить throughput для разных конфигураций под realistic нагрузкой
+
+## Маркеры освоения
+
+- Знаешь все 7 параметров ThreadPoolExecutor
+- Не используешь Executors.newCachedThreadPool в проде
+- Понимаешь, почему очередь должна быть bounded
+
+## Антипаттерны
+
+- newCachedThreadPool на публичном API
+- newFixedThreadPool с дефолтной queue (Integer.MAX_VALUE)
+- Игнорировать RejectionPolicy — задачи теряются молча
+
+## Где в стеке
+
+**Уровень 2: Concurrency и JMM.** Самый «отсевочный» блок. JMM happens-before и контракт volatile различают junior от middle. На middle ожидают понимание ABA, ThreadPool параметров, и почему counter++ с volatile не атомарен.

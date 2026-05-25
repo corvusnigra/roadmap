@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-cas-aba
+title: "CAS и ABA-проблема, AtomicStampedReference"
+summary: "Что не так с lock-free стеком на CAS?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Можешь объяснить ABA-проблему на пальцах"
+  - "Знаешь, где LongAdder быстрее AtomicLong"
+  - "Не пишешь lock-free структуры без понимания HB"
+  - "Выполнять регулярно: Написать lock-free Treiber Stack на AtomicReference — увидеть ABA сценарий"
+  - "Выполнять регулярно: Переписать на AtomicStampedReference — ABA устранена"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «CAS и ABA-проблема, AtomicStampedReference» начала работать?"
+    options:
+      - "Можешь объяснить ABA-проблему на пальцах"
+      - "Использовать AtomicReference для head/tail concurrent структуры без ABA-защиты"
+      - "AtomicLong как счётчик статистики — лучше LongAdder"
+      - "Spin без backoff в CAS-loop — burn CPU"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Можешь объяснить ABA-проблему на пальцах» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Lock-based (synchronized, ReentrantLock) ↔ Lock-free (CAS)»?"
+    back: "Lock-based (synchronized, ReentrantLock) ↔ Lock-free (CAS). CAS (Compare-And-Swap) — атомарная операция CPU: compareAndSwap(addr, expected, new) — если *addr == expected, заменить на new, вернуть true; иначе false"
+  - front: "Что стоит за различением «AtomicInteger (CAS, может ABA) ↔ AtomicStampedReference (CAS + version)»?"
+    back: "AtomicInteger (CAS, может ABA) ↔ AtomicStampedReference (CAS + version). Основа AtomicInteger, ConcurrentHashMap, ReentrantLock"
+  - front: "Что стоит за различением «lock cmpxchg (x86) ↔ ll/sc (ARM) — реализация»?"
+    back: "lock cmpxchg (x86) ↔ ll/sc (ARM) — реализация. Lock-free стек: push = while (!head.compareAndSet(curHead, newNode))"
+  - front: "Что стоит за различением «Optimistic concurrency (CAS retry) ↔ Pessimistic (lock)»?"
+    back: "Optimistic concurrency (CAS retry) ↔ Pessimistic (lock). Проблема ABA: поток T1 читает head=A, готовится к CAS"
+  - front: "По какому маркеру понять, что освоено: «Можешь объяснить ABA-проблему на пальцах»?"
+    back: "Можешь объяснить ABA-проблему на пальцах"
+  - front: "По какому маркеру понять, что освоено: «Знаешь, где LongAdder быстрее AtomicLong»?"
+    back: "Знаешь, где LongAdder быстрее AtomicLong"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «CAS и ABA-проблема, AtomicStampedReference» в центр?"
+    options:
+      - "Что не так с lock-free стеком на CAS?"
+      - "Использовать AtomicReference для head/tail concurrent структуры без ABA-защиты"
+      - "AtomicLong как счётчик статистики — лучше LongAdder"
+      - "Spin без backoff в CAS-loop — burn CPU"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Что не так с lock-free стеком на CAS?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «CAS и ABA-проблема, AtomicStampedReference»?"
+    options:
+      - "Использовать AtomicReference для head/tail concurrent структуры без ABA-защиты"
+      - "Написать lock-free Treiber Stack на AtomicReference — увидеть ABA сценарий"
+      - "Можешь объяснить ABA-проблему на пальцах"
+      - "Знаешь, где LongAdder быстрее AtomicLong"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Использовать AtomicReference для head/tail concurrent структуры без ABA-защиты»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «CAS и ABA-проблема, AtomicStampedReference»?"
+    options:
+      - "Lock-based (synchronized, ReentrantLock) ↔ Lock-free (CAS)"
+      - "Использовать AtomicReference для head/tail concurrent структуры без ABA-защиты"
+      - "AtomicLong как счётчик статистики — лучше LongAdder"
+      - "Spin без backoff в CAS-loop — burn CPU"
+    answerIndex: 0
+    explanation: "Различение «Lock-based (synchronized, ReentrantLock) ↔ Lock-free (CAS)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «CAS и ABA-проблема, AtomicStampedReference»?"
+    options:
+      - "Написать lock-free Treiber Stack на AtomicReference — увидеть ABA сценарий"
+      - "Использовать AtomicReference для head/tail concurrent структуры без ABA-защиты"
+      - "AtomicLong как счётчик статистики — лучше LongAdder"
+      - "Spin без backoff в CAS-loop — burn CPU"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Написать lock-free Treiber Stack на AtomicReference — увидеть ABA сценарий»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «CAS и ABA-проблема, AtomicStampedReference» работает?"
+    options:
+      - "Можешь объяснить ABA-проблему на пальцах"
+      - "Использовать AtomicReference для head/tail concurrent структуры без ABA-защиты"
+      - "AtomicLong как счётчик статистики — лучше LongAdder"
+      - "Spin без backoff в CAS-loop — burn CPU"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Можешь объяснить ABA-проблему на пальцах». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «CAS и ABA-проблема, AtomicStampedReference» как опору?"
+    options:
+      - "AtomicInteger, AtomicLong, AtomicReference"
+      - "Использовать AtomicReference для head/tail concurrent структуры без ABA-защиты"
+      - "AtomicLong как счётчик статистики — лучше LongAdder"
+      - "Spin без backoff в CAS-loop — burn CPU"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «AtomicInteger, AtomicLong, AtomicReference»"
+---
+
+## Зачем
+
+CAS (Compare-And-Swap) — атомарная операция CPU: compareAndSwap(addr, expected, new) — если *addr == expected, заменить на new, вернуть true; иначе false. Основа AtomicInteger, ConcurrentHashMap, ReentrantLock. Lock-free стек: push = while (!head.compareAndSet(curHead, newNode)). Проблема ABA: поток T1 читает head=A, готовится к CAS. T2 делает pop (A→B), push C, pop, push A. T1 делает CAS(A, newNode) — успешен, но top уже другой! Решение: AtomicStampedReference (значение + версия) или AtomicMarkableReference (значение + флаг). CAS на JVM компилируется в lock cmpxchg (x86) — десятки наносекунд, но contention деградирует. LongAdder снижает contention за счёт padding cells.
+
+## Ключевые различения
+
+- Lock-based (synchronized, ReentrantLock) ↔ Lock-free (CAS)
+- AtomicInteger (CAS, может ABA) ↔ AtomicStampedReference (CAS + version)
+- lock cmpxchg (x86) ↔ ll/sc (ARM) — реализация
+- Optimistic concurrency (CAS retry) ↔ Pessimistic (lock)
+
+## Технология
+
+- AtomicInteger, AtomicLong, AtomicReference
+- AtomicStampedReference, AtomicMarkableReference
+- LongAdder, LongAccumulator (контеншн-friendly)
+- VarHandle.compareAndSet (Java 9+)
+
+## Практика (упражнения)
+
+- Написать lock-free Treiber Stack на AtomicReference — увидеть ABA сценарий
+- Переписать на AtomicStampedReference — ABA устранена
+- Замерить throughput AtomicLong vs LongAdder под high contention
+
+## Маркеры освоения
+
+- Можешь объяснить ABA-проблему на пальцах
+- Знаешь, где LongAdder быстрее AtomicLong
+- Не пишешь lock-free структуры без понимания HB
+
+## Антипаттерны
+
+- Использовать AtomicReference для head/tail concurrent структуры без ABA-защиты
+- AtomicLong как счётчик статистики — лучше LongAdder
+- Spin без backoff в CAS-loop — burn CPU
+
+## Где в стеке
+
+**Уровень 2: Concurrency и JMM.** Самый «отсевочный» блок. JMM happens-before и контракт volatile различают junior от middle. На middle ожидают понимание ABA, ThreadPool параметров, и почему counter++ с volatile не атомарен.

@@ -1,0 +1,134 @@
+---
+schemaVersion: 1
+slug: java-equals-hashcode
+title: "Контракт equals и hashCode"
+summary: "Что сломается, если я нарушу контракт?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Можешь объяснить «5 свойств equals» без подглядывания"
+  - "Знаешь, почему hashCode = 0 «работает», но ломает производительность"
+  - "Видишь mutable-ключ в коде как баг до тестирования"
+  - "Выполнять регулярно: Реализовать equals/hashCode для класса с 4 полями вручную, без генератора"
+  - "Выполнять регулярно: Положить mutable объект в HashSet, поменять поле — увидеть, что contains возвращает false"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Контракт equals и hashCode» начала работать?"
+    options:
+      - "Можешь объяснить «5 свойств equals» без подглядывания"
+      - "Использовать только equals без hashCode — сломанная HashMap"
+      - "Включать в equals поля, не включая их в hashCode"
+      - "Делать класс с mutable-полями ключом коллекции"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Можешь объяснить «5 свойств equals» без подглядывания» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «equals ↔ == (контентное vs ссылочное сравнение)»?"
+    back: "equals ↔ == (контентное vs ссылочное сравнение). Контракт: (1) равные объекты дают равные хэши, (2) hashCode стабилен в течение жизни объекта по полям, участвующим в equals"
+  - front: "Что стоит за различением «hashCode = const (компилируется, но превращает HashMap в LinkedList)»?"
+    back: "hashCode = const (компилируется, но превращает HashMap в LinkedList). Нарушение #1 ломает HashMap/HashSet/HashTable: put + get вернёт null, потому что бакет вычисляется по hashCode"
+  - front: "Что стоит за различением «Mutable ключ в HashMap — антипаттерн»?"
+    back: "Mutable ключ в HashMap — антипаттерн. Нарушение #2 (mutable поле в equals/hashCode + изменение после put) — объект «потеряется» в коллекции навсегда"
+  - front: "Что стоит за различением «Reflexive / symmetric / transitive / consistent / non-null»?"
+    back: "Reflexive / symmetric / transitive / consistent / non-null. Reflexive, symmetric, transitive, consistent, non-null — пять формальных свойств"
+  - front: "Что стоит за различением «Java 7 LinkedList в bucket ↔ Java 8 TreeNode (threshold 8/64)»?"
+    back: "Java 7 LinkedList в bucket ↔ Java 8 TreeNode (threshold 8/64). На middle обязательно знать: equals в Java по умолчанию — == (сравнение ссылок), hashCode — адрес объекта в native memory (но не гарантировано)."
+  - front: "По какому маркеру понять, что освоено: «Можешь объяснить «5 свойств equals» без подглядывания»?"
+    back: "Можешь объяснить «5 свойств equals» без подглядывания"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Контракт equals и hashCode» в центр?"
+    options:
+      - "Что сломается, если я нарушу контракт?"
+      - "Использовать только equals без hashCode — сломанная HashMap"
+      - "Включать в equals поля, не включая их в hashCode"
+      - "Делать класс с mutable-полями ключом коллекции"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Что сломается, если я нарушу контракт?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Контракт equals и hashCode»?"
+    options:
+      - "Использовать только equals без hashCode — сломанная HashMap"
+      - "Реализовать equals/hashCode для класса с 4 полями вручную, без генератора"
+      - "Можешь объяснить «5 свойств equals» без подглядывания"
+      - "Знаешь, почему hashCode = 0 «работает», но ломает производительность"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Использовать только equals без hashCode — сломанная HashMap»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Контракт equals и hashCode»?"
+    options:
+      - "equals ↔ == (контентное vs ссылочное сравнение)"
+      - "Использовать только equals без hashCode — сломанная HashMap"
+      - "Включать в equals поля, не включая их в hashCode"
+      - "Делать класс с mutable-полями ключом коллекции"
+    answerIndex: 0
+    explanation: "Различение «equals ↔ == (контентное vs ссылочное сравнение)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Контракт equals и hashCode»?"
+    options:
+      - "Реализовать equals/hashCode для класса с 4 полями вручную, без генератора"
+      - "Использовать только equals без hashCode — сломанная HashMap"
+      - "Включать в equals поля, не включая их в hashCode"
+      - "Делать класс с mutable-полями ключом коллекции"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Реализовать equals/hashCode для класса с 4 полями вручную, без генератора»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Контракт equals и hashCode» работает?"
+    options:
+      - "Можешь объяснить «5 свойств equals» без подглядывания"
+      - "Использовать только equals без hashCode — сломанная HashMap"
+      - "Включать в equals поля, не включая их в hashCode"
+      - "Делать класс с mutable-полями ключом коллекции"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Можешь объяснить «5 свойств equals» без подглядывания». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Контракт equals и hashCode» как опору?"
+    options:
+      - "Objects.hash(...) и Objects.equals(...) из java.util"
+      - "Использовать только equals без hashCode — сломанная HashMap"
+      - "Включать в equals поля, не включая их в hashCode"
+      - "Делать класс с mutable-полями ключом коллекции"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Objects.hash(...) и Objects.equals(...) из java.util»"
+---
+
+## Зачем
+
+Контракт: (1) равные объекты дают равные хэши, (2) hashCode стабилен в течение жизни объекта по полям, участвующим в equals. Нарушение #1 ломает HashMap/HashSet/HashTable: put + get вернёт null, потому что бакет вычисляется по hashCode. Нарушение #2 (mutable поле в equals/hashCode + изменение после put) — объект «потеряется» в коллекции навсегда. Reflexive, symmetric, transitive, consistent, non-null — пять формальных свойств. На middle обязательно знать: equals в Java по умолчанию — == (сравнение ссылок), hashCode — адрес объекта в native memory (но не гарантировано).
+
+## Ключевые различения
+
+- equals ↔ == (контентное vs ссылочное сравнение)
+- hashCode = const (компилируется, но превращает HashMap в LinkedList)
+- Mutable ключ в HashMap — антипаттерн
+- Reflexive / symmetric / transitive / consistent / non-null
+- Java 7 LinkedList в bucket ↔ Java 8 TreeNode (threshold 8/64)
+
+## Технология
+
+- Objects.hash(...) и Objects.equals(...) из java.util
+- Records (Java 14+) генерят equals/hashCode автоматически
+- Lombok @EqualsAndHashCode(callSuper = ?)
+- IDE-генератор равенства (IntelliJ / VS Code)
+
+## Практика (упражнения)
+
+- Реализовать equals/hashCode для класса с 4 полями вручную, без генератора
+- Положить mutable объект в HashSet, поменять поле — увидеть, что contains возвращает false
+- Реализовать класс через Record и сравнить behaviour
+
+## Маркеры освоения
+
+- Можешь объяснить «5 свойств equals» без подглядывания
+- Знаешь, почему hashCode = 0 «работает», но ломает производительность
+- Видишь mutable-ключ в коде как баг до тестирования
+
+## Антипаттерны
+
+- Использовать только equals без hashCode — сломанная HashMap
+- Включать в equals поля, не включая их в hashCode
+- Делать класс с mutable-полями ключом коллекции
+
+## Где в стеке
+
+**Уровень 0: Java Core.** Фундамент языка. Без него все следующие уровни рассыпаются: equals/hashCode не работает в HashMap, Stream API ломается на peek без терминалки, String Pool путается с new String.

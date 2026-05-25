@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: spring-scopes
+title: "Scopes и prototype-в-singleton проблема"
+summary: "Почему prototype-бин, инжектнутый в singleton, остаётся одним инстансом?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Не наступаешь на prototype-в-singleton"
+  - "Знаешь 3 способа решения"
+  - "Используешь ObjectProvider как идиоматичное решение"
+  - "Выполнять регулярно: Создать @Scope(\"prototype\") бин, инжектнуть в singleton через @Autowired — увидеть, что один инстанс"
+  - "Выполнять регулярно: Заменить на ObjectProvider — увидеть, что каждый getObject новый"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Scopes и prototype-в-singleton проблема» начала работать?"
+    options:
+      - "Не наступаешь на prototype-в-singleton"
+      - "Инжектить prototype через @Autowired в singleton и удивляться"
+      - "Полагаться на ApplicationContext.getBean() — coupling с Spring"
+      - "Использовать prototype без необходимости — usually singleton хватает"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Не наступаешь на prototype-в-singleton» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Singleton (1 на context) ↔ Prototype (новый на каждый getBean)»?"
+    back: "Singleton (1 на context) ↔ Prototype (новый на каждый getBean). Scopes: singleton (default, один на ApplicationContext), prototype (новый на каждый getBean), request/session/application (Web-only)"
+  - front: "Что стоит за различением «Request / Session / Application (Web-only)»?"
+    back: "Request / Session / Application (Web-only). Проблема: если singleton зависит от prototype через @Autowired, Spring внедряет один и тот же экземпляр на старте, и singleton всегда работает с ним"
+  - front: "Что стоит за различением «ObjectFactory / Provider / ObjectProvider — на каждый вызов»?"
+    back: "ObjectFactory / Provider / ObjectProvider — на каждый вызов. Решения: (1) ObjectFactory<T> / Provider<T> / ObjectProvider<T> — getObject() возвращает новый prototype; (2) @Lookup на абстрактном методе — Spring переопределяет через CGLIB; (3) ApplicationContext.getBean (anti-pattern); (4) AOP scope proxy через @Scope(value=\"prototype\", proxyMode=TARGET_CLASS) — каждое обращение к методу проксируется и создаёт новый бин"
+  - front: "Что стоит за различением «Scope proxy (TARGET_CLASS/INTERFACE) — для DI prototype в singleton»?"
+    back: "Scope proxy (TARGET_CLASS/INTERFACE) — для DI prototype в singleton. Web scopes: request — новый бин на HTTP request; session — на user session."
+  - front: "По какому маркеру понять, что освоено: «Не наступаешь на prototype-в-singleton»?"
+    back: "Не наступаешь на prototype-в-singleton"
+  - front: "По какому маркеру понять, что освоено: «Знаешь 3 способа решения»?"
+    back: "Знаешь 3 способа решения"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Scopes и prototype-в-singleton проблема» в центр?"
+    options:
+      - "Почему prototype-бин, инжектнутый в singleton, остаётся одним инстансом?"
+      - "Инжектить prototype через @Autowired в singleton и удивляться"
+      - "Полагаться на ApplicationContext.getBean() — coupling с Spring"
+      - "Использовать prototype без необходимости — usually singleton хватает"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Почему prototype-бин, инжектнутый в singleton, остаётся одним инстансом?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Scopes и prototype-в-singleton проблема»?"
+    options:
+      - "Инжектить prototype через @Autowired в singleton и удивляться"
+      - "Создать @Scope(\"prototype\") бин, инжектнуть в singleton через @Autowired — увидеть, что один инстанс"
+      - "Не наступаешь на prototype-в-singleton"
+      - "Знаешь 3 способа решения"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Инжектить prototype через @Autowired в singleton и удивляться»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Scopes и prototype-в-singleton проблема»?"
+    options:
+      - "Singleton (1 на context) ↔ Prototype (новый на каждый getBean)"
+      - "Инжектить prototype через @Autowired в singleton и удивляться"
+      - "Полагаться на ApplicationContext.getBean() — coupling с Spring"
+      - "Использовать prototype без необходимости — usually singleton хватает"
+    answerIndex: 0
+    explanation: "Различение «Singleton (1 на context) ↔ Prototype (новый на каждый getBean)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Scopes и prototype-в-singleton проблема»?"
+    options:
+      - "Создать @Scope(\"prototype\") бин, инжектнуть в singleton через @Autowired — увидеть, что один инстанс"
+      - "Инжектить prototype через @Autowired в singleton и удивляться"
+      - "Полагаться на ApplicationContext.getBean() — coupling с Spring"
+      - "Использовать prototype без необходимости — usually singleton хватает"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Создать @Scope(\"prototype\") бин, инжектнуть в singleton через @Autowired — увидеть, что один инстанс»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Scopes и prototype-в-singleton проблема» работает?"
+    options:
+      - "Не наступаешь на prototype-в-singleton"
+      - "Инжектить prototype через @Autowired в singleton и удивляться"
+      - "Полагаться на ApplicationContext.getBean() — coupling с Spring"
+      - "Использовать prototype без необходимости — usually singleton хватает"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Не наступаешь на prototype-в-singleton». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Scopes и prototype-в-singleton проблема» как опору?"
+    options:
+      - "@Scope(\"prototype\")"
+      - "Инжектить prototype через @Autowired в singleton и удивляться"
+      - "Полагаться на ApplicationContext.getBean() — coupling с Spring"
+      - "Использовать prototype без необходимости — usually singleton хватает"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «@Scope(\"prototype\")»"
+---
+
+## Зачем
+
+Scopes: singleton (default, один на ApplicationContext), prototype (новый на каждый getBean), request/session/application (Web-only). Проблема: если singleton зависит от prototype через @Autowired, Spring внедряет один и тот же экземпляр на старте, и singleton всегда работает с ним. Решения: (1) ObjectFactory<T> / Provider<T> / ObjectProvider<T> — getObject() возвращает новый prototype; (2) @Lookup на абстрактном методе — Spring переопределяет через CGLIB; (3) ApplicationContext.getBean (anti-pattern); (4) AOP scope proxy через @Scope(value="prototype", proxyMode=TARGET_CLASS) — каждое обращение к методу проксируется и создаёт новый бин. Web scopes: request — новый бин на HTTP request; session — на user session.
+
+## Ключевые различения
+
+- Singleton (1 на context) ↔ Prototype (новый на каждый getBean)
+- Request / Session / Application (Web-only)
+- ObjectFactory / Provider / ObjectProvider — на каждый вызов
+- Scope proxy (TARGET_CLASS/INTERFACE) — для DI prototype в singleton
+
+## Технология
+
+- @Scope("prototype")
+- @Scope(value="prototype", proxyMode=ScopedProxyMode.TARGET_CLASS)
+- ObjectProvider<T> (Spring 4.3+)
+- @Lookup для абстрактных методов
+
+## Практика (упражнения)
+
+- Создать @Scope("prototype") бин, инжектнуть в singleton через @Autowired — увидеть, что один инстанс
+- Заменить на ObjectProvider — увидеть, что каждый getObject новый
+- Реализовать через @Lookup-method
+
+## Маркеры освоения
+
+- Не наступаешь на prototype-в-singleton
+- Знаешь 3 способа решения
+- Используешь ObjectProvider как идиоматичное решение
+
+## Антипаттерны
+
+- Инжектить prototype через @Autowired в singleton и удивляться
+- Полагаться на ApplicationContext.getBean() — coupling с Spring
+- Использовать prototype без необходимости — usually singleton хватает
+
+## Где в стеке
+
+**Уровень 4: Spring и Spring Boot.** Любая работа с Java middle = Spring. Ключевая ловушка — self-invocation @Transactional/@Async через прокси: спросят с вероятностью 100%.

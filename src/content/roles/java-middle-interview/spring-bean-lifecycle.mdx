@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: spring-bean-lifecycle
+title: "Bean lifecycle: BeanDefinition → @PostConstruct → @PreDestroy"
+summary: "Когда вызывается @PostConstruct и почему он лучше InitializingBean?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Можешь нарисовать последовательность из 8 шагов lifecycle"
+  - "Знаешь, в какой момент @Transactional оборачивает в прокси"
+  - "Используешь @PostConstruct вместо InitializingBean"
+  - "Выполнять регулярно: Реализовать BeanPostProcessor, который логирует каждый созданный бин"
+  - "Выполнять регулярно: Сделать @PostConstruct с инициализацией кэша"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Bean lifecycle: BeanDefinition → @PostConstruct → @PreDestroy» начала работать?"
+    options:
+      - "Можешь нарисовать последовательность из 8 шагов lifecycle"
+      - "Тяжёлая работа в конструкторе — нет DI ещё"
+      - "@Async / @Transactional в init-методе — не работает (прокси ещё не готов)"
+      - "Не вызывать @PreDestroy для ресурсов (соединения, threads, файлы)"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Можешь нарисовать последовательность из 8 шагов lifecycle» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «BeanDefinition (метаданные) ↔ Bean (инстанс)»?"
+    back: "BeanDefinition (метаданные) ↔ Bean (инстанс). Жизненный цикл: (1) Парсинг конфигурации → BeanDefinition (метаданные о бине); (2) Instantiation (рефлексия конструктора); (3) Populate properties (DI); (4) Aware callbacks (BeanNameAware.setBeanName, BeanFactoryAware.setBeanFactory, ApplicationContextAware.setApplicationContext); (5) BeanPostProcessor.postProcessBeforeInitialization (например, AOP создаёт прокси здесь, @Async); (6) @PostConstruct / InitializingBean.afterPropertiesSet / init-method; (7) BeanPostProcessor.postProcessAfterInitialization (тут @Transactional оборачивается в прокси через CGLIB); (8) Bean готов к использованию; (9) При shutdown: @PreDestroy → DisposableBean.destroy → destroy-method"
+  - front: "Что стоит за различением «@PostConstruct (JSR-250, портативно) ↔ InitializingBean.afterPropertiesSet (Spring-API) ↔ @Bean(initMethod)»?"
+    back: "@PostConstruct (JSR-250, портативно) ↔ InitializingBean.afterPropertiesSet (Spring-API) ↔ @Bean(initMethod). ApplicationListener events: ContextRefreshedEvent — все бины созданы"
+  - front: "Что стоит за различением «BeanPostProcessor (для всех бинов) ↔ BeanFactoryPostProcessor (на definition)»?"
+    back: "BeanPostProcessor (для всех бинов) ↔ BeanFactoryPostProcessor (на definition). @PostConstruct лучше InitializingBean: не привязывает к Spring API."
+  - front: "Что стоит за различением «ContextRefreshedEvent / ContextClosedEvent»?"
+    back: "ContextRefreshedEvent / ContextClosedEvent. Жизненный цикл: (1) Парсинг конфигурации → BeanDefinition (метаданные о бине); (2) Instantiation (рефлексия конструктора); (3) Populate properties (DI); (4) Aware callbacks (BeanNameAware.setBeanName, BeanFactoryAware.setBeanFactory, ApplicationContextAware.setApplicationContext); (5) BeanPostProcessor.postProcessBeforeInitialization (например, AOP создаёт прокси здесь, @Async); (6) @PostConstruct / InitializingBean.afterPropertiesSet / init-method; (7) BeanPostProcessor.postProcessAfterInitialization (тут @Transactional оборачивается в прокси через CGLIB); (8) Bean готов к использованию; (9) При shutdown: @PreDestroy → DisposableBean.destroy → destroy-method. ApplicationListener events: ContextRefreshedEvent — все бины созданы. @PostConstruct лучше InitializingBean: не привязывает к Spring API."
+  - front: "По какому маркеру понять, что освоено: «Можешь нарисовать последовательность из 8 шагов lifecycle»?"
+    back: "Можешь нарисовать последовательность из 8 шагов lifecycle"
+  - front: "По какому маркеру понять, что освоено: «Знаешь, в какой момент @Transactional оборачивает в прокси»?"
+    back: "Знаешь, в какой момент @Transactional оборачивает в прокси"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Bean lifecycle: BeanDefinition → @PostConstruct → @PreDestroy» в центр?"
+    options:
+      - "Когда вызывается @PostConstruct и почему он лучше InitializingBean?"
+      - "Тяжёлая работа в конструкторе — нет DI ещё"
+      - "@Async / @Transactional в init-методе — не работает (прокси ещё не готов)"
+      - "Не вызывать @PreDestroy для ресурсов (соединения, threads, файлы)"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Когда вызывается @PostConstruct и почему он лучше InitializingBean?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Bean lifecycle: BeanDefinition → @PostConstruct → @PreDestroy»?"
+    options:
+      - "Тяжёлая работа в конструкторе — нет DI ещё"
+      - "Реализовать BeanPostProcessor, который логирует каждый созданный бин"
+      - "Можешь нарисовать последовательность из 8 шагов lifecycle"
+      - "Знаешь, в какой момент @Transactional оборачивает в прокси"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Тяжёлая работа в конструкторе — нет DI ещё»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Bean lifecycle: BeanDefinition → @PostConstruct → @PreDestroy»?"
+    options:
+      - "BeanDefinition (метаданные) ↔ Bean (инстанс)"
+      - "Тяжёлая работа в конструкторе — нет DI ещё"
+      - "@Async / @Transactional в init-методе — не работает (прокси ещё не готов)"
+      - "Не вызывать @PreDestroy для ресурсов (соединения, threads, файлы)"
+    answerIndex: 0
+    explanation: "Различение «BeanDefinition (метаданные) ↔ Bean (инстанс)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Bean lifecycle: BeanDefinition → @PostConstruct → @PreDestroy»?"
+    options:
+      - "Реализовать BeanPostProcessor, который логирует каждый созданный бин"
+      - "Тяжёлая работа в конструкторе — нет DI ещё"
+      - "@Async / @Transactional в init-методе — не работает (прокси ещё не готов)"
+      - "Не вызывать @PreDestroy для ресурсов (соединения, threads, файлы)"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Реализовать BeanPostProcessor, который логирует каждый созданный бин»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Bean lifecycle: BeanDefinition → @PostConstruct → @PreDestroy» работает?"
+    options:
+      - "Можешь нарисовать последовательность из 8 шагов lifecycle"
+      - "Тяжёлая работа в конструкторе — нет DI ещё"
+      - "@Async / @Transactional в init-методе — не работает (прокси ещё не готов)"
+      - "Не вызывать @PreDestroy для ресурсов (соединения, threads, файлы)"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Можешь нарисовать последовательность из 8 шагов lifecycle». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Bean lifecycle: BeanDefinition → @PostConstruct → @PreDestroy» как опору?"
+    options:
+      - "@PostConstruct, @PreDestroy (jakarta.annotation.*)"
+      - "Тяжёлая работа в конструкторе — нет DI ещё"
+      - "@Async / @Transactional в init-методе — не работает (прокси ещё не готов)"
+      - "Не вызывать @PreDestroy для ресурсов (соединения, threads, файлы)"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «@PostConstruct, @PreDestroy (jakarta.annotation.*)»"
+---
+
+## Зачем
+
+Жизненный цикл: (1) Парсинг конфигурации → BeanDefinition (метаданные о бине); (2) Instantiation (рефлексия конструктора); (3) Populate properties (DI); (4) Aware callbacks (BeanNameAware.setBeanName, BeanFactoryAware.setBeanFactory, ApplicationContextAware.setApplicationContext); (5) BeanPostProcessor.postProcessBeforeInitialization (например, AOP создаёт прокси здесь, @Async); (6) @PostConstruct / InitializingBean.afterPropertiesSet / init-method; (7) BeanPostProcessor.postProcessAfterInitialization (тут @Transactional оборачивается в прокси через CGLIB); (8) Bean готов к использованию; (9) При shutdown: @PreDestroy → DisposableBean.destroy → destroy-method. ApplicationListener events: ContextRefreshedEvent — все бины созданы. @PostConstruct лучше InitializingBean: не привязывает к Spring API.
+
+## Ключевые различения
+
+- BeanDefinition (метаданные) ↔ Bean (инстанс)
+- @PostConstruct (JSR-250, портативно) ↔ InitializingBean.afterPropertiesSet (Spring-API) ↔ @Bean(initMethod)
+- BeanPostProcessor (для всех бинов) ↔ BeanFactoryPostProcessor (на definition)
+- ContextRefreshedEvent / ContextClosedEvent
+
+## Технология
+
+- @PostConstruct, @PreDestroy (jakarta.annotation.*)
+- BeanPostProcessor — самый частый extension point
+- @EventListener — слушать ApplicationEvents
+- SmartLifecycle — phased startup/shutdown
+
+## Практика (упражнения)
+
+- Реализовать BeanPostProcessor, который логирует каждый созданный бин
+- Сделать @PostConstruct с инициализацией кэша
+- Сделать @PreDestroy с graceful shutdown очереди
+
+## Маркеры освоения
+
+- Можешь нарисовать последовательность из 8 шагов lifecycle
+- Знаешь, в какой момент @Transactional оборачивает в прокси
+- Используешь @PostConstruct вместо InitializingBean
+
+## Антипаттерны
+
+- Тяжёлая работа в конструкторе — нет DI ещё
+- @Async / @Transactional в init-методе — не работает (прокси ещё не готов)
+- Не вызывать @PreDestroy для ресурсов (соединения, threads, файлы)
+
+## Где в стеке
+
+**Уровень 4: Spring и Spring Boot.** Любая работа с Java middle = Spring. Ключевая ловушка — self-invocation @Transactional/@Async через прокси: спросят с вероятностью 100%.

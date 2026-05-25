@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-volatile
+title: "volatile — видимость без атомарности"
+summary: "Почему volatile counter++ — баг?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Не используешь volatile для счётчиков"
+  - "Знаешь, когда volatile достаточно (status flag), а когда нет (RMW)"
+  - "Понимаешь, что AtomicInteger внутри — volatile + CAS"
+  - "Выполнять регулярно: Запустить 100 потоков × 10000 increment volatile int — увидеть, что итог != 1_000_000"
+  - "Выполнять регулярно: Заменить на AtomicInteger.incrementAndGet — итог == 1_000_000"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «volatile — видимость без атомарности» начала работать?"
+    options:
+      - "Не используешь volatile для счётчиков"
+      - "Использовать volatile для счётчика (counter++)"
+      - "Использовать volatile вместо synchronized, когда нужна compound operation"
+      - "Думать, что volatile создаёт критическую секцию"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Не используешь volatile для счётчиков» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Видимость (publish) ↔ Атомарность (read-modify-write)»?"
+    back: "Видимость (publish) ↔ Атомарность (read-modify-write). volatile поле гарантирует: (1) видимость — write публикуется во main memory сразу, read берёт из main memory; (2) запрет reordering — компилятор/JIT не переставляет операции вокруг volatile"
+  - front: "Что стоит за различением «volatile (видимость + ordering) ↔ AtomicInteger (видимость + CAS-атомарность)»?"
+    back: "volatile (видимость + ordering) ↔ AtomicInteger (видимость + CAS-атомарность). counter++ — это 3 операции: read → +1 → write; между read и write другой поток может вмешаться"
+  - front: "Что стоит за различением «volatile (single var) ↔ synchronized (compound action)»?"
+    back: "volatile (single var) ↔ synchronized (compound action). Для атомарных операций нужны AtomicInteger.incrementAndGet (CAS-based) или synchronized"
+  - front: "Что стоит за различением «Java 5 memory model — гарантии volatile, ReentrantLock, final»?"
+    back: "Java 5 memory model — гарантии volatile, ReentrantLock, final. Применение volatile: status-флаги, double-checked locking singleton, публикация ссылки на immutable объект"
+  - front: "По какому маркеру понять, что освоено: «Не используешь volatile для счётчиков»?"
+    back: "Не используешь volatile для счётчиков"
+  - front: "По какому маркеру понять, что освоено: «Знаешь, когда volatile достаточно (status flag), а когда нет (RMW)»?"
+    back: "Знаешь, когда volatile достаточно (status flag), а когда нет (RMW)"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «volatile — видимость без атомарности» в центр?"
+    options:
+      - "Почему volatile counter++ — баг?"
+      - "Использовать volatile для счётчика (counter++)"
+      - "Использовать volatile вместо synchronized, когда нужна compound operation"
+      - "Думать, что volatile создаёт критическую секцию"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Почему volatile counter++ — баг?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «volatile — видимость без атомарности»?"
+    options:
+      - "Использовать volatile для счётчика (counter++)"
+      - "Запустить 100 потоков × 10000 increment volatile int — увидеть, что итог != 1_000_000"
+      - "Не используешь volatile для счётчиков"
+      - "Знаешь, когда volatile достаточно (status flag), а когда нет (RMW)"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Использовать volatile для счётчика (counter++)»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «volatile — видимость без атомарности»?"
+    options:
+      - "Видимость (publish) ↔ Атомарность (read-modify-write)"
+      - "Использовать volatile для счётчика (counter++)"
+      - "Использовать volatile вместо synchronized, когда нужна compound operation"
+      - "Думать, что volatile создаёт критическую секцию"
+    answerIndex: 0
+    explanation: "Различение «Видимость (publish) ↔ Атомарность (read-modify-write)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «volatile — видимость без атомарности»?"
+    options:
+      - "Запустить 100 потоков × 10000 increment volatile int — увидеть, что итог != 1_000_000"
+      - "Использовать volatile для счётчика (counter++)"
+      - "Использовать volatile вместо synchronized, когда нужна compound operation"
+      - "Думать, что volatile создаёт критическую секцию"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Запустить 100 потоков × 10000 increment volatile int — увидеть, что итог != 1_000_000»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «volatile — видимость без атомарности» работает?"
+    options:
+      - "Не используешь volatile для счётчиков"
+      - "Использовать volatile для счётчика (counter++)"
+      - "Использовать volatile вместо synchronized, когда нужна compound operation"
+      - "Думать, что volatile создаёт критическую секцию"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Не используешь volatile для счётчиков». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «volatile — видимость без атомарности» как опору?"
+    options:
+      - "volatile"
+      - "Использовать volatile для счётчика (counter++)"
+      - "Использовать volatile вместо synchronized, когда нужна compound operation"
+      - "Думать, что volatile создаёт критическую секцию"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «volatile»"
+---
+
+## Зачем
+
+volatile поле гарантирует: (1) видимость — write публикуется во main memory сразу, read берёт из main memory; (2) запрет reordering — компилятор/JIT не переставляет операции вокруг volatile. Но volatile НЕ атомарен. counter++ — это 3 операции: read → +1 → write; между read и write другой поток может вмешаться. Для атомарных операций нужны AtomicInteger.incrementAndGet (CAS-based) или synchronized. Применение volatile: status-флаги, double-checked locking singleton, публикация ссылки на immutable объект. Memory barrier — load на read, store на write. На x86 read volatile почти бесплатен, write — дороже из-за store barrier.
+
+## Ключевые различения
+
+- Видимость (publish) ↔ Атомарность (read-modify-write)
+- volatile (видимость + ordering) ↔ AtomicInteger (видимость + CAS-атомарность)
+- volatile (single var) ↔ synchronized (compound action)
+- Java 5 memory model — гарантии volatile, ReentrantLock, final
+
+## Технология
+
+- volatile
+- AtomicInteger / AtomicLong / AtomicReference (CAS)
+- LongAdder (для high-contention counters)
+- VarHandle (Java 9+) — низкоуровневые операции
+
+## Практика (упражнения)
+
+- Запустить 100 потоков × 10000 increment volatile int — увидеть, что итог != 1_000_000
+- Заменить на AtomicInteger.incrementAndGet — итог == 1_000_000
+- Реализовать DCL Singleton с volatile
+
+## Маркеры освоения
+
+- Не используешь volatile для счётчиков
+- Знаешь, когда volatile достаточно (status flag), а когда нет (RMW)
+- Понимаешь, что AtomicInteger внутри — volatile + CAS
+
+## Антипаттерны
+
+- Использовать volatile для счётчика (counter++)
+- Использовать volatile вместо synchronized, когда нужна compound operation
+- Думать, что volatile создаёт критическую секцию
+
+## Где в стеке
+
+**Уровень 2: Concurrency и JMM.** Самый «отсевочный» блок. JMM happens-before и контракт volatile различают junior от middle. На middle ожидают понимание ABA, ThreadPool параметров, и почему counter++ с volatile не атомарен.

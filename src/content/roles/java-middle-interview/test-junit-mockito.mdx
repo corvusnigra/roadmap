@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: test-junit-mockito
+title: "JUnit 5 + Mockito: mock/spy, ArgumentCaptor, when/thenReturn vs doReturn"
+summary: "В каких случаях doReturn вместо when/thenReturn обязателен?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Используешь @InjectMocks + @Mock, не вручную new"
+  - "Используешь AssertJ вместо assertEquals"
+  - "Знаешь, когда doReturn вместо when"
+  - "Выполнять регулярно: Написать тест UserService с mock UserRepository через @InjectMocks + @Mock"
+  - "Выполнять регулярно: Заюзать ArgumentCaptor для проверки, что email был передан в Notifier"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «JUnit 5 + Mockito: mock/spy, ArgumentCaptor, when/thenReturn vs doReturn» начала работать?"
+    options:
+      - "Используешь @InjectMocks + @Mock, не вручную new"
+      - "mock на DTO / entity — бессмысленно, проще new"
+      - "Множество verify в одном тесте — тест проверяет реализацию, а не контракт"
+      - "InjectMocks без @ExtendWith — null pointer на старте"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Используешь @InjectMocks + @Mock, не вручную new» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «mock (всё фейк) ↔ spy (обёртка над реальным)»?"
+    back: "mock (всё фейк) ↔ spy (обёртка над реальным). JUnit 5 (Jupiter) — модульная архитектура: API, Engine, Vintage (для JUnit 4)"
+  - front: "Что стоит за различением «when().thenReturn() ↔ doReturn().when() (для spy и void)»?"
+    back: "when().thenReturn() ↔ doReturn().when() (для spy и void). Lifecycle: @BeforeAll/@BeforeEach/@AfterEach/@AfterAll"
+  - front: "Что стоит за различением «verify(mock).method() ↔ ArgumentCaptor (захват аргумента)»?"
+    back: "verify(mock).method() ↔ ArgumentCaptor (захват аргумента). @ExtendWith({MockitoExtension.class}) — интеграция с Mockito"
+  - front: "Что стоит за различением «@Mock ↔ @InjectMocks ↔ @Spy»?"
+    back: "@Mock ↔ @InjectMocks ↔ @Spy. Mockito: mock (полностью искусственный объект, все методы возвращают null/0/false), spy (обёртка над реальным объектом, можно override отдельные методы)"
+  - front: "По какому маркеру понять, что освоено: «Используешь @InjectMocks + @Mock, не вручную new»?"
+    back: "Используешь @InjectMocks + @Mock, не вручную new"
+  - front: "По какому маркеру понять, что освоено: «Используешь AssertJ вместо assertEquals»?"
+    back: "Используешь AssertJ вместо assertEquals"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «JUnit 5 + Mockito: mock/spy, ArgumentCaptor, when/thenReturn vs doReturn» в центр?"
+    options:
+      - "В каких случаях doReturn вместо when/thenReturn обязателен?"
+      - "mock на DTO / entity — бессмысленно, проще new"
+      - "Множество verify в одном тесте — тест проверяет реализацию, а не контракт"
+      - "InjectMocks без @ExtendWith — null pointer на старте"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «В каких случаях doReturn вместо when/thenReturn обязателен?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «JUnit 5 + Mockito: mock/spy, ArgumentCaptor, when/thenReturn vs doReturn»?"
+    options:
+      - "mock на DTO / entity — бессмысленно, проще new"
+      - "Написать тест UserService с mock UserRepository через @InjectMocks + @Mock"
+      - "Используешь @InjectMocks + @Mock, не вручную new"
+      - "Используешь AssertJ вместо assertEquals"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «mock на DTO / entity — бессмысленно, проще new»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «JUnit 5 + Mockito: mock/spy, ArgumentCaptor, when/thenReturn vs doReturn»?"
+    options:
+      - "mock (всё фейк) ↔ spy (обёртка над реальным)"
+      - "mock на DTO / entity — бессмысленно, проще new"
+      - "Множество verify в одном тесте — тест проверяет реализацию, а не контракт"
+      - "InjectMocks без @ExtendWith — null pointer на старте"
+    answerIndex: 0
+    explanation: "Различение «mock (всё фейк) ↔ spy (обёртка над реальным)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «JUnit 5 + Mockito: mock/spy, ArgumentCaptor, when/thenReturn vs doReturn»?"
+    options:
+      - "Написать тест UserService с mock UserRepository через @InjectMocks + @Mock"
+      - "mock на DTO / entity — бессмысленно, проще new"
+      - "Множество verify в одном тесте — тест проверяет реализацию, а не контракт"
+      - "InjectMocks без @ExtendWith — null pointer на старте"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Написать тест UserService с mock UserRepository через @InjectMocks + @Mock»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «JUnit 5 + Mockito: mock/spy, ArgumentCaptor, when/thenReturn vs doReturn» работает?"
+    options:
+      - "Используешь @InjectMocks + @Mock, не вручную new"
+      - "mock на DTO / entity — бессмысленно, проще new"
+      - "Множество verify в одном тесте — тест проверяет реализацию, а не контракт"
+      - "InjectMocks без @ExtendWith — null pointer на старте"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Используешь @InjectMocks + @Mock, не вручную new». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «JUnit 5 + Mockito: mock/spy, ArgumentCaptor, when/thenReturn vs doReturn» как опору?"
+    options:
+      - "JUnit 5: @Test, @BeforeEach, @AfterEach, @ParameterizedTest, @Nested"
+      - "mock на DTO / entity — бессмысленно, проще new"
+      - "Множество verify в одном тесте — тест проверяет реализацию, а не контракт"
+      - "InjectMocks без @ExtendWith — null pointer на старте"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «JUnit 5: @Test, @BeforeEach, @AfterEach, @ParameterizedTest, @Nested»"
+---
+
+## Зачем
+
+JUnit 5 (Jupiter) — модульная архитектура: API, Engine, Vintage (для JUnit 4). Lifecycle: @BeforeAll/@BeforeEach/@AfterEach/@AfterAll. @ParameterizedTest для DRY. @Nested для группировки. @ExtendWith({MockitoExtension.class}) — интеграция с Mockito. Mockito: mock (полностью искусственный объект, все методы возвращают null/0/false), spy (обёртка над реальным объектом, можно override отдельные методы). Stub: when(mock.foo()).thenReturn(x). doReturn(x).when(mock).foo() — обязателен для (1) spy (when вызовет реальный метод), (2) void методов (doNothing/doAnswer/doThrow), (3) методов, бросающих checked exception в setup. ArgumentCaptor.forClass(X.class) + verify(mock).method(captor.capture()) — поймать аргумент для assertion. Mockito.inOrder для проверки порядка вызовов. AssertJ — fluent assertions, лучше Hamcrest и встроенных JUnit.
+
+## Ключевые различения
+
+- mock (всё фейк) ↔ spy (обёртка над реальным)
+- when().thenReturn() ↔ doReturn().when() (для spy и void)
+- verify(mock).method() ↔ ArgumentCaptor (захват аргумента)
+- @Mock ↔ @InjectMocks ↔ @Spy
+
+## Технология
+
+- JUnit 5: @Test, @BeforeEach, @AfterEach, @ParameterizedTest, @Nested
+- Mockito: @Mock, @InjectMocks, when/thenReturn, verify, ArgumentCaptor
+- AssertJ: assertThat(actual).isEqualTo(expected).isInstanceOf(X.class)
+- @ExtendWith(MockitoExtension.class)
+
+## Практика (упражнения)
+
+- Написать тест UserService с mock UserRepository через @InjectMocks + @Mock
+- Заюзать ArgumentCaptor для проверки, что email был передан в Notifier
+- Заменить spy(real) + doReturn — увидеть разницу с when().thenReturn()
+
+## Маркеры освоения
+
+- Используешь @InjectMocks + @Mock, не вручную new
+- Используешь AssertJ вместо assertEquals
+- Знаешь, когда doReturn вместо when
+
+## Антипаттерны
+
+- mock на DTO / entity — бессмысленно, проще new
+- Множество verify в одном тесте — тест проверяет реализацию, а не контракт
+- InjectMocks без @ExtendWith — null pointer на старте
+
+## Где в стеке
+
+**Уровень 6: System Design, Tools, DevOps.** Прикладная часть. На middle — концептуальное понимание Kafka ordering, Circuit Breaker состояний, Docker multi-stage. JUnit+Mockito — практика на live coding.

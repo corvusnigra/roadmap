@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-completable-future
+title: "CompletableFuture: thenApply, allOf, exceptionally"
+summary: "Как объединить 3 параллельных запроса с таймаутом и fallback?"
+status: published
+estimatedMinutes: 35
+prerequisites: []
+learningOutcomes:
+  - "Не вызываешь .get() на CompletableFuture без needs"
+  - "Используешь custom executor вместо commonPool для IO"
+  - "Видишь разницу thenApply vs thenCompose в одну минуту"
+  - "Выполнять регулярно: Реализовать parallel-fetch 3 микросервисов с allOf + orTimeout + exceptionally"
+  - "Выполнять регулярно: Заменить chain Future.get() (блокирующий) на CompletableFuture chain (non-blocking)"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «CompletableFuture: thenApply, allOf, exceptionally» начала работать?"
+    options:
+      - "Не вызываешь .get() на CompletableFuture без needs"
+      - ".get() в цепочке — превращает async в blocking"
+      - "Использовать commonPool для блокирующих IO задач"
+      - "Забывать exceptionally — silent failure"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Не вызываешь .get() на CompletableFuture без needs» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «thenApply (sync) ↔ thenApplyAsync (на executor) ↔ thenApplyAsync(executor)»?"
+    back: "thenApply (sync) ↔ thenApplyAsync (на executor) ↔ thenApplyAsync(executor). CompletableFuture<T> — promise-style API, реализующий Future + CompletionStage"
+  - front: "Что стоит за различением «thenCompose (flatMap) ↔ thenApply (map)»?"
+    back: "thenCompose (flatMap) ↔ thenApply (map). Цепочки: thenApply (map: T→U), thenCompose (flatMap: T→CF<U>), thenCombine (zip: CF<T> + CF<U> → V), thenAccept (consumer)"
+  - front: "Что стоит за различением «exceptionally (recover) ↔ handle (recover + map) ↔ whenComplete (peek)»?"
+    back: "exceptionally (recover) ↔ handle (recover + map) ↔ whenComplete (peek). Параллельность: CF.allOf (ждёт все), CF.anyOf (первый завершившийся)"
+  - front: "Что стоит за различением «allOf (ждёт все) ↔ anyOf (первый)»?"
+    back: "allOf (ждёт все) ↔ anyOf (первый). Обработка ошибок: exceptionally (recover), handle (recover + map), whenComplete (peek)"
+  - front: "По какому маркеру понять, что освоено: «Не вызываешь .get() на CompletableFuture без needs»?"
+    back: "Не вызываешь .get() на CompletableFuture без needs"
+  - front: "По какому маркеру понять, что освоено: «Используешь custom executor вместо commonPool для IO»?"
+    back: "Используешь custom executor вместо commonPool для IO"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «CompletableFuture: thenApply, allOf, exceptionally» в центр?"
+    options:
+      - "Как объединить 3 параллельных запроса с таймаутом и fallback?"
+      - ".get() в цепочке — превращает async в blocking"
+      - "Использовать commonPool для блокирующих IO задач"
+      - "Забывать exceptionally — silent failure"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как объединить 3 параллельных запроса с таймаутом и fallback?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «CompletableFuture: thenApply, allOf, exceptionally»?"
+    options:
+      - ".get() в цепочке — превращает async в blocking"
+      - "Реализовать parallel-fetch 3 микросервисов с allOf + orTimeout + exceptionally"
+      - "Не вызываешь .get() на CompletableFuture без needs"
+      - "Используешь custom executor вместо commonPool для IO"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «.get() в цепочке — превращает async в blocking»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «CompletableFuture: thenApply, allOf, exceptionally»?"
+    options:
+      - "thenApply (sync) ↔ thenApplyAsync (на executor) ↔ thenApplyAsync(executor)"
+      - ".get() в цепочке — превращает async в blocking"
+      - "Использовать commonPool для блокирующих IO задач"
+      - "Забывать exceptionally — silent failure"
+    answerIndex: 0
+    explanation: "Различение «thenApply (sync) ↔ thenApplyAsync (на executor) ↔ thenApplyAsync(executor)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «CompletableFuture: thenApply, allOf, exceptionally»?"
+    options:
+      - "Реализовать parallel-fetch 3 микросервисов с allOf + orTimeout + exceptionally"
+      - ".get() в цепочке — превращает async в blocking"
+      - "Использовать commonPool для блокирующих IO задач"
+      - "Забывать exceptionally — silent failure"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Реализовать parallel-fetch 3 микросервисов с allOf + orTimeout + exceptionally»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «CompletableFuture: thenApply, allOf, exceptionally» работает?"
+    options:
+      - "Не вызываешь .get() на CompletableFuture без needs"
+      - ".get() в цепочке — превращает async в blocking"
+      - "Использовать commonPool для блокирующих IO задач"
+      - "Забывать exceptionally — silent failure"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Не вызываешь .get() на CompletableFuture без needs». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «CompletableFuture: thenApply, allOf, exceptionally» как опору?"
+    options:
+      - "CompletableFuture.supplyAsync / runAsync"
+      - ".get() в цепочке — превращает async в blocking"
+      - "Использовать commonPool для блокирующих IO задач"
+      - "Забывать exceptionally — silent failure"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «CompletableFuture.supplyAsync / runAsync»"
+---
+
+## Зачем
+
+CompletableFuture<T> — promise-style API, реализующий Future + CompletionStage. Цепочки: thenApply (map: T→U), thenCompose (flatMap: T→CF<U>), thenCombine (zip: CF<T> + CF<U> → V), thenAccept (consumer). Параллельность: CF.allOf (ждёт все), CF.anyOf (первый завершившийся). Обработка ошибок: exceptionally (recover), handle (recover + map), whenComplete (peek). Таймауты: orTimeout, completeOnTimeout (Java 9+). По умолчанию executor — ForkJoinPool.commonPool — опасно для блокирующих операций, лучше supplyAsync(task, customExecutor). Несовместим напрямую с Mono/Flux, но CompletableFuture.toCompletionStage интегрируется с reactor.
+
+## Ключевые различения
+
+- thenApply (sync) ↔ thenApplyAsync (на executor) ↔ thenApplyAsync(executor)
+- thenCompose (flatMap) ↔ thenApply (map)
+- exceptionally (recover) ↔ handle (recover + map) ↔ whenComplete (peek)
+- allOf (ждёт все) ↔ anyOf (первый)
+
+## Технология
+
+- CompletableFuture.supplyAsync / runAsync
+- thenApply / thenCompose / thenCombine / thenAccept
+- allOf / anyOf / orTimeout / completeOnTimeout
+- exceptionally / handle / whenComplete
+
+## Практика (упражнения)
+
+- Реализовать parallel-fetch 3 микросервисов с allOf + orTimeout + exceptionally
+- Заменить chain Future.get() (блокирующий) на CompletableFuture chain (non-blocking)
+- Реализовать retry через CompletableFuture + exceptionallyCompose
+
+## Маркеры освоения
+
+- Не вызываешь .get() на CompletableFuture без needs
+- Используешь custom executor вместо commonPool для IO
+- Видишь разницу thenApply vs thenCompose в одну минуту
+
+## Антипаттерны
+
+- .get() в цепочке — превращает async в blocking
+- Использовать commonPool для блокирующих IO задач
+- Забывать exceptionally — silent failure
+
+## Где в стеке
+
+**Уровень 2: Concurrency и JMM.** Самый «отсевочный» блок. JMM happens-before и контракт volatile различают junior от middle. На middle ожидают понимание ABA, ThreadPool параметров, и почему counter++ с volatile не атомарен.

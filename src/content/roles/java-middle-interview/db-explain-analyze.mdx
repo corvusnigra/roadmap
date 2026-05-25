@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: db-explain-analyze
+title: "EXPLAIN ANALYZE: Seq Scan vs Index Scan, Nested Loop vs Hash Join"
+summary: "Почему planner выбрал Seq Scan, а не мой свежий индекс?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Читаешь EXPLAIN ANALYZE и можешь объяснить узлы"
+  - "Знаешь, когда Seq Scan лучше Index Scan"
+  - "Запускаешь ANALYZE после больших insert/delete"
+  - "Выполнять регулярно: Прогнать EXPLAIN ANALYZE для запроса с JOIN — посмотреть выбранный план"
+  - "Выполнять регулярно: Создать индекс, прогнать снова — увидеть Index Scan"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «EXPLAIN ANALYZE: Seq Scan vs Index Scan, Nested Loop vs Hash Join» начала работать?"
+    options:
+      - "Читаешь EXPLAIN ANALYZE и можешь объяснить узлы"
+      - "Бросать индексы на каждый медленный query, не глядя в план"
+      - "Игнорировать BUFFERS — реальная стоимость = disk IO"
+      - "Не запускать EXPLAIN ANALYZE на проде из-за «опасно» (только не write-операции)"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Читаешь EXPLAIN ANALYZE и можешь объяснить узлы» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Seq Scan (full) ↔ Index Scan ↔ Index Only Scan (covering)»?"
+    back: "Seq Scan (full) ↔ Index Scan ↔ Index Only Scan (covering). EXPLAIN — план без исполнения, EXPLAIN ANALYZE — план + реальное время"
+  - front: "Что стоит за различением «Nested Loop ↔ Hash Join ↔ Merge Join»?"
+    back: "Nested Loop ↔ Hash Join ↔ Merge Join. Виды узлов: Seq Scan (полный скан), Index Scan (через B-tree), Index Only Scan (covering, без обращения к heap), Bitmap Index Scan + Bitmap Heap Scan (для OR / range / много rows)"
+  - front: "Что стоит за различением «EXPLAIN (cost estimate) ↔ EXPLAIN ANALYZE (cost + actual time)»?"
+    back: "EXPLAIN (cost estimate) ↔ EXPLAIN ANALYZE (cost + actual time). Joins: Nested Loop (хорошо для small × large), Hash Join (build hash table в памяти, scan другую — middle × middle), Merge Join (две sorted relations)"
+  - front: "Что стоит за различением «Buffers (cached vs disk) — без них cost не отражает IO»?"
+    back: "Buffers (cached vs disk) — без них cost не отражает IO. Planner выбирает по cost estimate (на основе ANALYZE статистики)"
+  - front: "По какому маркеру понять, что освоено: «Читаешь EXPLAIN ANALYZE и можешь объяснить узлы»?"
+    back: "Читаешь EXPLAIN ANALYZE и можешь объяснить узлы"
+  - front: "По какому маркеру понять, что освоено: «Знаешь, когда Seq Scan лучше Index Scan»?"
+    back: "Знаешь, когда Seq Scan лучше Index Scan"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «EXPLAIN ANALYZE: Seq Scan vs Index Scan, Nested Loop vs Hash Join» в центр?"
+    options:
+      - "Почему planner выбрал Seq Scan, а не мой свежий индекс?"
+      - "Бросать индексы на каждый медленный query, не глядя в план"
+      - "Игнорировать BUFFERS — реальная стоимость = disk IO"
+      - "Не запускать EXPLAIN ANALYZE на проде из-за «опасно» (только не write-операции)"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Почему planner выбрал Seq Scan, а не мой свежий индекс?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «EXPLAIN ANALYZE: Seq Scan vs Index Scan, Nested Loop vs Hash Join»?"
+    options:
+      - "Бросать индексы на каждый медленный query, не глядя в план"
+      - "Прогнать EXPLAIN ANALYZE для запроса с JOIN — посмотреть выбранный план"
+      - "Читаешь EXPLAIN ANALYZE и можешь объяснить узлы"
+      - "Знаешь, когда Seq Scan лучше Index Scan"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Бросать индексы на каждый медленный query, не глядя в план»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «EXPLAIN ANALYZE: Seq Scan vs Index Scan, Nested Loop vs Hash Join»?"
+    options:
+      - "Seq Scan (full) ↔ Index Scan ↔ Index Only Scan (covering)"
+      - "Бросать индексы на каждый медленный query, не глядя в план"
+      - "Игнорировать BUFFERS — реальная стоимость = disk IO"
+      - "Не запускать EXPLAIN ANALYZE на проде из-за «опасно» (только не write-операции)"
+    answerIndex: 0
+    explanation: "Различение «Seq Scan (full) ↔ Index Scan ↔ Index Only Scan (covering)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «EXPLAIN ANALYZE: Seq Scan vs Index Scan, Nested Loop vs Hash Join»?"
+    options:
+      - "Прогнать EXPLAIN ANALYZE для запроса с JOIN — посмотреть выбранный план"
+      - "Бросать индексы на каждый медленный query, не глядя в план"
+      - "Игнорировать BUFFERS — реальная стоимость = disk IO"
+      - "Не запускать EXPLAIN ANALYZE на проде из-за «опасно» (только не write-операции)"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Прогнать EXPLAIN ANALYZE для запроса с JOIN — посмотреть выбранный план»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «EXPLAIN ANALYZE: Seq Scan vs Index Scan, Nested Loop vs Hash Join» работает?"
+    options:
+      - "Читаешь EXPLAIN ANALYZE и можешь объяснить узлы"
+      - "Бросать индексы на каждый медленный query, не глядя в план"
+      - "Игнорировать BUFFERS — реальная стоимость = disk IO"
+      - "Не запускать EXPLAIN ANALYZE на проде из-за «опасно» (только не write-операции)"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Читаешь EXPLAIN ANALYZE и можешь объяснить узлы». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «EXPLAIN ANALYZE: Seq Scan vs Index Scan, Nested Loop vs Hash Join» как опору?"
+    options:
+      - "EXPLAIN ANALYZE / EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)"
+      - "Бросать индексы на каждый медленный query, не глядя в план"
+      - "Игнорировать BUFFERS — реальная стоимость = disk IO"
+      - "Не запускать EXPLAIN ANALYZE на проде из-за «опасно» (только не write-операции)"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «EXPLAIN ANALYZE / EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)»"
+---
+
+## Зачем
+
+EXPLAIN — план без исполнения, EXPLAIN ANALYZE — план + реальное время. Виды узлов: Seq Scan (полный скан), Index Scan (через B-tree), Index Only Scan (covering, без обращения к heap), Bitmap Index Scan + Bitmap Heap Scan (для OR / range / много rows). Joins: Nested Loop (хорошо для small × large), Hash Join (build hash table в памяти, scan другую — middle × middle), Merge Join (две sorted relations). Planner выбирает по cost estimate (на основе ANALYZE статистики). Часто Seq Scan быстрее Index Scan: при выборке > 10-20% таблицы или при отсутствии актуальной статистики. Команды: ANALYZE table; — обновить статистику, VACUUM ANALYZE; — VACUUM + статистика. Параметры: EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) — добавляет buffer hits.
+
+## Ключевые различения
+
+- Seq Scan (full) ↔ Index Scan ↔ Index Only Scan (covering)
+- Nested Loop ↔ Hash Join ↔ Merge Join
+- EXPLAIN (cost estimate) ↔ EXPLAIN ANALYZE (cost + actual time)
+- Buffers (cached vs disk) — без них cost не отражает IO
+
+## Технология
+
+- EXPLAIN ANALYZE / EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+- ANALYZE table; — обновить статистику
+- pg_stat_statements — топ медленных запросов
+- auto_explain — лог планов медленных запросов
+
+## Практика (упражнения)
+
+- Прогнать EXPLAIN ANALYZE для запроса с JOIN — посмотреть выбранный план
+- Создать индекс, прогнать снова — увидеть Index Scan
+- Заполнить таблицу 1M строк, замерить разницу Hash Join vs Nested Loop
+
+## Маркеры освоения
+
+- Читаешь EXPLAIN ANALYZE и можешь объяснить узлы
+- Знаешь, когда Seq Scan лучше Index Scan
+- Запускаешь ANALYZE после больших insert/delete
+
+## Антипаттерны
+
+- Бросать индексы на каждый медленный query, не глядя в план
+- Игнорировать BUFFERS — реальная стоимость = disk IO
+- Не запускать EXPLAIN ANALYZE на проде из-за «опасно» (только не write-операции)
+
+## Где в стеке
+
+**Уровень 5: Database, JPA, Hibernate.** После Spring — самый частый блок. N+1 спросят в 8/8 компаний. Уровни изоляции, planner B-tree, lazy/eager — must-know.

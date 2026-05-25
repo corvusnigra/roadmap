@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: spring-rest-validation
+title: "REST контроллер, @Valid, @RestControllerAdvice"
+summary: "Как обработать 400 для невалидного DTO и 404 для отсутствующей сущности?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Используешь @Valid + JSR-380, не валидируешь вручную"
+  - "Не выбрасываешь plain Exception из контроллера"
+  - "Различаешь 400/404/409/422 в выборе статуса"
+  - "Выполнять регулярно: Реализовать UserController с POST /users + @Valid CreateUserDto"
+  - "Выполнять регулярно: Сделать @RestControllerAdvice с handler'ами для 4 типов exception"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «REST контроллер, @Valid, @RestControllerAdvice» начала работать?"
+    options:
+      - "Используешь @Valid + JSR-380, не валидируешь вручную"
+      - "Возвращать 200 OK с error JSON — клиент должен парсить тело, чтобы понять ошибку"
+      - "Голый ResponseEntity.ok(error) на каждый чих"
+      - "Stack trace в response body — leak внутренностей"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Используешь @Valid + JSR-380, не валидируешь вручную» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «@Controller (HTML view) ↔ @RestController (= @Controller + @ResponseBody)»?"
+    back: "@Controller (HTML view) ↔ @RestController (= @Controller + @ResponseBody). Spring MVC: @RestController = @Controller + @ResponseBody"
+  - front: "Что стоит за различением «@PathVariable ↔ @RequestParam ↔ @RequestBody»?"
+    back: "@PathVariable ↔ @RequestParam ↔ @RequestBody. @RequestMapping и shortcuts: @GetMapping, @PostMapping, @PutMapping, @DeleteMapping, @PatchMapping"
+  - front: "Что стоит за различением «MethodArgumentNotValidException (validation) ↔ ConstraintViolationException (Bean)»?"
+    back: "MethodArgumentNotValidException (validation) ↔ ConstraintViolationException (Bean). Параметры: @PathVariable (из URL), @RequestParam (query string), @RequestBody (тело + Jackson), @RequestHeader, @ModelAttribute"
+  - front: "Что стоит за различением «ResponseStatusException ↔ @ResponseStatus ↔ @RestControllerAdvice»?"
+    back: "ResponseStatusException ↔ @ResponseStatus ↔ @RestControllerAdvice. Валидация: @Valid на параметре + JSR-380 (jakarta.validation) аннотации на DTO (@NotNull, @NotBlank, @Min, @Email, @Size)"
+  - front: "По какому маркеру понять, что освоено: «Используешь @Valid + JSR-380, не валидируешь вручную»?"
+    back: "Используешь @Valid + JSR-380, не валидируешь вручную"
+  - front: "По какому маркеру понять, что освоено: «Не выбрасываешь plain Exception из контроллера»?"
+    back: "Не выбрасываешь plain Exception из контроллера"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «REST контроллер, @Valid, @RestControllerAdvice» в центр?"
+    options:
+      - "Как обработать 400 для невалидного DTO и 404 для отсутствующей сущности?"
+      - "Возвращать 200 OK с error JSON — клиент должен парсить тело, чтобы понять ошибку"
+      - "Голый ResponseEntity.ok(error) на каждый чих"
+      - "Stack trace в response body — leak внутренностей"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как обработать 400 для невалидного DTO и 404 для отсутствующей сущности?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «REST контроллер, @Valid, @RestControllerAdvice»?"
+    options:
+      - "Возвращать 200 OK с error JSON — клиент должен парсить тело, чтобы понять ошибку"
+      - "Реализовать UserController с POST /users + @Valid CreateUserDto"
+      - "Используешь @Valid + JSR-380, не валидируешь вручную"
+      - "Не выбрасываешь plain Exception из контроллера"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Возвращать 200 OK с error JSON — клиент должен парсить тело, чтобы понять ошибку»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «REST контроллер, @Valid, @RestControllerAdvice»?"
+    options:
+      - "@Controller (HTML view) ↔ @RestController (= @Controller + @ResponseBody)"
+      - "Возвращать 200 OK с error JSON — клиент должен парсить тело, чтобы понять ошибку"
+      - "Голый ResponseEntity.ok(error) на каждый чих"
+      - "Stack trace в response body — leak внутренностей"
+    answerIndex: 0
+    explanation: "Различение «@Controller (HTML view) ↔ @RestController (= @Controller + @ResponseBody)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «REST контроллер, @Valid, @RestControllerAdvice»?"
+    options:
+      - "Реализовать UserController с POST /users + @Valid CreateUserDto"
+      - "Возвращать 200 OK с error JSON — клиент должен парсить тело, чтобы понять ошибку"
+      - "Голый ResponseEntity.ok(error) на каждый чих"
+      - "Stack trace в response body — leak внутренностей"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Реализовать UserController с POST /users + @Valid CreateUserDto»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «REST контроллер, @Valid, @RestControllerAdvice» работает?"
+    options:
+      - "Используешь @Valid + JSR-380, не валидируешь вручную"
+      - "Возвращать 200 OK с error JSON — клиент должен парсить тело, чтобы понять ошибку"
+      - "Голый ResponseEntity.ok(error) на каждый чих"
+      - "Stack trace в response body — leak внутренностей"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Используешь @Valid + JSR-380, не валидируешь вручную». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «REST контроллер, @Valid, @RestControllerAdvice» как опору?"
+    options:
+      - "@Valid + JSR-380 (@NotNull, @Size, @Email, @Pattern)"
+      - "Возвращать 200 OK с error JSON — клиент должен парсить тело, чтобы понять ошибку"
+      - "Голый ResponseEntity.ok(error) на каждый чих"
+      - "Stack trace в response body — leak внутренностей"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «@Valid + JSR-380 (@NotNull, @Size, @Email, @Pattern)»"
+---
+
+## Зачем
+
+Spring MVC: @RestController = @Controller + @ResponseBody. @RequestMapping и shortcuts: @GetMapping, @PostMapping, @PutMapping, @DeleteMapping, @PatchMapping. Параметры: @PathVariable (из URL), @RequestParam (query string), @RequestBody (тело + Jackson), @RequestHeader, @ModelAttribute. Валидация: @Valid на параметре + JSR-380 (jakarta.validation) аннотации на DTO (@NotNull, @NotBlank, @Min, @Email, @Size). При нарушении — MethodArgumentNotValidException. Глобальный handler: @RestControllerAdvice + @ExceptionHandler — конвертирует exception в ResponseEntity. Стандарт: 400 (validation), 404 (not found), 409 (conflict), 422 (semantic), 500 (server error). ProblemDetail (RFC 7807) — стандарт для error response (Spring 6+).
+
+## Ключевые различения
+
+- @Controller (HTML view) ↔ @RestController (= @Controller + @ResponseBody)
+- @PathVariable ↔ @RequestParam ↔ @RequestBody
+- MethodArgumentNotValidException (validation) ↔ ConstraintViolationException (Bean)
+- ResponseStatusException ↔ @ResponseStatus ↔ @RestControllerAdvice
+
+## Технология
+
+- @Valid + JSR-380 (@NotNull, @Size, @Email, @Pattern)
+- @RestControllerAdvice + @ExceptionHandler
+- ResponseEntity<T> для ручного контроля статуса/заголовков
+- ProblemDetail (Spring 6+, RFC 7807)
+
+## Практика (упражнения)
+
+- Реализовать UserController с POST /users + @Valid CreateUserDto
+- Сделать @RestControllerAdvice с handler'ами для 4 типов exception
+- Вернуть ProblemDetail вместо custom error object
+
+## Маркеры освоения
+
+- Используешь @Valid + JSR-380, не валидируешь вручную
+- Не выбрасываешь plain Exception из контроллера
+- Различаешь 400/404/409/422 в выборе статуса
+
+## Антипаттерны
+
+- Возвращать 200 OK с error JSON — клиент должен парсить тело, чтобы понять ошибку
+- Голый ResponseEntity.ok(error) на каждый чих
+- Stack trace в response body — leak внутренностей
+
+## Где в стеке
+
+**Уровень 4: Spring и Spring Boot.** Любая работа с Java middle = Spring. Ключевая ловушка — self-invocation @Transactional/@Async через прокси: спросят с вероятностью 100%.

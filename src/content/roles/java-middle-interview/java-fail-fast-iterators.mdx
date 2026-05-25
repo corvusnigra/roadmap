@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-fail-fast-iterators
+title: "fail-fast vs fail-safe итераторы, ConcurrentModificationException"
+summary: "Почему for-each по ArrayList с remove() падает, а по CopyOnWriteArrayList — нет?"
+status: published
+estimatedMinutes: 20
+prerequisites: []
+learningOutcomes:
+  - "Не модифицируешь Collection в for-each без Iterator.remove"
+  - "Используешь removeIf там, где он подходит"
+  - "Знаешь, что CME — best-effort, не гарантия"
+  - "Выполнять регулярно: Получить ConcurrentModificationException на ArrayList + .remove() в for-each"
+  - "Выполнять регулярно: Заменить на itr.remove() — увидеть, что работает"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «fail-fast vs fail-safe итераторы, ConcurrentModificationException» начала работать?"
+    options:
+      - "Не модифицируешь Collection в for-each без Iterator.remove"
+      - "Удалять в for-each через collection.remove() — CME"
+      - "Использовать CopyOnWriteArrayList там, где много write (копия на каждый write!)"
+      - "Думать, что отсутствие CME = thread-safety"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Не модифицируешь Collection в for-each без Iterator.remove» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Fail-fast (CME при модификации) ↔ Fail-safe (snapshot/weakly-consistent)»?"
+    back: "Fail-fast (CME при модификации) ↔ Fail-safe (snapshot/weakly-consistent). Стандартные коллекции (ArrayList, HashMap, HashSet, LinkedList) — fail-fast: итератор хранит modCount при создании; при каждом next() сверяет с текущим modCount коллекции"
+  - front: "Что стоит за различением «modCount проверяется в Iterator.next()»?"
+    back: "modCount проверяется в Iterator.next(). Если кто-то модифицировал коллекцию (включая сам итератор не через Iterator.remove) — ConcurrentModificationException"
+  - front: "Что стоит за различением «Iterator.remove() ↔ Collection.remove() (последний рушит итератор)»?"
+    back: "Iterator.remove() ↔ Collection.remove() (последний рушит итератор). Concurrent коллекции (ConcurrentHashMap, CopyOnWriteArrayList) — fail-safe: итерируются по snapshot (CopyOnWrite) или weakly-consistent (CHM) — изменения видны или нет, но не падает"
+  - front: "Что стоит за различением «removeIf — наиболее идиоматично, fail-safe для большинства Collection»?"
+    back: "removeIf — наиболее идиоматично, fail-safe для большинства Collection. Правильно удалять во время итерации: Iterator.remove() или Collection.removeIf(predicate)."
+  - front: "По какому маркеру понять, что освоено: «Не модифицируешь Collection в for-each без Iterator.remove»?"
+    back: "Не модифицируешь Collection в for-each без Iterator.remove"
+  - front: "По какому маркеру понять, что освоено: «Используешь removeIf там, где он подходит»?"
+    back: "Используешь removeIf там, где он подходит"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «fail-fast vs fail-safe итераторы, ConcurrentModificationException» в центр?"
+    options:
+      - "Почему for-each по ArrayList с remove() падает, а по CopyOnWriteArrayList — нет?"
+      - "Удалять в for-each через collection.remove() — CME"
+      - "Использовать CopyOnWriteArrayList там, где много write (копия на каждый write!)"
+      - "Думать, что отсутствие CME = thread-safety"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Почему for-each по ArrayList с remove() падает, а по CopyOnWriteArrayList — нет?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «fail-fast vs fail-safe итераторы, ConcurrentModificationException»?"
+    options:
+      - "Удалять в for-each через collection.remove() — CME"
+      - "Получить ConcurrentModificationException на ArrayList + .remove() в for-each"
+      - "Не модифицируешь Collection в for-each без Iterator.remove"
+      - "Используешь removeIf там, где он подходит"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Удалять в for-each через collection.remove() — CME»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «fail-fast vs fail-safe итераторы, ConcurrentModificationException»?"
+    options:
+      - "Fail-fast (CME при модификации) ↔ Fail-safe (snapshot/weakly-consistent)"
+      - "Удалять в for-each через collection.remove() — CME"
+      - "Использовать CopyOnWriteArrayList там, где много write (копия на каждый write!)"
+      - "Думать, что отсутствие CME = thread-safety"
+    answerIndex: 0
+    explanation: "Различение «Fail-fast (CME при модификации) ↔ Fail-safe (snapshot/weakly-consistent)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «fail-fast vs fail-safe итераторы, ConcurrentModificationException»?"
+    options:
+      - "Получить ConcurrentModificationException на ArrayList + .remove() в for-each"
+      - "Удалять в for-each через collection.remove() — CME"
+      - "Использовать CopyOnWriteArrayList там, где много write (копия на каждый write!)"
+      - "Думать, что отсутствие CME = thread-safety"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Получить ConcurrentModificationException на ArrayList + .remove() в for-each»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «fail-fast vs fail-safe итераторы, ConcurrentModificationException» работает?"
+    options:
+      - "Не модифицируешь Collection в for-each без Iterator.remove"
+      - "Удалять в for-each через collection.remove() — CME"
+      - "Использовать CopyOnWriteArrayList там, где много write (копия на каждый write!)"
+      - "Думать, что отсутствие CME = thread-safety"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Не модифицируешь Collection в for-each без Iterator.remove». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «fail-fast vs fail-safe итераторы, ConcurrentModificationException» как опору?"
+    options:
+      - "Iterator.remove() — единственный безопасный способ удалить во время итерации"
+      - "Удалять в for-each через collection.remove() — CME"
+      - "Использовать CopyOnWriteArrayList там, где много write (копия на каждый write!)"
+      - "Думать, что отсутствие CME = thread-safety"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Iterator.remove() — единственный безопасный способ удалить во время итерации»"
+---
+
+## Зачем
+
+Стандартные коллекции (ArrayList, HashMap, HashSet, LinkedList) — fail-fast: итератор хранит modCount при создании; при каждом next() сверяет с текущим modCount коллекции. Если кто-то модифицировал коллекцию (включая сам итератор не через Iterator.remove) — ConcurrentModificationException. Не гарантия — best-effort. Concurrent коллекции (ConcurrentHashMap, CopyOnWriteArrayList) — fail-safe: итерируются по snapshot (CopyOnWrite) или weakly-consistent (CHM) — изменения видны или нет, но не падает. Правильно удалять во время итерации: Iterator.remove() или Collection.removeIf(predicate).
+
+## Ключевые различения
+
+- Fail-fast (CME при модификации) ↔ Fail-safe (snapshot/weakly-consistent)
+- modCount проверяется в Iterator.next()
+- Iterator.remove() ↔ Collection.remove() (последний рушит итератор)
+- removeIf — наиболее идиоматично, fail-safe для большинства Collection
+
+## Технология
+
+- Iterator.remove() — единственный безопасный способ удалить во время итерации
+- Collection.removeIf(Predicate) — Java 8+
+- CopyOnWriteArrayList — для редких write, частых read (snapshot iterator)
+- ConcurrentHashMap.forEach / forEachKey / forEachValue
+
+## Практика (упражнения)
+
+- Получить ConcurrentModificationException на ArrayList + .remove() в for-each
+- Заменить на itr.remove() — увидеть, что работает
+- Сравнить производительность iter.remove() vs removeIf на 1M элементов
+
+## Маркеры освоения
+
+- Не модифицируешь Collection в for-each без Iterator.remove
+- Используешь removeIf там, где он подходит
+- Знаешь, что CME — best-effort, не гарантия
+
+## Антипаттерны
+
+- Удалять в for-each через collection.remove() — CME
+- Использовать CopyOnWriteArrayList там, где много write (копия на каждый write!)
+- Думать, что отсутствие CME = thread-safety
+
+## Где в стеке
+
+**Уровень 1: Collections.** Топ-частотный блок (HashMap спросят в 8/8 компаний). Знать внутренности: treeify в Java 8, resize, cache locality LinkedList, segmenting в ConcurrentHashMap.

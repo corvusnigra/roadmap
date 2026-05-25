@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-throwable-hierarchy
+title: "Throwable, checked vs unchecked, try-with-resources"
+summary: "Что компилятор требует обрабатывать, а что нет?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Знаешь, какие 5 RuntimeException встретятся чаще всего"
+  - "Используешь try-with-resources вместо try-finally"
+  - "Понимаешь, когда обернуть checked в unchecked, и когда нет"
+  - "Выполнять регулярно: Переписать try-finally с close() в try-with-resources"
+  - "Выполнять регулярно: Сделать класс, реализующий AutoCloseable, и использовать его в try-with-resources"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Throwable, checked vs unchecked, try-with-resources» начала работать?"
+    options:
+      - "Знаешь, какие 5 RuntimeException встретятся чаще всего"
+      - "catch (Exception e) {} — silent swallow"
+      - "Бросать checked Exception на каждый чих (контракт раздут)"
+      - "Использовать исключение для control flow"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь, какие 5 RuntimeException встретятся чаще всего» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Throwable / Error / Exception / RuntimeException — иерархия»?"
+    back: "Throwable / Error / Exception / RuntimeException — иерархия. Иерархия: Throwable → Error + Exception → RuntimeException"
+  - front: "Что стоит за различением «Checked (компилятор требует) ↔ Unchecked (RuntimeException)»?"
+    back: "Checked (компилятор требует) ↔ Unchecked (RuntimeException). Error (OutOfMemoryError, StackOverflowError) — фатальные, ловить не рекомендуется"
+  - front: "Что стоит за различением «AutoCloseable ↔ Closeable (последний — для java.io, throws IOException)»?"
+    back: "AutoCloseable ↔ Closeable (последний — для java.io, throws IOException). Exception — \"checked\" (IOException, SQLException) — компилятор требует try/catch или throws в сигнатуре"
+  - front: "Что стоит за различением «Suppressed exception в try-with-resources»?"
+    back: "Suppressed exception в try-with-resources. RuntimeException и его потомки (NPE, IllegalArgumentException, IndexOutOfBoundsException) — \"unchecked\", компилятор не требует"
+  - front: "По какому маркеру понять, что освоено: «Знаешь, какие 5 RuntimeException встретятся чаще всего»?"
+    back: "Знаешь, какие 5 RuntimeException встретятся чаще всего"
+  - front: "По какому маркеру понять, что освоено: «Используешь try-with-resources вместо try-finally»?"
+    back: "Используешь try-with-resources вместо try-finally"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Throwable, checked vs unchecked, try-with-resources» в центр?"
+    options:
+      - "Что компилятор требует обрабатывать, а что нет?"
+      - "catch (Exception e) {} — silent swallow"
+      - "Бросать checked Exception на каждый чих (контракт раздут)"
+      - "Использовать исключение для control flow"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Что компилятор требует обрабатывать, а что нет?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Throwable, checked vs unchecked, try-with-resources»?"
+    options:
+      - "catch (Exception e) {} — silent swallow"
+      - "Переписать try-finally с close() в try-with-resources"
+      - "Знаешь, какие 5 RuntimeException встретятся чаще всего"
+      - "Используешь try-with-resources вместо try-finally"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «catch (Exception e) {} — silent swallow»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Throwable, checked vs unchecked, try-with-resources»?"
+    options:
+      - "Throwable / Error / Exception / RuntimeException — иерархия"
+      - "catch (Exception e) {} — silent swallow"
+      - "Бросать checked Exception на каждый чих (контракт раздут)"
+      - "Использовать исключение для control flow"
+    answerIndex: 0
+    explanation: "Различение «Throwable / Error / Exception / RuntimeException — иерархия» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Throwable, checked vs unchecked, try-with-resources»?"
+    options:
+      - "Переписать try-finally с close() в try-with-resources"
+      - "catch (Exception e) {} — silent swallow"
+      - "Бросать checked Exception на каждый чих (контракт раздут)"
+      - "Использовать исключение для control flow"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Переписать try-finally с close() в try-with-resources»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Throwable, checked vs unchecked, try-with-resources» работает?"
+    options:
+      - "Знаешь, какие 5 RuntimeException встретятся чаще всего"
+      - "catch (Exception e) {} — silent swallow"
+      - "Бросать checked Exception на каждый чих (контракт раздут)"
+      - "Использовать исключение для control flow"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь, какие 5 RuntimeException встретятся чаще всего». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Throwable, checked vs unchecked, try-with-resources» как опору?"
+    options:
+      - "try-with-resources (Java 7+)"
+      - "catch (Exception e) {} — silent swallow"
+      - "Бросать checked Exception на каждый чих (контракт раздут)"
+      - "Использовать исключение для control flow"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «try-with-resources (Java 7+)»"
+---
+
+## Зачем
+
+Иерархия: Throwable → Error + Exception → RuntimeException. Error (OutOfMemoryError, StackOverflowError) — фатальные, ловить не рекомендуется. Exception — "checked" (IOException, SQLException) — компилятор требует try/catch или throws в сигнатуре. RuntimeException и его потомки (NPE, IllegalArgumentException, IndexOutOfBoundsException) — "unchecked", компилятор не требует. Try-with-resources (Java 7+) автоматически вызывает close() на ресурсах, реализующих AutoCloseable или Closeable; в случае двух исключений (в try и в close) — второе подавляется и доступно через getSuppressed().
+
+## Ключевые различения
+
+- Throwable / Error / Exception / RuntimeException — иерархия
+- Checked (компилятор требует) ↔ Unchecked (RuntimeException)
+- AutoCloseable ↔ Closeable (последний — для java.io, throws IOException)
+- Suppressed exception в try-with-resources
+
+## Технология
+
+- try-with-resources (Java 7+)
+- Multi-catch: catch (IOException | SQLException e)
+- Exception chaining: new RuntimeException("...", e)
+- @FunctionalInterface AutoCloseable
+
+## Практика (упражнения)
+
+- Переписать try-finally с close() в try-with-resources
+- Сделать класс, реализующий AutoCloseable, и использовать его в try-with-resources
+- Спровоцировать suppressed exception (бросить в try и в close)
+
+## Маркеры освоения
+
+- Знаешь, какие 5 RuntimeException встретятся чаще всего
+- Используешь try-with-resources вместо try-finally
+- Понимаешь, когда обернуть checked в unchecked, и когда нет
+
+## Антипаттерны
+
+- catch (Exception e) {} — silent swallow
+- Бросать checked Exception на каждый чих (контракт раздут)
+- Использовать исключение для control flow
+
+## Где в стеке
+
+**Уровень 0: Java Core.** Фундамент языка. Без него все следующие уровни рассыпаются: equals/hashCode не работает в HashMap, Stream API ломается на peek без терминалки, String Pool путается с new String.

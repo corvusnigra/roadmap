@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: db-orm-lifecycle
+title: "JPA: Transient/Persistent/Detached/Removed, Lazy vs Eager"
+summary: "Когда entity становится Persistent и почему Detached опасен?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Используешь FetchType.LAZY на @ManyToOne (override default)"
+  - "Отключаешь open-in-view в новых проектах"
+  - "Различаешь persist/merge/saveOrUpdate"
+  - "Выполнять регулярно: Загрузить entity, закрыть сессию, обратиться к lazy collection — словить LazyInitializationException"
+  - "Выполнять регулярно: Решить через JOIN FETCH в JPQL"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «JPA: Transient/Persistent/Detached/Removed, Lazy vs Eager» начала работать?"
+    options:
+      - "Используешь FetchType.LAZY на @ManyToOne (override default)"
+      - "Eager на @OneToMany — N+1 на ровном месте"
+      - "open-in-view = true — антипаттерн «sneaky queries»"
+      - "Заполнение Detached entity без merge и удивление"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Используешь FetchType.LAZY на @ManyToOne (override default)» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Transient ↔ Persistent ↔ Detached ↔ Removed»?"
+    back: "Transient ↔ Persistent ↔ Detached ↔ Removed. Состояния JPA entity: (1) Transient (new MyEntity() — не в БД, не в EntityManager); (2) Persistent (после persist() или load — в EntityManager + БД, изменения автоматически синхронизируются на flush); (3) Detached (после close сессии или detach() — есть в БД, нет в EM, изменения не сохраняются, требуют merge); (4) Removed (после remove() — будет удалён на flush)"
+  - front: "Что стоит за различением «EAGER (auto-JOIN) ↔ LAZY (proxy, on-demand)»?"
+    back: "EAGER (auto-JOIN) ↔ LAZY (proxy, on-demand). Lazy vs Eager: @ManyToOne / @OneToOne default = EAGER (всегда грузится в SELECT с JOIN); @OneToMany / @ManyToMany default = LAZY (proxy, загружается при первом обращении)"
+  - front: "Что стоит за различением «@ManyToOne/@OneToOne default = EAGER ↔ @OneToMany/@ManyToMany default = LAZY»?"
+    back: "@ManyToOne/@OneToOne default = EAGER ↔ @OneToMany/@ManyToMany default = LAZY. Hibernate создаёт proxy через CGLIB"
+  - front: "Что стоит за различением «persist (insert) ↔ merge (для detached) ↔ saveOrUpdate (Hibernate-only)»?"
+    back: "persist (insert) ↔ merge (для detached) ↔ saveOrUpdate (Hibernate-only). Доступ к lazy за пределами session = LazyInitializationException"
+  - front: "По какому маркеру понять, что освоено: «Используешь FetchType.LAZY на @ManyToOne (override default)»?"
+    back: "Используешь FetchType.LAZY на @ManyToOne (override default)"
+  - front: "По какому маркеру понять, что освоено: «Отключаешь open-in-view в новых проектах»?"
+    back: "Отключаешь open-in-view в новых проектах"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «JPA: Transient/Persistent/Detached/Removed, Lazy vs Eager» в центр?"
+    options:
+      - "Когда entity становится Persistent и почему Detached опасен?"
+      - "Eager на @OneToMany — N+1 на ровном месте"
+      - "open-in-view = true — антипаттерн «sneaky queries»"
+      - "Заполнение Detached entity без merge и удивление"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Когда entity становится Persistent и почему Detached опасен?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «JPA: Transient/Persistent/Detached/Removed, Lazy vs Eager»?"
+    options:
+      - "Eager на @OneToMany — N+1 на ровном месте"
+      - "Загрузить entity, закрыть сессию, обратиться к lazy collection — словить LazyInitializationException"
+      - "Используешь FetchType.LAZY на @ManyToOne (override default)"
+      - "Отключаешь open-in-view в новых проектах"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Eager на @OneToMany — N+1 на ровном месте»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «JPA: Transient/Persistent/Detached/Removed, Lazy vs Eager»?"
+    options:
+      - "Transient ↔ Persistent ↔ Detached ↔ Removed"
+      - "Eager на @OneToMany — N+1 на ровном месте"
+      - "open-in-view = true — антипаттерн «sneaky queries»"
+      - "Заполнение Detached entity без merge и удивление"
+    answerIndex: 0
+    explanation: "Различение «Transient ↔ Persistent ↔ Detached ↔ Removed» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «JPA: Transient/Persistent/Detached/Removed, Lazy vs Eager»?"
+    options:
+      - "Загрузить entity, закрыть сессию, обратиться к lazy collection — словить LazyInitializationException"
+      - "Eager на @OneToMany — N+1 на ровном месте"
+      - "open-in-view = true — антипаттерн «sneaky queries»"
+      - "Заполнение Detached entity без merge и удивление"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Загрузить entity, закрыть сессию, обратиться к lazy collection — словить LazyInitializationException»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «JPA: Transient/Persistent/Detached/Removed, Lazy vs Eager» работает?"
+    options:
+      - "Используешь FetchType.LAZY на @ManyToOne (override default)"
+      - "Eager на @OneToMany — N+1 на ровном месте"
+      - "open-in-view = true — антипаттерн «sneaky queries»"
+      - "Заполнение Detached entity без merge и удивление"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Используешь FetchType.LAZY на @ManyToOne (override default)». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «JPA: Transient/Persistent/Detached/Removed, Lazy vs Eager» как опору?"
+    options:
+      - "@Entity, @Id, @Column, @Table"
+      - "Eager на @OneToMany — N+1 на ровном месте"
+      - "open-in-view = true — антипаттерн «sneaky queries»"
+      - "Заполнение Detached entity без merge и удивление"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «@Entity, @Id, @Column, @Table»"
+---
+
+## Зачем
+
+Состояния JPA entity: (1) Transient (new MyEntity() — не в БД, не в EntityManager); (2) Persistent (после persist() или load — в EntityManager + БД, изменения автоматически синхронизируются на flush); (3) Detached (после close сессии или detach() — есть в БД, нет в EM, изменения не сохраняются, требуют merge); (4) Removed (после remove() — будет удалён на flush). Lazy vs Eager: @ManyToOne / @OneToOne default = EAGER (всегда грузится в SELECT с JOIN); @OneToMany / @ManyToMany default = LAZY (proxy, загружается при первом обращении). Hibernate создаёт proxy через CGLIB. Доступ к lazy за пределами session = LazyInitializationException. Антипаттерн: spring.jpa.open-in-view=true (default!) — держит session на весь HTTP request, делает sneaky lazy queries в контроллере.
+
+## Ключевые различения
+
+- Transient ↔ Persistent ↔ Detached ↔ Removed
+- EAGER (auto-JOIN) ↔ LAZY (proxy, on-demand)
+- @ManyToOne/@OneToOne default = EAGER ↔ @OneToMany/@ManyToMany default = LAZY
+- persist (insert) ↔ merge (для detached) ↔ saveOrUpdate (Hibernate-only)
+
+## Технология
+
+- @Entity, @Id, @Column, @Table
+- @ManyToOne(fetch = FetchType.LAZY) (рекомендуется!)
+- @EntityGraph, JOIN FETCH, @BatchSize
+- EntityManager.persist / merge / remove / find / detach / clear
+
+## Практика (упражнения)
+
+- Загрузить entity, закрыть сессию, обратиться к lazy collection — словить LazyInitializationException
+- Решить через JOIN FETCH в JPQL
+- Отключить spring.jpa.open-in-view=false — увидеть, какие места ломаются
+
+## Маркеры освоения
+
+- Используешь FetchType.LAZY на @ManyToOne (override default)
+- Отключаешь open-in-view в новых проектах
+- Различаешь persist/merge/saveOrUpdate
+
+## Антипаттерны
+
+- Eager на @OneToMany — N+1 на ровном месте
+- open-in-view = true — антипаттерн «sneaky queries»
+- Заполнение Detached entity без merge и удивление
+
+## Где в стеке
+
+**Уровень 5: Database, JPA, Hibernate.** После Spring — самый частый блок. N+1 спросят в 8/8 компаний. Уровни изоляции, planner B-tree, lazy/eager — must-know.

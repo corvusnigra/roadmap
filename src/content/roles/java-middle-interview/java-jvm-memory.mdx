@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-jvm-memory
+title: "Области памяти JVM — где что живёт"
+summary: "Куда уходит OOM: Heap, Metaspace или native?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Можешь нарисовать схему памяти JVM"
+  - "Знаешь, чем Metaspace отличается от PermGen"
+  - "Понимаешь, какой OOM требует -Xmx, какой -XX:MaxMetaspaceSize"
+  - "Выполнять регулярно: Запустить процесс с -Xmx512m, наполнить ArrayList, поймать OOM"
+  - "Выполнять регулярно: Спровоцировать Metaspace OOM через создание классов рантайм-генератором"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Области памяти JVM — где что живёт» начала работать?"
+    options:
+      - "Можешь нарисовать схему памяти JVM"
+      - "Думать, что весь объект на стеке — в Java на стеке только примитивы и ссылки"
+      - "Игнорировать Metaspace в Java 8+ — DI/proxy/CGLIB могут раздуть его"
+      - "Увеличивать -Xmx без анализа причины OOM (часто это утечка, не недостаток)"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Можешь нарисовать схему памяти JVM» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Heap (объекты, GC) ↔ Stack (фрейм метода, на поток)»?"
+    back: "Heap (объекты, GC) ↔ Stack (фрейм метода, на поток). Память JVM: (1) Heap — объекты, разделён на Young (Eden + 2 Survivor) и Old gen, управляется GC; (2) Stack — на каждый поток, фреймы методов, локальные примитивы и ссылки, размер -Xss (default ~512KB-1MB); (3) Metaspace (Java 8+, заменил PermGen) — class metadata, в native memory; (4) PC Register — на поток, адрес текущей инструкции; (5) Native Method Stack — для JNI; (6) Code Cache — JIT-компилированный код"
+  - front: "Что стоит за различением «Young gen (Eden+Survivor) ↔ Old gen (tenured) ↔ Metaspace (class metadata)»?"
+    back: "Young gen (Eden+Survivor) ↔ Old gen (tenured) ↔ Metaspace (class metadata). Параметры: -Xms / -Xmx (heap), -XX:MaxMetaspaceSize, -Xss, -XX:ReservedCodeCacheSize"
+  - front: "Что стоит за различением «PermGen (≤ Java 7, fixed) ↔ Metaspace (Java 8+, native memory, auto-grow)»?"
+    back: "PermGen (≤ Java 7, fixed) ↔ Metaspace (Java 8+, native memory, auto-grow). OOM виды: Java heap space (heap), Metaspace, GC overhead limit exceeded (GC не успевает), unable to create new native thread (упёрлись в OS лимит), Direct buffer memory (off-heap через ByteBuffer.allocateDirect)."
+  - front: "Что стоит за различением «On-heap ↔ Off-heap (DirectByteBuffer, Unsafe.allocateMemory)»?"
+    back: "On-heap ↔ Off-heap (DirectByteBuffer, Unsafe.allocateMemory). Память JVM: (1) Heap — объекты, разделён на Young (Eden + 2 Survivor) и Old gen, управляется GC; (2) Stack — на каждый поток, фреймы методов, локальные примитивы и ссылки, размер -Xss (default ~512KB-1MB); (3) Metaspace (Java 8+, заменил PermGen) — class metadata, в native memory; (4) PC Register — на поток, адрес текущей инструкции; (5) Native Method Stack — для JNI; (6) Code Cache — JIT-компилированный код. Параметры: -Xms / -Xmx (heap), -XX:MaxMetaspaceSize, -Xss, -XX:ReservedCodeCacheSize. OOM виды: Java heap space (heap), Metaspace, GC overhead limit exceeded (GC не успевает), unable to create new native thread (упёрлись в OS лимит), Direct buffer memory (off-heap через ByteBuffer.allocateDirect)."
+  - front: "По какому маркеру понять, что освоено: «Можешь нарисовать схему памяти JVM»?"
+    back: "Можешь нарисовать схему памяти JVM"
+  - front: "По какому маркеру понять, что освоено: «Знаешь, чем Metaspace отличается от PermGen»?"
+    back: "Знаешь, чем Metaspace отличается от PermGen"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Области памяти JVM — где что живёт» в центр?"
+    options:
+      - "Куда уходит OOM: Heap, Metaspace или native?"
+      - "Думать, что весь объект на стеке — в Java на стеке только примитивы и ссылки"
+      - "Игнорировать Metaspace в Java 8+ — DI/proxy/CGLIB могут раздуть его"
+      - "Увеличивать -Xmx без анализа причины OOM (часто это утечка, не недостаток)"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Куда уходит OOM: Heap, Metaspace или native?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Области памяти JVM — где что живёт»?"
+    options:
+      - "Думать, что весь объект на стеке — в Java на стеке только примитивы и ссылки"
+      - "Запустить процесс с -Xmx512m, наполнить ArrayList, поймать OOM"
+      - "Можешь нарисовать схему памяти JVM"
+      - "Знаешь, чем Metaspace отличается от PermGen"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Думать, что весь объект на стеке — в Java на стеке только примитивы и ссылки»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Области памяти JVM — где что живёт»?"
+    options:
+      - "Heap (объекты, GC) ↔ Stack (фрейм метода, на поток)"
+      - "Думать, что весь объект на стеке — в Java на стеке только примитивы и ссылки"
+      - "Игнорировать Metaspace в Java 8+ — DI/proxy/CGLIB могут раздуть его"
+      - "Увеличивать -Xmx без анализа причины OOM (часто это утечка, не недостаток)"
+    answerIndex: 0
+    explanation: "Различение «Heap (объекты, GC) ↔ Stack (фрейм метода, на поток)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Области памяти JVM — где что живёт»?"
+    options:
+      - "Запустить процесс с -Xmx512m, наполнить ArrayList, поймать OOM"
+      - "Думать, что весь объект на стеке — в Java на стеке только примитивы и ссылки"
+      - "Игнорировать Metaspace в Java 8+ — DI/proxy/CGLIB могут раздуть его"
+      - "Увеличивать -Xmx без анализа причины OOM (часто это утечка, не недостаток)"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Запустить процесс с -Xmx512m, наполнить ArrayList, поймать OOM»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Области памяти JVM — где что живёт» работает?"
+    options:
+      - "Можешь нарисовать схему памяти JVM"
+      - "Думать, что весь объект на стеке — в Java на стеке только примитивы и ссылки"
+      - "Игнорировать Metaspace в Java 8+ — DI/proxy/CGLIB могут раздуть его"
+      - "Увеличивать -Xmx без анализа причины OOM (часто это утечка, не недостаток)"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Можешь нарисовать схему памяти JVM». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Области памяти JVM — где что живёт» как опору?"
+    options:
+      - "-Xms / -Xmx / -Xss / -XX:MaxMetaspaceSize / -XX:ReservedCodeCacheSize"
+      - "Думать, что весь объект на стеке — в Java на стеке только примитивы и ссылки"
+      - "Игнорировать Metaspace в Java 8+ — DI/proxy/CGLIB могут раздуть его"
+      - "Увеличивать -Xmx без анализа причины OOM (часто это утечка, не недостаток)"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «-Xms / -Xmx / -Xss / -XX:MaxMetaspaceSize / -XX:ReservedCodeCacheSize»"
+---
+
+## Зачем
+
+Память JVM: (1) Heap — объекты, разделён на Young (Eden + 2 Survivor) и Old gen, управляется GC; (2) Stack — на каждый поток, фреймы методов, локальные примитивы и ссылки, размер -Xss (default ~512KB-1MB); (3) Metaspace (Java 8+, заменил PermGen) — class metadata, в native memory; (4) PC Register — на поток, адрес текущей инструкции; (5) Native Method Stack — для JNI; (6) Code Cache — JIT-компилированный код. Параметры: -Xms / -Xmx (heap), -XX:MaxMetaspaceSize, -Xss, -XX:ReservedCodeCacheSize. OOM виды: Java heap space (heap), Metaspace, GC overhead limit exceeded (GC не успевает), unable to create new native thread (упёрлись в OS лимит), Direct buffer memory (off-heap через ByteBuffer.allocateDirect).
+
+## Ключевые различения
+
+- Heap (объекты, GC) ↔ Stack (фрейм метода, на поток)
+- Young gen (Eden+Survivor) ↔ Old gen (tenured) ↔ Metaspace (class metadata)
+- PermGen (≤ Java 7, fixed) ↔ Metaspace (Java 8+, native memory, auto-grow)
+- On-heap ↔ Off-heap (DirectByteBuffer, Unsafe.allocateMemory)
+
+## Технология
+
+- -Xms / -Xmx / -Xss / -XX:MaxMetaspaceSize / -XX:ReservedCodeCacheSize
+- jcmd <pid> VM.native_memory summary
+- jstat -gc <pid> 1s — мониторинг GC в реальном времени
+- MAT (Eclipse Memory Analyzer) для heap dump
+
+## Практика (упражнения)
+
+- Запустить процесс с -Xmx512m, наполнить ArrayList, поймать OOM
+- Спровоцировать Metaspace OOM через создание классов рантайм-генератором
+- Снять heap dump через jmap -dump:live,format=b,file=heap.bin <pid> — открыть в MAT
+
+## Маркеры освоения
+
+- Можешь нарисовать схему памяти JVM
+- Знаешь, чем Metaspace отличается от PermGen
+- Понимаешь, какой OOM требует -Xmx, какой -XX:MaxMetaspaceSize
+
+## Антипаттерны
+
+- Думать, что весь объект на стеке — в Java на стеке только примитивы и ссылки
+- Игнорировать Metaspace в Java 8+ — DI/proxy/CGLIB могут раздуть его
+- Увеличивать -Xmx без анализа причины OOM (часто это утечка, не недостаток)
+
+## Где в стеке
+
+**Уровень 3: JVM, GC, диагностика.** Что происходит «под капотом». Уровень между junior («GC чистит память») и senior (tuning под нагрузку). Middle должен знать виды OOM и план диагностики через heap dump.

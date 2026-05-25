@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: db-joins-window
+title: "JOIN, WHERE vs HAVING, оконные функции"
+summary: "В чём разница ROW_NUMBER, RANK, DENSE_RANK?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Знаешь разницу WHERE vs HAVING без думания"
+  - "Используешь оконные функции вместо self-join, где можно"
+  - "Различаешь RANK / DENSE_RANK / ROW_NUMBER"
+  - "Выполнять регулярно: Написать запрос: топ-3 товара по продажам в каждой категории (ROW_NUMBER + WHERE rn ≤ 3)"
+  - "Выполнять регулярно: Реализовать вторую по величине зарплату через RANK или LIMIT/OFFSET"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «JOIN, WHERE vs HAVING, оконные функции» начала работать?"
+    options:
+      - "Знаешь разницу WHERE vs HAVING без думания"
+      - "HAVING вместо WHERE для не-агрегатных условий — лишний overhead"
+      - "Self-join для топ-N в группе вместо ROW_NUMBER"
+      - "Игнорировать CROSS JOIN — иногда нужен для cartesian product"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь разницу WHERE vs HAVING без думания» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «INNER ↔ LEFT/RIGHT ↔ FULL ↔ CROSS JOIN»?"
+    back: "INNER ↔ LEFT/RIGHT ↔ FULL ↔ CROSS JOIN. JOIN типы: INNER (пересечение), LEFT/RIGHT (все из левой/правой + matching из другой), FULL (всё из обеих, null на missing), CROSS (декартово произведение)"
+  - front: "Что стоит за различением «WHERE (до GROUP BY) ↔ HAVING (после GROUP BY)»?"
+    back: "WHERE (до GROUP BY) ↔ HAVING (после GROUP BY). WHERE — фильтрация ДО GROUP BY (на строки), HAVING — ПОСЛЕ GROUP BY (на агрегаты, например HAVING COUNT(*) > 5)"
+  - front: "Что стоит за различением «ROW_NUMBER (1,2,3) ↔ RANK (1,1,3) ↔ DENSE_RANK (1,1,2)»?"
+    back: "ROW_NUMBER (1,2,3) ↔ RANK (1,1,3) ↔ DENSE_RANK (1,1,2). Оконные функции (OVER) — агрегаты, не сворачивающие строки: ROW_NUMBER() OVER (ORDER BY x) — уникальный номер; RANK() — пропускает после ties (1,1,3); DENSE_RANK() — не пропускает (1,1,2); LAG/LEAD — предыдущая/следующая строка; SUM/AVG OVER (PARTITION BY group ORDER BY x) — running totals"
+  - front: "Что стоит за различением «Aggregate (сворачивает) ↔ Window (сохраняет строки)»?"
+    back: "Aggregate (сворачивает) ↔ Window (сохраняет строки). CTE (WITH ...) — для читаемости и рекурсии"
+  - front: "По какому маркеру понять, что освоено: «Знаешь разницу WHERE vs HAVING без думания»?"
+    back: "Знаешь разницу WHERE vs HAVING без думания"
+  - front: "По какому маркеру понять, что освоено: «Используешь оконные функции вместо self-join, где можно»?"
+    back: "Используешь оконные функции вместо self-join, где можно"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «JOIN, WHERE vs HAVING, оконные функции» в центр?"
+    options:
+      - "В чём разница ROW_NUMBER, RANK, DENSE_RANK?"
+      - "HAVING вместо WHERE для не-агрегатных условий — лишний overhead"
+      - "Self-join для топ-N в группе вместо ROW_NUMBER"
+      - "Игнорировать CROSS JOIN — иногда нужен для cartesian product"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «В чём разница ROW_NUMBER, RANK, DENSE_RANK?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «JOIN, WHERE vs HAVING, оконные функции»?"
+    options:
+      - "HAVING вместо WHERE для не-агрегатных условий — лишний overhead"
+      - "Написать запрос: топ-3 товара по продажам в каждой категории (ROW_NUMBER + WHERE rn ≤ 3)"
+      - "Знаешь разницу WHERE vs HAVING без думания"
+      - "Используешь оконные функции вместо self-join, где можно"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «HAVING вместо WHERE для не-агрегатных условий — лишний overhead»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «JOIN, WHERE vs HAVING, оконные функции»?"
+    options:
+      - "INNER ↔ LEFT/RIGHT ↔ FULL ↔ CROSS JOIN"
+      - "HAVING вместо WHERE для не-агрегатных условий — лишний overhead"
+      - "Self-join для топ-N в группе вместо ROW_NUMBER"
+      - "Игнорировать CROSS JOIN — иногда нужен для cartesian product"
+    answerIndex: 0
+    explanation: "Различение «INNER ↔ LEFT/RIGHT ↔ FULL ↔ CROSS JOIN» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «JOIN, WHERE vs HAVING, оконные функции»?"
+    options:
+      - "Написать запрос: топ-3 товара по продажам в каждой категории (ROW_NUMBER + WHERE rn ≤ 3)"
+      - "HAVING вместо WHERE для не-агрегатных условий — лишний overhead"
+      - "Self-join для топ-N в группе вместо ROW_NUMBER"
+      - "Игнорировать CROSS JOIN — иногда нужен для cartesian product"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Написать запрос: топ-3 товара по продажам в каждой категории (ROW_NUMBER + WHERE rn ≤ 3)»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «JOIN, WHERE vs HAVING, оконные функции» работает?"
+    options:
+      - "Знаешь разницу WHERE vs HAVING без думания"
+      - "HAVING вместо WHERE для не-агрегатных условий — лишний overhead"
+      - "Self-join для топ-N в группе вместо ROW_NUMBER"
+      - "Игнорировать CROSS JOIN — иногда нужен для cartesian product"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь разницу WHERE vs HAVING без думания». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «JOIN, WHERE vs HAVING, оконные функции» как опору?"
+    options:
+      - "GROUP BY + HAVING + COUNT(*)/SUM/AVG/MIN/MAX"
+      - "HAVING вместо WHERE для не-агрегатных условий — лишний overhead"
+      - "Self-join для топ-N в группе вместо ROW_NUMBER"
+      - "Игнорировать CROSS JOIN — иногда нужен для cartesian product"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «GROUP BY + HAVING + COUNT(*)/SUM/AVG/MIN/MAX»"
+---
+
+## Зачем
+
+JOIN типы: INNER (пересечение), LEFT/RIGHT (все из левой/правой + matching из другой), FULL (всё из обеих, null на missing), CROSS (декартово произведение). WHERE — фильтрация ДО GROUP BY (на строки), HAVING — ПОСЛЕ GROUP BY (на агрегаты, например HAVING COUNT(*) > 5). Оконные функции (OVER) — агрегаты, не сворачивающие строки: ROW_NUMBER() OVER (ORDER BY x) — уникальный номер; RANK() — пропускает после ties (1,1,3); DENSE_RANK() — не пропускает (1,1,2); LAG/LEAD — предыдущая/следующая строка; SUM/AVG OVER (PARTITION BY group ORDER BY x) — running totals. CTE (WITH ...) — для читаемости и рекурсии. CTE с RECURSIVE — для деревьев.
+
+## Ключевые различения
+
+- INNER ↔ LEFT/RIGHT ↔ FULL ↔ CROSS JOIN
+- WHERE (до GROUP BY) ↔ HAVING (после GROUP BY)
+- ROW_NUMBER (1,2,3) ↔ RANK (1,1,3) ↔ DENSE_RANK (1,1,2)
+- Aggregate (сворачивает) ↔ Window (сохраняет строки)
+
+## Технология
+
+- GROUP BY + HAVING + COUNT(*)/SUM/AVG/MIN/MAX
+- ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)
+- LAG / LEAD / FIRST_VALUE / LAST_VALUE
+- WITH cte AS (...) SELECT ... (CTE)
+
+## Практика (упражнения)
+
+- Написать запрос: топ-3 товара по продажам в каждой категории (ROW_NUMBER + WHERE rn ≤ 3)
+- Реализовать вторую по величине зарплату через RANK или LIMIT/OFFSET
+- CROSS JOIN для генерации календаря дат
+
+## Маркеры освоения
+
+- Знаешь разницу WHERE vs HAVING без думания
+- Используешь оконные функции вместо self-join, где можно
+- Различаешь RANK / DENSE_RANK / ROW_NUMBER
+
+## Антипаттерны
+
+- HAVING вместо WHERE для не-агрегатных условий — лишний overhead
+- Self-join для топ-N в группе вместо ROW_NUMBER
+- Игнорировать CROSS JOIN — иногда нужен для cartesian product
+
+## Где в стеке
+
+**Уровень 5: Database, JPA, Hibernate.** После Spring — самый частый блок. N+1 спросят в 8/8 компаний. Уровни изоляции, planner B-tree, lazy/eager — must-know.

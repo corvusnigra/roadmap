@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: design-circuit-breaker
+title: "Circuit Breaker и Retry с jitter (Resilience4j)"
+summary: "Зачем HALF_OPEN и в чём опасность retry без jitter?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Используешь CircuitBreaker для всех внешних HTTP"
+  - "Не делаешь retry на 4xx"
+  - "Знаешь, зачем jitter в retry"
+  - "Выполнять регулярно: Обернуть REST-клиент в @CircuitBreaker с failureRateThreshold = 50%"
+  - "Выполнять регулярно: Спровоцировать OPEN через 5 failures, дождаться HALF_OPEN"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Circuit Breaker и Retry с jitter (Resilience4j)» начала работать?"
+    options:
+      - "Используешь CircuitBreaker для всех внешних HTTP"
+      - "Retry без jitter — retry storm на восстанавливающийся сервис"
+      - "Бесконечный retry без max attempts — заваливаешь pool"
+      - "Retry на POST без idempotency — двойная операция"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Используешь CircuitBreaker для всех внешних HTTP» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «CLOSED (норма) ↔ OPEN (fail-fast) ↔ HALF_OPEN (пробные запросы)»?"
+    back: "CLOSED (норма) ↔ OPEN (fail-fast) ↔ HALF_OPEN (пробные запросы). Circuit Breaker — паттерн от каскадного отказа"
+  - front: "Что стоит за различением «Retry без jitter ↔ Retry с exponential backoff + jitter»?"
+    back: "Retry без jitter ↔ Retry с exponential backoff + jitter. Три состояния: CLOSED (всё OK, считаем failure rate), OPEN (failure rate > threshold — все запросы fail-fast без вызова downstream), HALF_OPEN (после timeout — пропускаем пробные запросы; success → CLOSED, fail → OPEN)"
+  - front: "Что стоит за различением «Transient errors (network, timeout) ↔ Permanent (4xx, validation)»?"
+    back: "Transient errors (network, timeout) ↔ Permanent (4xx, validation). Без CB одно медленное API забивает thread pool и роняет весь сервис"
+  - front: "Что стоит за различением «Hystrix (legacy) ↔ Resilience4j (modern)»?"
+    back: "Hystrix (legacy) ↔ Resilience4j (modern). Retry — повтор при failure, но: (1) опасен retry storm — все клиенты одновременно ретраят после обрыва, downstream добивает; решение — exponential backoff + jitter (random шум для расфазировки)"
+  - front: "По какому маркеру понять, что освоено: «Используешь CircuitBreaker для всех внешних HTTP»?"
+    back: "Используешь CircuitBreaker для всех внешних HTTP"
+  - front: "По какому маркеру понять, что освоено: «Не делаешь retry на 4xx»?"
+    back: "Не делаешь retry на 4xx"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Circuit Breaker и Retry с jitter (Resilience4j)» в центр?"
+    options:
+      - "Зачем HALF_OPEN и в чём опасность retry без jitter?"
+      - "Retry без jitter — retry storm на восстанавливающийся сервис"
+      - "Бесконечный retry без max attempts — заваливаешь pool"
+      - "Retry на POST без idempotency — двойная операция"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Зачем HALF_OPEN и в чём опасность retry без jitter?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Circuit Breaker и Retry с jitter (Resilience4j)»?"
+    options:
+      - "Retry без jitter — retry storm на восстанавливающийся сервис"
+      - "Обернуть REST-клиент в @CircuitBreaker с failureRateThreshold = 50%"
+      - "Используешь CircuitBreaker для всех внешних HTTP"
+      - "Не делаешь retry на 4xx"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Retry без jitter — retry storm на восстанавливающийся сервис»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Circuit Breaker и Retry с jitter (Resilience4j)»?"
+    options:
+      - "CLOSED (норма) ↔ OPEN (fail-fast) ↔ HALF_OPEN (пробные запросы)"
+      - "Retry без jitter — retry storm на восстанавливающийся сервис"
+      - "Бесконечный retry без max attempts — заваливаешь pool"
+      - "Retry на POST без idempotency — двойная операция"
+    answerIndex: 0
+    explanation: "Различение «CLOSED (норма) ↔ OPEN (fail-fast) ↔ HALF_OPEN (пробные запросы)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Circuit Breaker и Retry с jitter (Resilience4j)»?"
+    options:
+      - "Обернуть REST-клиент в @CircuitBreaker с failureRateThreshold = 50%"
+      - "Retry без jitter — retry storm на восстанавливающийся сервис"
+      - "Бесконечный retry без max attempts — заваливаешь pool"
+      - "Retry на POST без idempotency — двойная операция"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Обернуть REST-клиент в @CircuitBreaker с failureRateThreshold = 50%»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Circuit Breaker и Retry с jitter (Resilience4j)» работает?"
+    options:
+      - "Используешь CircuitBreaker для всех внешних HTTP"
+      - "Retry без jitter — retry storm на восстанавливающийся сервис"
+      - "Бесконечный retry без max attempts — заваливаешь pool"
+      - "Retry на POST без idempotency — двойная операция"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Используешь CircuitBreaker для всех внешних HTTP». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Circuit Breaker и Retry с jitter (Resilience4j)» как опору?"
+    options:
+      - "Resilience4j: CircuitBreaker, Retry, RateLimiter, Bulkhead, TimeLimiter"
+      - "Retry без jitter — retry storm на восстанавливающийся сервис"
+      - "Бесконечный retry без max attempts — заваливаешь pool"
+      - "Retry на POST без idempotency — двойная операция"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Resilience4j: CircuitBreaker, Retry, RateLimiter, Bulkhead, TimeLimiter»"
+---
+
+## Зачем
+
+Circuit Breaker — паттерн от каскадного отказа. Три состояния: CLOSED (всё OK, считаем failure rate), OPEN (failure rate > threshold — все запросы fail-fast без вызова downstream), HALF_OPEN (после timeout — пропускаем пробные запросы; success → CLOSED, fail → OPEN). Без CB одно медленное API забивает thread pool и роняет весь сервис. Retry — повтор при failure, но: (1) опасен retry storm — все клиенты одновременно ретраят после обрыва, downstream добивает; решение — exponential backoff + jitter (random шум для расфазировки). (2) Retry имеет смысл только для transient errors (network, timeout), не для 4xx. Resilience4j — composable: Retry + CircuitBreaker + RateLimiter + Bulkhead + TimeLimiter, каждый wrapper над Supplier/Function.
+
+## Ключевые различения
+
+- CLOSED (норма) ↔ OPEN (fail-fast) ↔ HALF_OPEN (пробные запросы)
+- Retry без jitter ↔ Retry с exponential backoff + jitter
+- Transient errors (network, timeout) ↔ Permanent (4xx, validation)
+- Hystrix (legacy) ↔ Resilience4j (modern)
+
+## Технология
+
+- Resilience4j: CircuitBreaker, Retry, RateLimiter, Bulkhead, TimeLimiter
+- Spring Cloud Circuit Breaker (abstraction)
+- @CircuitBreaker / @Retry аннотации
+- Micrometer интеграция для метрик
+
+## Практика (упражнения)
+
+- Обернуть REST-клиент в @CircuitBreaker с failureRateThreshold = 50%
+- Спровоцировать OPEN через 5 failures, дождаться HALF_OPEN
+- Добавить retry с exponential backoff (initial 100ms, multiplier 2, jitter 0.5)
+
+## Маркеры освоения
+
+- Используешь CircuitBreaker для всех внешних HTTP
+- Не делаешь retry на 4xx
+- Знаешь, зачем jitter в retry
+
+## Антипаттерны
+
+- Retry без jitter — retry storm на восстанавливающийся сервис
+- Бесконечный retry без max attempts — заваливаешь pool
+- Retry на POST без idempotency — двойная операция
+
+## Где в стеке
+
+**Уровень 6: System Design, Tools, DevOps.** Прикладная часть. На middle — концептуальное понимание Kafka ordering, Circuit Breaker состояний, Docker multi-stage. JUnit+Mockito — практика на live coding.

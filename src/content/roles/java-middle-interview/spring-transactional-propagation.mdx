@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: spring-transactional-propagation
+title: "Propagation: REQUIRED, REQUIRES_NEW, NESTED"
+summary: "Что произойдёт, если REQUIRES_NEW вложен в REQUIRED, и внешний откатится?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Знаешь, что REQUIRES_NEW требует второй коннект"
+  - "Понимаешь, когда NESTED работает, а когда нет"
+  - "Не используешь REQUIRES_NEW «на всякий случай»"
+  - "Выполнять регулярно: Реализовать @Transactional(REQUIRES_NEW) для логирования действий — даже при rollback внешней транзакции логи сохраняются"
+  - "Выполнять регулярно: NESTED для частичного rollback (savepoint)"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Propagation: REQUIRED, REQUIRES_NEW, NESTED» начала работать?"
+    options:
+      - "Знаешь, что REQUIRES_NEW требует второй коннект"
+      - "REQUIRES_NEW в цикле — каждый раз новый коннект, исчерпание пула"
+      - "Полагаться на NESTED без проверки, что JDBC-driver поддерживает savepoints"
+      - "Использовать default REQUIRED для всего — иногда нужна изоляция"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь, что REQUIRES_NEW требует второй коннект» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «REQUIRED (присоединиться/новая) ↔ REQUIRES_NEW (новая физическая)»?"
+    back: "REQUIRED (присоединиться/новая) ↔ REQUIRES_NEW (новая физическая). Propagation определяет поведение, если уже открыта транзакция: (1) REQUIRED (default) — присоединиться к существующей или открыть новую; (2) REQUIRES_NEW — приостановить текущую, открыть новую (физически отдельный коннект! commit/rollback независимо); (3) NESTED — savepoint в текущей транзакции (commit при выходе из метода, rollback откатывает только до savepoint); (4) SUPPORTS — присоединиться, если есть, иначе без транзакции; (5) MANDATORY — обязательна внешняя; (6) NEVER — не должно быть внешней; (7) NOT_SUPPORTED — приостановить и работать без; (8) NESTED"
+  - front: "Что стоит за различением «NESTED (savepoint) ↔ REQUIRES_NEW (отдельный коннект)»?"
+    back: "NESTED (savepoint) ↔ REQUIRES_NEW (отдельный коннект). REQUIRES_NEW — самое тяжёлое: лишний коннект, может deadlock'нуться с внешней"
+  - front: "Что стоит за различением «MANDATORY (требует внешнюю) ↔ NEVER (запрещает внешнюю)»?"
+    back: "MANDATORY (требует внешнюю) ↔ NEVER (запрещает внешнюю). NESTED работает только на JDBC-savepoints (не везде)."
+  - front: "Что стоит за различением «SUPPORTS (без транзакции, если нет) ↔ NOT_SUPPORTED (suspend + без)»?"
+    back: "SUPPORTS (без транзакции, если нет) ↔ NOT_SUPPORTED (suspend + без). Propagation определяет поведение, если уже открыта транзакция: (1) REQUIRED (default) — присоединиться к существующей или открыть новую; (2) REQUIRES_NEW — приостановить текущую, открыть новую (физически отдельный коннект! commit/rollback независимо); (3) NESTED — savepoint в текущей транзакции (commit при выходе из метода, rollback откатывает только до savepoint); (4) SUPPORTS — присоединиться, если есть, иначе без транзакции; (5) MANDATORY — обязательна внешняя; (6) NEVER — не должно быть внешней; (7) NOT_SUPPORTED — приостановить и работать без; (8) NESTED. REQUIRES_NEW — самое тяжёлое: лишний коннект, может deadlock'нуться с внешней. NESTED работает только на JDBC-savepoints (не везде)."
+  - front: "По какому маркеру понять, что освоено: «Знаешь, что REQUIRES_NEW требует второй коннект»?"
+    back: "Знаешь, что REQUIRES_NEW требует второй коннект"
+  - front: "По какому маркеру понять, что освоено: «Понимаешь, когда NESTED работает, а когда нет»?"
+    back: "Понимаешь, когда NESTED работает, а когда нет"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Propagation: REQUIRED, REQUIRES_NEW, NESTED» в центр?"
+    options:
+      - "Что произойдёт, если REQUIRES_NEW вложен в REQUIRED, и внешний откатится?"
+      - "REQUIRES_NEW в цикле — каждый раз новый коннект, исчерпание пула"
+      - "Полагаться на NESTED без проверки, что JDBC-driver поддерживает savepoints"
+      - "Использовать default REQUIRED для всего — иногда нужна изоляция"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Что произойдёт, если REQUIRES_NEW вложен в REQUIRED, и внешний откатится?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Propagation: REQUIRED, REQUIRES_NEW, NESTED»?"
+    options:
+      - "REQUIRES_NEW в цикле — каждый раз новый коннект, исчерпание пула"
+      - "Реализовать @Transactional(REQUIRES_NEW) для логирования действий — даже при rollback внешней транзакции логи сохраняются"
+      - "Знаешь, что REQUIRES_NEW требует второй коннект"
+      - "Понимаешь, когда NESTED работает, а когда нет"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «REQUIRES_NEW в цикле — каждый раз новый коннект, исчерпание пула»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Propagation: REQUIRED, REQUIRES_NEW, NESTED»?"
+    options:
+      - "REQUIRED (присоединиться/новая) ↔ REQUIRES_NEW (новая физическая)"
+      - "REQUIRES_NEW в цикле — каждый раз новый коннект, исчерпание пула"
+      - "Полагаться на NESTED без проверки, что JDBC-driver поддерживает savepoints"
+      - "Использовать default REQUIRED для всего — иногда нужна изоляция"
+    answerIndex: 0
+    explanation: "Различение «REQUIRED (присоединиться/новая) ↔ REQUIRES_NEW (новая физическая)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Propagation: REQUIRED, REQUIRES_NEW, NESTED»?"
+    options:
+      - "Реализовать @Transactional(REQUIRES_NEW) для логирования действий — даже при rollback внешней транзакции логи сохраняются"
+      - "REQUIRES_NEW в цикле — каждый раз новый коннект, исчерпание пула"
+      - "Полагаться на NESTED без проверки, что JDBC-driver поддерживает savepoints"
+      - "Использовать default REQUIRED для всего — иногда нужна изоляция"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Реализовать @Transactional(REQUIRES_NEW) для логирования действий — даже при rollback внешней транзакции логи сохраняются»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Propagation: REQUIRED, REQUIRES_NEW, NESTED» работает?"
+    options:
+      - "Знаешь, что REQUIRES_NEW требует второй коннект"
+      - "REQUIRES_NEW в цикле — каждый раз новый коннект, исчерпание пула"
+      - "Полагаться на NESTED без проверки, что JDBC-driver поддерживает savepoints"
+      - "Использовать default REQUIRED для всего — иногда нужна изоляция"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь, что REQUIRES_NEW требует второй коннект». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Propagation: REQUIRED, REQUIRES_NEW, NESTED» как опору?"
+    options:
+      - "@Transactional(propagation = Propagation.REQUIRES_NEW)"
+      - "REQUIRES_NEW в цикле — каждый раз новый коннект, исчерпание пула"
+      - "Полагаться на NESTED без проверки, что JDBC-driver поддерживает savepoints"
+      - "Использовать default REQUIRED для всего — иногда нужна изоляция"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «@Transactional(propagation = Propagation.REQUIRES_NEW)»"
+---
+
+## Зачем
+
+Propagation определяет поведение, если уже открыта транзакция: (1) REQUIRED (default) — присоединиться к существующей или открыть новую; (2) REQUIRES_NEW — приостановить текущую, открыть новую (физически отдельный коннект! commit/rollback независимо); (3) NESTED — savepoint в текущей транзакции (commit при выходе из метода, rollback откатывает только до savepoint); (4) SUPPORTS — присоединиться, если есть, иначе без транзакции; (5) MANDATORY — обязательна внешняя; (6) NEVER — не должно быть внешней; (7) NOT_SUPPORTED — приостановить и работать без; (8) NESTED. REQUIRES_NEW — самое тяжёлое: лишний коннект, может deadlock'нуться с внешней. NESTED работает только на JDBC-savepoints (не везде).
+
+## Ключевые различения
+
+- REQUIRED (присоединиться/новая) ↔ REQUIRES_NEW (новая физическая)
+- NESTED (savepoint) ↔ REQUIRES_NEW (отдельный коннект)
+- MANDATORY (требует внешнюю) ↔ NEVER (запрещает внешнюю)
+- SUPPORTS (без транзакции, если нет) ↔ NOT_SUPPORTED (suspend + без)
+
+## Технология
+
+- @Transactional(propagation = Propagation.REQUIRES_NEW)
+- @Transactional(propagation = Propagation.NESTED)
+- JpaTransactionManager / DataSourceTransactionManager
+- JpaProperties.setOpenInView (антипаттерн!)
+
+## Практика (упражнения)
+
+- Реализовать @Transactional(REQUIRES_NEW) для логирования действий — даже при rollback внешней транзакции логи сохраняются
+- NESTED для частичного rollback (savepoint)
+- Спровоцировать deadlock через REQUIRES_NEW на одной строке таблицы
+
+## Маркеры освоения
+
+- Знаешь, что REQUIRES_NEW требует второй коннект
+- Понимаешь, когда NESTED работает, а когда нет
+- Не используешь REQUIRES_NEW «на всякий случай»
+
+## Антипаттерны
+
+- REQUIRES_NEW в цикле — каждый раз новый коннект, исчерпание пула
+- Полагаться на NESTED без проверки, что JDBC-driver поддерживает savepoints
+- Использовать default REQUIRED для всего — иногда нужна изоляция
+
+## Где в стеке
+
+**Уровень 4: Spring и Spring Boot.** Любая работа с Java middle = Spring. Ключевая ловушка — self-invocation @Transactional/@Async через прокси: спросят с вероятностью 100%.

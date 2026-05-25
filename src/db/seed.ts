@@ -12,6 +12,7 @@ import { nodePrerequisites, nodes, roles } from "@/db/schema";
 import { buildGh600NodeSeeds } from "@/scripts/gh600-curriculum";
 import { buildLevenchukNodeSeeds } from "@/scripts/levenchuk-curriculum";
 import { buildVibecodingNodeSeeds } from "@/scripts/vibecoding-curriculum";
+import { buildJavaMiddleNodeSeeds } from "@/scripts/java-middle-curriculum";
 
 interface RoleSeed {
   slug: string;
@@ -134,7 +135,20 @@ const VIBECODING: RoleConfig = {
   nodes: buildVibecodingNodeSeeds(),
 };
 
-const ROLES: RoleConfig[] = [FRONTEND, GH600, LEVENCHUK, VIBECODING];
+// ----- Role 5: Java Middle Interview ------------------------------------
+
+const JAVA_MIDDLE: RoleConfig = {
+  role: {
+    slug: "java-middle-interview",
+    title: "Java Middle Interview",
+    summary:
+      "Подготовка к собесу на Java Middle: 36 must-have тем (4+/8 частота по 8 разборам Sber/T-Bank/AlfaBank/VK/Ozon/Yandex/Лига). Семь уровней: Core → Collections → Concurrency → JVM → Spring → DB → System Design.",
+    status: "published",
+  },
+  nodes: buildJavaMiddleNodeSeeds(),
+};
+
+const ROLES: RoleConfig[] = [FRONTEND, GH600, LEVENCHUK, VIBECODING, JAVA_MIDDLE];
 
 async function seedRole(
   db: ReturnType<typeof drizzle>,

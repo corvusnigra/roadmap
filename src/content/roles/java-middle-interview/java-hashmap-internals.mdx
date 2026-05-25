@@ -1,0 +1,132 @@
+---
+schemaVersion: 1
+slug: java-hashmap-internals
+title: "HashMap внутреннее устройство"
+summary: "Что произошло в Java 8 и почему treeify?"
+status: published
+estimatedMinutes: 35
+prerequisites: []
+learningOutcomes:
+  - "Можешь нарисовать схему бакетов и описать resize за 2 минуты"
+  - "Знаешь, почему capacity всегда степень двойки"
+  - "Понимаешь, почему hashCode = 0 не падает, но деградирует"
+  - "Выполнять регулярно: Открыть OpenJDK source HashMap.putVal — прочитать алгоритм"
+  - "Выполнять регулярно: Реализовать тест: 1M put с заведомо коллизирующими ключами (одинаковый hashCode) — замерить get"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «HashMap внутреннее устройство» начала работать?"
+    options:
+      - "Можешь нарисовать схему бакетов и описать resize за 2 минуты"
+      - "Думать, что HashMap всегда O(1) — при плохом hash это O(n) или O(log n)"
+      - "Использовать HashMap в многопоточном коде (Java 7 — infinite loop при resize!)"
+      - "Менять mutable-ключ после put"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Можешь нарисовать схему бакетов и описать resize за 2 минуты» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Java 7 (LinkedList в бакете) ↔ Java 8 (TreeNode при ≥ 8 в одном бакете)»?"
+    back: "Java 7 (LinkedList в бакете) ↔ Java 8 (TreeNode при ≥ 8 в одном бакете). HashMap — массив бакетов (default capacity 16, load factor 0.75)"
+  - front: "Что стоит за различением «TREEIFY_THRESHOLD = 8 ↔ UNTREEIFY_THRESHOLD = 6»?"
+    back: "TREEIFY_THRESHOLD = 8 ↔ UNTREEIFY_THRESHOLD = 6. Индекс бакета: (hash ^ (hash >>> 16)) & (capacity - 1) — XOR верхней и нижней половин хэша для лучшего распределения"
+  - front: "Что стоит за различением «MIN_TREEIFY_CAPACITY = 64 (иначе resize вместо treeify)»?"
+    back: "MIN_TREEIFY_CAPACITY = 64 (иначе resize вместо treeify). Коллизии хранятся в LinkedList (Java 7) или TreeNode/RBT (Java 8 при достижении TREEIFY_THRESHOLD=8 элементов в бакете и MIN_TREEIFY_CAPACITY=64; иначе resize)"
+  - front: "Что стоит за различением «Capacity всегда степень двойки — для маски (& cap-1) вместо modulo»?"
+    back: "Capacity всегда степень двойки — для маски (& cap-1) вместо modulo. Резизинг при size > capacity * loadFactor: удваивается массив, элементы перераспределяются"
+  - front: "По какому маркеру понять, что освоено: «Можешь нарисовать схему бакетов и описать resize за 2 минуты»?"
+    back: "Можешь нарисовать схему бакетов и описать resize за 2 минуты"
+  - front: "По какому маркеру понять, что освоено: «Знаешь, почему capacity всегда степень двойки»?"
+    back: "Знаешь, почему capacity всегда степень двойки"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «HashMap внутреннее устройство» в центр?"
+    options:
+      - "Что произошло в Java 8 и почему treeify?"
+      - "Думать, что HashMap всегда O(1) — при плохом hash это O(n) или O(log n)"
+      - "Использовать HashMap в многопоточном коде (Java 7 — infinite loop при resize!)"
+      - "Менять mutable-ключ после put"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Что произошло в Java 8 и почему treeify?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «HashMap внутреннее устройство»?"
+    options:
+      - "Думать, что HashMap всегда O(1) — при плохом hash это O(n) или O(log n)"
+      - "Открыть OpenJDK source HashMap.putVal — прочитать алгоритм"
+      - "Можешь нарисовать схему бакетов и описать resize за 2 минуты"
+      - "Знаешь, почему capacity всегда степень двойки"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Думать, что HashMap всегда O(1) — при плохом hash это O(n) или O(log n)»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «HashMap внутреннее устройство»?"
+    options:
+      - "Java 7 (LinkedList в бакете) ↔ Java 8 (TreeNode при ≥ 8 в одном бакете)"
+      - "Думать, что HashMap всегда O(1) — при плохом hash это O(n) или O(log n)"
+      - "Использовать HashMap в многопоточном коде (Java 7 — infinite loop при resize!)"
+      - "Менять mutable-ключ после put"
+    answerIndex: 0
+    explanation: "Различение «Java 7 (LinkedList в бакете) ↔ Java 8 (TreeNode при ≥ 8 в одном бакете)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «HashMap внутреннее устройство»?"
+    options:
+      - "Открыть OpenJDK source HashMap.putVal — прочитать алгоритм"
+      - "Думать, что HashMap всегда O(1) — при плохом hash это O(n) или O(log n)"
+      - "Использовать HashMap в многопоточном коде (Java 7 — infinite loop при resize!)"
+      - "Менять mutable-ключ после put"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Открыть OpenJDK source HashMap.putVal — прочитать алгоритм»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «HashMap внутреннее устройство» работает?"
+    options:
+      - "Можешь нарисовать схему бакетов и описать resize за 2 минуты"
+      - "Думать, что HashMap всегда O(1) — при плохом hash это O(n) или O(log n)"
+      - "Использовать HashMap в многопоточном коде (Java 7 — infinite loop при resize!)"
+      - "Менять mutable-ключ после put"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Можешь нарисовать схему бакетов и описать resize за 2 минуты». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «HashMap внутреннее устройство» как опору?"
+    options:
+      - "HashMap, LinkedHashMap (insertion/access order), TreeMap (red-black tree)"
+      - "Думать, что HashMap всегда O(1) — при плохом hash это O(n) или O(log n)"
+      - "Использовать HashMap в многопоточном коде (Java 7 — infinite loop при resize!)"
+      - "Менять mutable-ключ после put"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «HashMap, LinkedHashMap (insertion/access order), TreeMap (red-black tree)»"
+---
+
+## Зачем
+
+HashMap — массив бакетов (default capacity 16, load factor 0.75). Индекс бакета: (hash ^ (hash >>> 16)) & (capacity - 1) — XOR верхней и нижней половин хэша для лучшего распределения. Коллизии хранятся в LinkedList (Java 7) или TreeNode/RBT (Java 8 при достижении TREEIFY_THRESHOLD=8 элементов в бакете и MIN_TREEIFY_CAPACITY=64; иначе resize). Резизинг при size > capacity * loadFactor: удваивается массив, элементы перераспределяются. С Java 8 при resize: каждый элемент остаётся в исходном бакете или уходит в (исходный + старая capacity) — без полного rehash. ConcurrentHashMap.put — non-blocking CAS на бакетах, synchronized на головах списка/дерева.
+
+## Ключевые различения
+
+- Java 7 (LinkedList в бакете) ↔ Java 8 (TreeNode при ≥ 8 в одном бакете)
+- TREEIFY_THRESHOLD = 8 ↔ UNTREEIFY_THRESHOLD = 6
+- MIN_TREEIFY_CAPACITY = 64 (иначе resize вместо treeify)
+- Capacity всегда степень двойки — для маски (& cap-1) вместо modulo
+
+## Технология
+
+- HashMap, LinkedHashMap (insertion/access order), TreeMap (red-black tree)
+- Map.of() / Map.copyOf() — immutable
+- Hash spread: (h = key.hashCode()) ^ (h >>> 16)
+
+## Практика (упражнения)
+
+- Открыть OpenJDK source HashMap.putVal — прочитать алгоритм
+- Реализовать тест: 1M put с заведомо коллизирующими ключами (одинаковый hashCode) — замерить get
+- Сравнить производительность HashMap vs TreeMap на 1M ключах
+
+## Маркеры освоения
+
+- Можешь нарисовать схему бакетов и описать resize за 2 минуты
+- Знаешь, почему capacity всегда степень двойки
+- Понимаешь, почему hashCode = 0 не падает, но деградирует
+
+## Антипаттерны
+
+- Думать, что HashMap всегда O(1) — при плохом hash это O(n) или O(log n)
+- Использовать HashMap в многопоточном коде (Java 7 — infinite loop при resize!)
+- Менять mutable-ключ после put
+
+## Где в стеке
+
+**Уровень 1: Collections.** Топ-частотный блок (HashMap спросят в 8/8 компаний). Знать внутренности: treeify в Java 8, resize, cache locality LinkedList, segmenting в ConcurrentHashMap.

@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-oom-diagnostics
+title: "OOM: виды, диагностика, heap dump"
+summary: "Я получил OutOfMemoryError. Что делать первым?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Знаешь 5 видов OOM"
+  - "Понимаешь, что увеличить -Xmx — не решение, а отсрочка"
+  - "Можешь интерпретировать heap dump в MAT"
+  - "Выполнять регулярно: Спровоцировать утечку через ThreadLocal в Executor (не вызывать remove)"
+  - "Выполнять регулярно: Снять heap dump, открыть в MAT, найти Dominator Tree"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «OOM: виды, диагностика, heap dump» начала работать?"
+    options:
+      - "Знаешь 5 видов OOM"
+      - "Увеличивать -Xmx без диагностики причины"
+      - "Игнорировать heap dump («долго анализировать») — баг возвращается"
+      - "Считать, что GC сломан, когда дело в утечке"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь 5 видов OOM» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Heap OOM (объекты) ↔ Metaspace OOM (классы) ↔ Native OOM (off-heap)»?"
+    back: "Heap OOM (объекты) ↔ Metaspace OOM (классы) ↔ Native OOM (off-heap). Виды OOM: (1) «Java heap space» — кончилась куча, обычно утечка или недостаток -Xmx; (2) «Metaspace» — class loader leak или раздутый proxy; (3) «GC overhead limit exceeded» — > 98% времени в GC, < 2% освобождается; (4) «unable to create new native thread» — OS лимит threads или -Xss слишком большой; (5) «Direct buffer memory» — off-heap"
+  - front: "Что стоит за различением «Утечка (объект reachable, но не нужен) ↔ Недостаток памяти (объекты нужны)»?"
+    back: "Утечка (объект reachable, но не нужен) ↔ Недостаток памяти (объекты нужны). План диагностики: (a) -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/heap.bin — авто-dump при падении; (b) jmap -dump:live,format=b,file=heap.bin <pid> — вручную; (c) открыть в MAT, найти Dominator Tree, посмотреть Top Consumers; (d) типичные подозреваемые: static-кэши без TTL, ThreadLocal в пуле потоков, незакрытые ресурсы"
+  - front: "Что стоит за различением «GC roots: Thread stack, static, JNI references, classloader»?"
+    back: "GC roots: Thread stack, static, JNI references, classloader. Утечка в Java = «GC не может собрать живой объект» (есть reachability через GC roots), не баг GC."
+  - front: "Что стоит за различением «Dominator Tree ↔ References Tree (в MAT)»?"
+    back: "Dominator Tree ↔ References Tree (в MAT). Виды OOM: (1) «Java heap space» — кончилась куча, обычно утечка или недостаток -Xmx; (2) «Metaspace» — class loader leak или раздутый proxy; (3) «GC overhead limit exceeded» — > 98% времени в GC, < 2% освобождается; (4) «unable to create new native thread» — OS лимит threads или -Xss слишком большой; (5) «Direct buffer memory» — off-heap. План диагностики: (a) -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/heap.bin — авто-dump при падении; (b) jmap -dump:live,format=b,file=heap.bin <pid> — вручную; (c) открыть в MAT, найти Dominator Tree, посмотреть Top Consumers; (d) типичные подозреваемые: static-кэши без TTL, ThreadLocal в пуле потоков, незакрытые ресурсы. Утечка в Java = «GC не может собрать живой объект» (есть reachability через GC roots), не баг GC."
+  - front: "По какому маркеру понять, что освоено: «Знаешь 5 видов OOM»?"
+    back: "Знаешь 5 видов OOM"
+  - front: "По какому маркеру понять, что освоено: «Понимаешь, что увеличить -Xmx — не решение, а отсрочка»?"
+    back: "Понимаешь, что увеличить -Xmx — не решение, а отсрочка"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «OOM: виды, диагностика, heap dump» в центр?"
+    options:
+      - "Я получил OutOfMemoryError. Что делать первым?"
+      - "Увеличивать -Xmx без диагностики причины"
+      - "Игнорировать heap dump («долго анализировать») — баг возвращается"
+      - "Считать, что GC сломан, когда дело в утечке"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Я получил OutOfMemoryError. Что делать первым?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «OOM: виды, диагностика, heap dump»?"
+    options:
+      - "Увеличивать -Xmx без диагностики причины"
+      - "Спровоцировать утечку через ThreadLocal в Executor (не вызывать remove)"
+      - "Знаешь 5 видов OOM"
+      - "Понимаешь, что увеличить -Xmx — не решение, а отсрочка"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Увеличивать -Xmx без диагностики причины»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «OOM: виды, диагностика, heap dump»?"
+    options:
+      - "Heap OOM (объекты) ↔ Metaspace OOM (классы) ↔ Native OOM (off-heap)"
+      - "Увеличивать -Xmx без диагностики причины"
+      - "Игнорировать heap dump («долго анализировать») — баг возвращается"
+      - "Считать, что GC сломан, когда дело в утечке"
+    answerIndex: 0
+    explanation: "Различение «Heap OOM (объекты) ↔ Metaspace OOM (классы) ↔ Native OOM (off-heap)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «OOM: виды, диагностика, heap dump»?"
+    options:
+      - "Спровоцировать утечку через ThreadLocal в Executor (не вызывать remove)"
+      - "Увеличивать -Xmx без диагностики причины"
+      - "Игнорировать heap dump («долго анализировать») — баг возвращается"
+      - "Считать, что GC сломан, когда дело в утечке"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Спровоцировать утечку через ThreadLocal в Executor (не вызывать remove)»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «OOM: виды, диагностика, heap dump» работает?"
+    options:
+      - "Знаешь 5 видов OOM"
+      - "Увеличивать -Xmx без диагностики причины"
+      - "Игнорировать heap dump («долго анализировать») — баг возвращается"
+      - "Считать, что GC сломан, когда дело в утечке"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь 5 видов OOM». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «OOM: виды, диагностика, heap dump» как опору?"
+    options:
+      - "-XX:+HeapDumpOnOutOfMemoryError + -XX:HeapDumpPath"
+      - "Увеличивать -Xmx без диагностики причины"
+      - "Игнорировать heap dump («долго анализировать») — баг возвращается"
+      - "Считать, что GC сломан, когда дело в утечке"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «-XX:+HeapDumpOnOutOfMemoryError + -XX:HeapDumpPath»"
+---
+
+## Зачем
+
+Виды OOM: (1) «Java heap space» — кончилась куча, обычно утечка или недостаток -Xmx; (2) «Metaspace» — class loader leak или раздутый proxy; (3) «GC overhead limit exceeded» — > 98% времени в GC, < 2% освобождается; (4) «unable to create new native thread» — OS лимит threads или -Xss слишком большой; (5) «Direct buffer memory» — off-heap. План диагностики: (a) -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/heap.bin — авто-dump при падении; (b) jmap -dump:live,format=b,file=heap.bin <pid> — вручную; (c) открыть в MAT, найти Dominator Tree, посмотреть Top Consumers; (d) типичные подозреваемые: static-кэши без TTL, ThreadLocal в пуле потоков, незакрытые ресурсы. Утечка в Java = «GC не может собрать живой объект» (есть reachability через GC roots), не баг GC.
+
+## Ключевые различения
+
+- Heap OOM (объекты) ↔ Metaspace OOM (классы) ↔ Native OOM (off-heap)
+- Утечка (объект reachable, но не нужен) ↔ Недостаток памяти (объекты нужны)
+- GC roots: Thread stack, static, JNI references, classloader
+- Dominator Tree ↔ References Tree (в MAT)
+
+## Технология
+
+- -XX:+HeapDumpOnOutOfMemoryError + -XX:HeapDumpPath
+- jmap -dump:live,format=b,file=heap.bin <pid>
+- MAT (Memory Analyzer Tool), jhat, VisualVM
+- jcmd <pid> GC.heap_info / GC.class_histogram
+
+## Практика (упражнения)
+
+- Спровоцировать утечку через ThreadLocal в Executor (не вызывать remove)
+- Снять heap dump, открыть в MAT, найти Dominator Tree
+- Прогнать full GC roots анализ для подозрительного объекта
+
+## Маркеры освоения
+
+- Знаешь 5 видов OOM
+- Понимаешь, что увеличить -Xmx — не решение, а отсрочка
+- Можешь интерпретировать heap dump в MAT
+
+## Антипаттерны
+
+- Увеличивать -Xmx без диагностики причины
+- Игнорировать heap dump («долго анализировать») — баг возвращается
+- Считать, что GC сломан, когда дело в утечке
+
+## Где в стеке
+
+**Уровень 3: JVM, GC, диагностика.** Что происходит «под капотом». Уровень между junior («GC чистит память») и senior (tuning под нагрузку). Middle должен знать виды OOM и план диагностики через heap dump.

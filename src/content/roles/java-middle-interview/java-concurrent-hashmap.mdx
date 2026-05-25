@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-concurrent-hashmap
+title: "HashMap vs ConcurrentHashMap — почему в проде только второй"
+summary: "Что такое сегментирование и почему его убрали в Java 8?"
+status: published
+estimatedMinutes: 25
+prerequisites: []
+learningOutcomes:
+  - "Используешь computeIfAbsent вместо containsKey + put"
+  - "Не используешь HashMap в многопоточном коде"
+  - "Знаешь, почему ConcurrentHashMap запрещает null"
+  - "Выполнять регулярно: Заменить HashMap + synchronized на ConcurrentHashMap.computeIfAbsent"
+  - "Выполнять регулярно: Реализовать кэш через ConcurrentHashMap.computeIfAbsent"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «HashMap vs ConcurrentHashMap — почему в проде только второй» начала работать?"
+    options:
+      - "Используешь computeIfAbsent вместо containsKey + put"
+      - "Collections.synchronizedMap в высоконагруженном коде"
+      - "if (!map.containsKey(k)) map.put(k, v) — race condition"
+      - "Думать, что ConcurrentHashMap снимает все вопросы концурентности (атомарность отдельных операций ≠ атомарность последовательности)"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Используешь computeIfAbsent вместо containsKey + put» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «HashMap (не thread-safe) ↔ ConcurrentHashMap (lock-free на read)»?"
+    back: "HashMap (не thread-safe) ↔ ConcurrentHashMap (lock-free на read). HashMap не thread-safe: при concurrent put возможна потеря данных, NPE, в Java 7 — бесконечный цикл при resize (попадание в treeify cycle)"
+  - front: "Что стоит за различением «Java 7: Segment[] (16 локов) ↔ Java 8: CAS + synchronized на голове»?"
+    back: "Java 7: Segment[] (16 локов) ↔ Java 8: CAS + synchronized на голове. ConcurrentHashMap решает проблему"
+  - front: "Что стоит за различением «ConcurrentHashMap.put(null, ...) → NPE»?"
+    back: "ConcurrentHashMap.put(null, ...) → NPE. Java 7 — 16 сегментов (Segment extends ReentrantLock), каждый — отдельная мини-HashMap"
+  - front: "Что стоит за различением «putIfAbsent / computeIfAbsent — атомарные, в отличие от if (containsKey) + put»?"
+    back: "putIfAbsent / computeIfAbsent — атомарные, в отличие от if (containsKey) + put. Lock на сегменте при write, write в разные сегменты идут параллельно"
+  - front: "По какому маркеру понять, что освоено: «Используешь computeIfAbsent вместо containsKey + put»?"
+    back: "Используешь computeIfAbsent вместо containsKey + put"
+  - front: "По какому маркеру понять, что освоено: «Не используешь HashMap в многопоточном коде»?"
+    back: "Не используешь HashMap в многопоточном коде"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «HashMap vs ConcurrentHashMap — почему в проде только второй» в центр?"
+    options:
+      - "Что такое сегментирование и почему его убрали в Java 8?"
+      - "Collections.synchronizedMap в высоконагруженном коде"
+      - "if (!map.containsKey(k)) map.put(k, v) — race condition"
+      - "Думать, что ConcurrentHashMap снимает все вопросы концурентности (атомарность отдельных операций ≠ атомарность последовательности)"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Что такое сегментирование и почему его убрали в Java 8?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «HashMap vs ConcurrentHashMap — почему в проде только второй»?"
+    options:
+      - "Collections.synchronizedMap в высоконагруженном коде"
+      - "Заменить HashMap + synchronized на ConcurrentHashMap.computeIfAbsent"
+      - "Используешь computeIfAbsent вместо containsKey + put"
+      - "Не используешь HashMap в многопоточном коде"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Collections.synchronizedMap в высоконагруженном коде»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «HashMap vs ConcurrentHashMap — почему в проде только второй»?"
+    options:
+      - "HashMap (не thread-safe) ↔ ConcurrentHashMap (lock-free на read)"
+      - "Collections.synchronizedMap в высоконагруженном коде"
+      - "if (!map.containsKey(k)) map.put(k, v) — race condition"
+      - "Думать, что ConcurrentHashMap снимает все вопросы концурентности (атомарность отдельных операций ≠ атомарность последовательности)"
+    answerIndex: 0
+    explanation: "Различение «HashMap (не thread-safe) ↔ ConcurrentHashMap (lock-free на read)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «HashMap vs ConcurrentHashMap — почему в проде только второй»?"
+    options:
+      - "Заменить HashMap + synchronized на ConcurrentHashMap.computeIfAbsent"
+      - "Collections.synchronizedMap в высоконагруженном коде"
+      - "if (!map.containsKey(k)) map.put(k, v) — race condition"
+      - "Думать, что ConcurrentHashMap снимает все вопросы концурентности (атомарность отдельных операций ≠ атомарность последовательности)"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Заменить HashMap + synchronized на ConcurrentHashMap.computeIfAbsent»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «HashMap vs ConcurrentHashMap — почему в проде только второй» работает?"
+    options:
+      - "Используешь computeIfAbsent вместо containsKey + put"
+      - "Collections.synchronizedMap в высоконагруженном коде"
+      - "if (!map.containsKey(k)) map.put(k, v) — race condition"
+      - "Думать, что ConcurrentHashMap снимает все вопросы концурентности (атомарность отдельных операций ≠ атомарность последовательности)"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Используешь computeIfAbsent вместо containsKey + put». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «HashMap vs ConcurrentHashMap — почему в проде только второй» как опору?"
+    options:
+      - "ConcurrentHashMap (default)"
+      - "Collections.synchronizedMap в высоконагруженном коде"
+      - "if (!map.containsKey(k)) map.put(k, v) — race condition"
+      - "Думать, что ConcurrentHashMap снимает все вопросы концурентности (атомарность отдельных операций ≠ атомарность последовательности)"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «ConcurrentHashMap (default)»"
+---
+
+## Зачем
+
+HashMap не thread-safe: при concurrent put возможна потеря данных, NPE, в Java 7 — бесконечный цикл при resize (попадание в treeify cycle). ConcurrentHashMap решает проблему. Java 7 — 16 сегментов (Segment extends ReentrantLock), каждый — отдельная мини-HashMap. Lock на сегменте при write, write в разные сегменты идут параллельно. Java 8 — отказ от сегментов: CAS на пустых бакетах для insert, synchronized на голове бакета для коллизий. Read почти всегда без локов через volatile-поля. Null-ключ и null-значение запрещены (чтобы отличать «нет ключа» от «ключ есть, но null»). size() — приблизительный, по counter cells.
+
+## Ключевые различения
+
+- HashMap (не thread-safe) ↔ ConcurrentHashMap (lock-free на read)
+- Java 7: Segment[] (16 локов) ↔ Java 8: CAS + synchronized на голове
+- ConcurrentHashMap.put(null, ...) → NPE
+- putIfAbsent / computeIfAbsent — атомарные, в отличие от if (containsKey) + put
+
+## Технология
+
+- ConcurrentHashMap (default)
+- Collections.synchronizedMap (полная синхронизация — медленнее)
+- Hashtable (legacy, не используется)
+- computeIfAbsent / merge / compute — атомарные операции
+
+## Практика (упражнения)
+
+- Заменить HashMap + synchronized на ConcurrentHashMap.computeIfAbsent
+- Реализовать кэш через ConcurrentHashMap.computeIfAbsent
+- Прочитать OpenJDK source ConcurrentHashMap.putVal — найти CAS
+
+## Маркеры освоения
+
+- Используешь computeIfAbsent вместо containsKey + put
+- Не используешь HashMap в многопоточном коде
+- Знаешь, почему ConcurrentHashMap запрещает null
+
+## Антипаттерны
+
+- Collections.synchronizedMap в высоконагруженном коде
+- if (!map.containsKey(k)) map.put(k, v) — race condition
+- Думать, что ConcurrentHashMap снимает все вопросы концурентности (атомарность отдельных операций ≠ атомарность последовательности)
+
+## Где в стеке
+
+**Уровень 1: Collections.** Топ-частотный блок (HashMap спросят в 8/8 компаний). Знать внутренности: treeify в Java 8, resize, cache locality LinkedList, segmenting в ConcurrentHashMap.

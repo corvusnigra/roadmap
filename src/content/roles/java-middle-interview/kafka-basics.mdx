@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: kafka-basics
+title: "Kafka: партиции, ordering, consumer group, exactly-once"
+summary: "Как гарантировать exactly-once и что для этого нужно?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Знаешь, что ordering — только внутри партиции"
+  - "Понимаешь, что нужно для exactly-once"
+  - "Используешь Transactional Outbox для критичных событий"
+  - "Выполнять регулярно: Поднять Kafka в Docker, отправить 1M сообщений в 3-партиционный топик"
+  - "Выполнять регулярно: Реализовать idempotent consumer через UNIQUE constraint в БД"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Kafka: партиции, ordering, consumer group, exactly-once» начала работать?"
+    options:
+      - "Знаешь, что ordering — только внутри партиции"
+      - "Полагаться на global ordering — невозможно"
+      - "auto-commit + heavy processing — потеря при crash"
+      - "Один KafkaConsumer на много потоков — он НЕ thread-safe"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь, что ordering — только внутри партиции» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Topic ↔ Partition (parallelism) ↔ Offset (позиция)»?"
+    back: "Topic ↔ Partition (parallelism) ↔ Offset (позиция). Топик разбит на партиции (parallelism unit)"
+  - front: "Что стоит за различением «Consumer Group (балансировка) ↔ Single consumer»?"
+    back: "Consumer Group (балансировка) ↔ Single consumer. Сообщение принадлежит одной партиции по ключу (hash(key) % partitions)"
+  - front: "Что стоит за различением «Ordering — гарантирован внутри партиции, не глобально»?"
+    back: "Ordering — гарантирован внутри партиции, не глобально. Ordering гарантирован только внутри партиции, не глобально"
+  - front: "Что стоит за различением «At-most-once ↔ At-least-once ↔ Exactly-once»?"
+    back: "At-most-once ↔ At-least-once ↔ Exactly-once. Consumer Group — N consumer'ов делят партиции (rebalance при add/remove)"
+  - front: "По какому маркеру понять, что освоено: «Знаешь, что ordering — только внутри партиции»?"
+    back: "Знаешь, что ordering — только внутри партиции"
+  - front: "По какому маркеру понять, что освоено: «Понимаешь, что нужно для exactly-once»?"
+    back: "Понимаешь, что нужно для exactly-once"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Kafka: партиции, ordering, consumer group, exactly-once» в центр?"
+    options:
+      - "Как гарантировать exactly-once и что для этого нужно?"
+      - "Полагаться на global ordering — невозможно"
+      - "auto-commit + heavy processing — потеря при crash"
+      - "Один KafkaConsumer на много потоков — он НЕ thread-safe"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Как гарантировать exactly-once и что для этого нужно?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Kafka: партиции, ordering, consumer group, exactly-once»?"
+    options:
+      - "Полагаться на global ordering — невозможно"
+      - "Поднять Kafka в Docker, отправить 1M сообщений в 3-партиционный топик"
+      - "Знаешь, что ordering — только внутри партиции"
+      - "Понимаешь, что нужно для exactly-once"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Полагаться на global ordering — невозможно»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Kafka: партиции, ordering, consumer group, exactly-once»?"
+    options:
+      - "Topic ↔ Partition (parallelism) ↔ Offset (позиция)"
+      - "Полагаться на global ordering — невозможно"
+      - "auto-commit + heavy processing — потеря при crash"
+      - "Один KafkaConsumer на много потоков — он НЕ thread-safe"
+    answerIndex: 0
+    explanation: "Различение «Topic ↔ Partition (parallelism) ↔ Offset (позиция)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Kafka: партиции, ordering, consumer group, exactly-once»?"
+    options:
+      - "Поднять Kafka в Docker, отправить 1M сообщений в 3-партиционный топик"
+      - "Полагаться на global ordering — невозможно"
+      - "auto-commit + heavy processing — потеря при crash"
+      - "Один KafkaConsumer на много потоков — он НЕ thread-safe"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Поднять Kafka в Docker, отправить 1M сообщений в 3-партиционный топик»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Kafka: партиции, ordering, consumer group, exactly-once» работает?"
+    options:
+      - "Знаешь, что ordering — только внутри партиции"
+      - "Полагаться на global ordering — невозможно"
+      - "auto-commit + heavy processing — потеря при crash"
+      - "Один KafkaConsumer на много потоков — он НЕ thread-safe"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь, что ordering — только внутри партиции». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Kafka: партиции, ordering, consumer group, exactly-once» как опору?"
+    options:
+      - "KafkaProducer / KafkaConsumer (Java client)"
+      - "Полагаться на global ordering — невозможно"
+      - "auto-commit + heavy processing — потеря при crash"
+      - "Один KafkaConsumer на много потоков — он НЕ thread-safe"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «KafkaProducer / KafkaConsumer (Java client)»"
+---
+
+## Зачем
+
+Kafka — distributed log. Топик разбит на партиции (parallelism unit). Сообщение принадлежит одной партиции по ключу (hash(key) % partitions). Ordering гарантирован только внутри партиции, не глобально. Consumer Group — N consumer'ов делят партиции (rebalance при add/remove). Offset — позиция consumer'а в партиции, коммитится в __consumer_offsets topic. Гарантии доставки: (1) at-most-once (auto-commit before processing — теряем); (2) at-least-once (commit after processing — дубликаты при retry); (3) exactly-once — нужен idempotent producer (enable.idempotence=true) + transactions (transactional.id) + isolation.level=read_committed на consumer. На practice middle: Transactional Outbox pattern — write в БД + в outbox table в одной транзакции, отдельный poller отправляет в Kafka.
+
+## Ключевые различения
+
+- Topic ↔ Partition (parallelism) ↔ Offset (позиция)
+- Consumer Group (балансировка) ↔ Single consumer
+- Ordering — гарантирован внутри партиции, не глобально
+- At-most-once ↔ At-least-once ↔ Exactly-once
+
+## Технология
+
+- KafkaProducer / KafkaConsumer (Java client)
+- Spring Kafka: @KafkaListener, KafkaTemplate
+- Schema Registry + Avro / Protobuf
+- Transactional Outbox + Debezium CDC
+
+## Практика (упражнения)
+
+- Поднять Kafka в Docker, отправить 1M сообщений в 3-партиционный топик
+- Реализовать idempotent consumer через UNIQUE constraint в БД
+- Реализовать Transactional Outbox для атомарного write БД+Kafka
+
+## Маркеры освоения
+
+- Знаешь, что ordering — только внутри партиции
+- Понимаешь, что нужно для exactly-once
+- Используешь Transactional Outbox для критичных событий
+
+## Антипаттерны
+
+- Полагаться на global ordering — невозможно
+- auto-commit + heavy processing — потеря при crash
+- Один KafkaConsumer на много потоков — он НЕ thread-safe
+
+## Где в стеке
+
+**Уровень 6: System Design, Tools, DevOps.** Прикладная часть. На middle — концептуальное понимание Kafka ordering, Circuit Breaker состояний, Docker multi-stage. JUnit+Mockito — практика на live coding.

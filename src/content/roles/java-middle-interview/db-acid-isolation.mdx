@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: db-acid-isolation
+title: "ACID и уровни изоляции"
+summary: "Какая аномалия возможна на READ COMMITTED, но не на REPEATABLE READ?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Можешь объяснить 4 аномалии и в каком уровне они исключены"
+  - "Знаешь default уровень PostgreSQL (READ COMMITTED) vs MySQL (REPEATABLE READ)"
+  - "Не выбираешь SERIALIZABLE «чтобы спать спокойно» — он дорогой"
+  - "Выполнять регулярно: Воспроизвести dirty read на READ UNCOMMITTED (но default PostgreSQL — RC, надо постараться)"
+  - "Выполнять регулярно: Воспроизвести non-repeatable read через 2 коннекта на RC"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «ACID и уровни изоляции» начала работать?"
+    options:
+      - "Можешь объяснить 4 аномалии и в каком уровне они исключены"
+      - "SERIALIZABLE везде — деградация throughput, serialization errors"
+      - "READ UNCOMMITTED для скорости — dirty reads = баги в логике"
+      - "Считать default RC безопасным для всех сценариев"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Можешь объяснить 4 аномалии и в каком уровне они исключены» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «READ UNCOMMITTED ↔ READ COMMITTED ↔ REPEATABLE READ ↔ SERIALIZABLE»?"
+    back: "READ UNCOMMITTED ↔ READ COMMITTED ↔ REPEATABLE READ ↔ SERIALIZABLE. ACID: Atomicity (commit или rollback целиком), Consistency (валидное состояние до и после), Isolation (степень изоляции от других транзакций), Durability (после commit данные на диске)"
+  - front: "Что стоит за различением «Dirty read ↔ Non-repeatable read ↔ Phantom read ↔ Lost update»?"
+    back: "Dirty read ↔ Non-repeatable read ↔ Phantom read ↔ Lost update. Уровни изоляции (SQL стандарт): READ UNCOMMITTED (видит uncommitted данные — dirty read), READ COMMITTED (видит только committed, default в PostgreSQL/Oracle; non-repeatable read возможен), REPEATABLE READ (повторное чтение того же select даёт тот же результат; phantom read возможен по стандарту, но в PostgreSQL не возможен из-за MVCC; default в MySQL InnoDB), SERIALIZABLE (полная изоляция, через SSI/2PL)"
+  - front: "Что стоит за различением «MVCC (PostgreSQL/Oracle) ↔ Locking (MySQL InnoDB)»?"
+    back: "MVCC (PostgreSQL/Oracle) ↔ Locking (MySQL InnoDB). Аномалии: (1) Dirty read — читаем uncommitted; (2) Non-repeatable read — между двумя select одного row значение поменялось; (3) Phantom read — между двумя select по диапазону появились/исчезли строки; (4) Lost update — два UPDATE «затёрли» друг друга."
+  - front: "Что стоит за различением «PostgreSQL REPEATABLE READ исключает phantom (стандарт допускает)»?"
+    back: "PostgreSQL REPEATABLE READ исключает phantom (стандарт допускает). ACID: Atomicity (commit или rollback целиком), Consistency (валидное состояние до и после), Isolation (степень изоляции от других транзакций), Durability (после commit данные на диске). Уровни изоляции (SQL стандарт): READ UNCOMMITTED (видит uncommitted данные — dirty read), READ COMMITTED (видит только committed, default в PostgreSQL/Oracle; non-repeatable read возможен), REPEATABLE READ (повторное чтение того же select даёт тот же результат; phantom read возможен по стандарту, но в PostgreSQL не возможен из-за MVCC; default в MySQL InnoDB), SERIALIZABLE (полная изоляция, через SSI/2PL). Аномалии: (1) Dirty read — читаем uncommitted; (2) Non-repeatable read — между двумя select одного row значение поменялось; (3) Phantom read — между двумя select по диапазону появились/исчезли строки; (4) Lost update — два UPDATE «затёрли» друг друга."
+  - front: "По какому маркеру понять, что освоено: «Можешь объяснить 4 аномалии и в каком уровне они исключены»?"
+    back: "Можешь объяснить 4 аномалии и в каком уровне они исключены"
+  - front: "По какому маркеру понять, что освоено: «Знаешь default уровень PostgreSQL (READ COMMITTED) vs MySQL (REPEATABLE READ)»?"
+    back: "Знаешь default уровень PostgreSQL (READ COMMITTED) vs MySQL (REPEATABLE READ)"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «ACID и уровни изоляции» в центр?"
+    options:
+      - "Какая аномалия возможна на READ COMMITTED, но не на REPEATABLE READ?"
+      - "SERIALIZABLE везде — деградация throughput, serialization errors"
+      - "READ UNCOMMITTED для скорости — dirty reads = баги в логике"
+      - "Считать default RC безопасным для всех сценариев"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Какая аномалия возможна на READ COMMITTED, но не на REPEATABLE READ?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «ACID и уровни изоляции»?"
+    options:
+      - "SERIALIZABLE везде — деградация throughput, serialization errors"
+      - "Воспроизвести dirty read на READ UNCOMMITTED (но default PostgreSQL — RC, надо постараться)"
+      - "Можешь объяснить 4 аномалии и в каком уровне они исключены"
+      - "Знаешь default уровень PostgreSQL (READ COMMITTED) vs MySQL (REPEATABLE READ)"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «SERIALIZABLE везде — деградация throughput, serialization errors»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «ACID и уровни изоляции»?"
+    options:
+      - "READ UNCOMMITTED ↔ READ COMMITTED ↔ REPEATABLE READ ↔ SERIALIZABLE"
+      - "SERIALIZABLE везде — деградация throughput, serialization errors"
+      - "READ UNCOMMITTED для скорости — dirty reads = баги в логике"
+      - "Считать default RC безопасным для всех сценариев"
+    answerIndex: 0
+    explanation: "Различение «READ UNCOMMITTED ↔ READ COMMITTED ↔ REPEATABLE READ ↔ SERIALIZABLE» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «ACID и уровни изоляции»?"
+    options:
+      - "Воспроизвести dirty read на READ UNCOMMITTED (но default PostgreSQL — RC, надо постараться)"
+      - "SERIALIZABLE везде — деградация throughput, serialization errors"
+      - "READ UNCOMMITTED для скорости — dirty reads = баги в логике"
+      - "Считать default RC безопасным для всех сценариев"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Воспроизвести dirty read на READ UNCOMMITTED (но default PostgreSQL — RC, надо постараться)»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «ACID и уровни изоляции» работает?"
+    options:
+      - "Можешь объяснить 4 аномалии и в каком уровне они исключены"
+      - "SERIALIZABLE везде — деградация throughput, serialization errors"
+      - "READ UNCOMMITTED для скорости — dirty reads = баги в логике"
+      - "Считать default RC безопасным для всех сценариев"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Можешь объяснить 4 аномалии и в каком уровне они исключены». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «ACID и уровни изоляции» как опору?"
+    options:
+      - "@Transactional(isolation = Isolation.REPEATABLE_READ)"
+      - "SERIALIZABLE везде — деградация throughput, serialization errors"
+      - "READ UNCOMMITTED для скорости — dirty reads = баги в логике"
+      - "Считать default RC безопасным для всех сценариев"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «@Transactional(isolation = Isolation.REPEATABLE_READ)»"
+---
+
+## Зачем
+
+ACID: Atomicity (commit или rollback целиком), Consistency (валидное состояние до и после), Isolation (степень изоляции от других транзакций), Durability (после commit данные на диске). Уровни изоляции (SQL стандарт): READ UNCOMMITTED (видит uncommitted данные — dirty read), READ COMMITTED (видит только committed, default в PostgreSQL/Oracle; non-repeatable read возможен), REPEATABLE READ (повторное чтение того же select даёт тот же результат; phantom read возможен по стандарту, но в PostgreSQL не возможен из-за MVCC; default в MySQL InnoDB), SERIALIZABLE (полная изоляция, через SSI/2PL). Аномалии: (1) Dirty read — читаем uncommitted; (2) Non-repeatable read — между двумя select одного row значение поменялось; (3) Phantom read — между двумя select по диапазону появились/исчезли строки; (4) Lost update — два UPDATE «затёрли» друг друга.
+
+## Ключевые различения
+
+- READ UNCOMMITTED ↔ READ COMMITTED ↔ REPEATABLE READ ↔ SERIALIZABLE
+- Dirty read ↔ Non-repeatable read ↔ Phantom read ↔ Lost update
+- MVCC (PostgreSQL/Oracle) ↔ Locking (MySQL InnoDB)
+- PostgreSQL REPEATABLE READ исключает phantom (стандарт допускает)
+
+## Технология
+
+- @Transactional(isolation = Isolation.REPEATABLE_READ)
+- SET TRANSACTION ISOLATION LEVEL ... (SQL)
+- SELECT ... FOR UPDATE (pessimistic)
+- @Version (optimistic locking JPA)
+
+## Практика (упражнения)
+
+- Воспроизвести dirty read на READ UNCOMMITTED (но default PostgreSQL — RC, надо постараться)
+- Воспроизвести non-repeatable read через 2 коннекта на RC
+- Поднять до REPEATABLE READ — увидеть, что non-repeatable исчезает
+
+## Маркеры освоения
+
+- Можешь объяснить 4 аномалии и в каком уровне они исключены
+- Знаешь default уровень PostgreSQL (READ COMMITTED) vs MySQL (REPEATABLE READ)
+- Не выбираешь SERIALIZABLE «чтобы спать спокойно» — он дорогой
+
+## Антипаттерны
+
+- SERIALIZABLE везде — деградация throughput, serialization errors
+- READ UNCOMMITTED для скорости — dirty reads = баги в логике
+- Считать default RC безопасным для всех сценариев
+
+## Где в стеке
+
+**Уровень 5: Database, JPA, Hibernate.** После Spring — самый частый блок. N+1 спросят в 8/8 компаний. Уровни изоляции, planner B-tree, lazy/eager — must-know.

@@ -1,0 +1,132 @@
+---
+schemaVersion: 1
+slug: java-stream-api
+title: "Stream API: lazy, terminal, что выведет peek без collect"
+summary: "Когда стрим выполняется и почему peek без терминалки молчит?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Можешь сказать, что выведет peek без collect (ответ: ничего)"
+  - "Знаешь разницу map vs flatMap и где flatMap незаменим"
+  - "Не используешь parallel stream для IO без понимания ForkJoinPool"
+  - "Выполнять регулярно: Реализовать groupingBy + counting (количество слов по длине)"
+  - "Выполнять регулярно: Преобразовать List<List<Integer>> в Stream<Integer> через flatMap"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Stream API: lazy, terminal, что выведет peek без collect» начала работать?"
+    options:
+      - "Можешь сказать, что выведет peek без collect (ответ: ничего)"
+      - "Использовать stream второй раз после terminal — IllegalStateException"
+      - "Parallel stream на блокирующих операциях — забивается общий ForkJoinPool"
+      - "Stream API ради «модно» там, где for-each короче и читаемее"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Можешь сказать, что выведет peek без collect (ответ: ничего)» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Intermediate (lazy) ↔ Terminal (запускает pipeline)»?"
+    back: "Intermediate (lazy) ↔ Terminal (запускает pipeline). Stream — это pipeline ленивых операций"
+  - front: "Что стоит за различением «Stateless (filter, map) ↔ Stateful (sorted, distinct, limit) операции»?"
+    back: "Stateless (filter, map) ↔ Stateful (sorted, distinct, limit) операции. Intermediate (filter, map, peek, sorted, distinct) — не исполняются, пока не пришла terminal (collect, forEach, count, reduce, findFirst, anyMatch)"
+  - front: "Что стоит за различением «Sequential ↔ Parallel (через ForkJoinPool.commonPool())»?"
+    back: "Sequential ↔ Parallel (через ForkJoinPool.commonPool()). Без terminal операции просто строится цепочка, никакой код не вызывается"
+  - front: "Что стоит за различением «map (1→1) ↔ flatMap (1→0..N) ↔ peek (side effect, не меняет элемент)»?"
+    back: "map (1→1) ↔ flatMap (1→0..N) ↔ peek (side effect, не меняет элемент). Stream — однопроходный (нельзя использовать дважды, IllegalStateException)"
+  - front: "По какому маркеру понять, что освоено: «Можешь сказать, что выведет peek без collect (ответ: ничего)»?"
+    back: "Можешь сказать, что выведет peek без collect (ответ: ничего)"
+  - front: "По какому маркеру понять, что освоено: «Знаешь разницу map vs flatMap и где flatMap незаменим»?"
+    back: "Знаешь разницу map vs flatMap и где flatMap незаменим"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Stream API: lazy, terminal, что выведет peek без collect» в центр?"
+    options:
+      - "Когда стрим выполняется и почему peek без терминалки молчит?"
+      - "Использовать stream второй раз после terminal — IllegalStateException"
+      - "Parallel stream на блокирующих операциях — забивается общий ForkJoinPool"
+      - "Stream API ради «модно» там, где for-each короче и читаемее"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Когда стрим выполняется и почему peek без терминалки молчит?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Stream API: lazy, terminal, что выведет peek без collect»?"
+    options:
+      - "Использовать stream второй раз после terminal — IllegalStateException"
+      - "Реализовать groupingBy + counting (количество слов по длине)"
+      - "Можешь сказать, что выведет peek без collect (ответ: ничего)"
+      - "Знаешь разницу map vs flatMap и где flatMap незаменим"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Использовать stream второй раз после terminal — IllegalStateException»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Stream API: lazy, terminal, что выведет peek без collect»?"
+    options:
+      - "Intermediate (lazy) ↔ Terminal (запускает pipeline)"
+      - "Использовать stream второй раз после terminal — IllegalStateException"
+      - "Parallel stream на блокирующих операциях — забивается общий ForkJoinPool"
+      - "Stream API ради «модно» там, где for-each короче и читаемее"
+    answerIndex: 0
+    explanation: "Различение «Intermediate (lazy) ↔ Terminal (запускает pipeline)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Stream API: lazy, terminal, что выведет peek без collect»?"
+    options:
+      - "Реализовать groupingBy + counting (количество слов по длине)"
+      - "Использовать stream второй раз после terminal — IllegalStateException"
+      - "Parallel stream на блокирующих операциях — забивается общий ForkJoinPool"
+      - "Stream API ради «модно» там, где for-each короче и читаемее"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Реализовать groupingBy + counting (количество слов по длине)»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Stream API: lazy, terminal, что выведет peek без collect» работает?"
+    options:
+      - "Можешь сказать, что выведет peek без collect (ответ: ничего)"
+      - "Использовать stream второй раз после terminal — IllegalStateException"
+      - "Parallel stream на блокирующих операциях — забивается общий ForkJoinPool"
+      - "Stream API ради «модно» там, где for-each короче и читаемее"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Можешь сказать, что выведет peek без collect (ответ: ничего)». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Stream API: lazy, terminal, что выведет peek без collect» как опору?"
+    options:
+      - "Collectors: toList/toSet/toMap, groupingBy, partitioningBy, joining"
+      - "Использовать stream второй раз после terminal — IllegalStateException"
+      - "Parallel stream на блокирующих операциях — забивается общий ForkJoinPool"
+      - "Stream API ради «модно» там, где for-each короче и читаемее"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Collectors: toList/toSet/toMap, groupingBy, partitioningBy, joining»"
+---
+
+## Зачем
+
+Stream — это pipeline ленивых операций. Intermediate (filter, map, peek, sorted, distinct) — не исполняются, пока не пришла terminal (collect, forEach, count, reduce, findFirst, anyMatch). Без terminal операции просто строится цепочка, никакой код не вызывается. Stream — однопроходный (нельзя использовать дважды, IllegalStateException). Sorted и distinct — stateful, требуют буфера всех элементов. Parallel streams — через ForkJoinPool.commonPool() — опасны для IO/блокирующих операций. map vs flatMap: первый 1→1, второй 1→0..N (разворачивает Stream<Stream<T>> в Stream<T>).
+
+## Ключевые различения
+
+- Intermediate (lazy) ↔ Terminal (запускает pipeline)
+- Stateless (filter, map) ↔ Stateful (sorted, distinct, limit) операции
+- Sequential ↔ Parallel (через ForkJoinPool.commonPool())
+- map (1→1) ↔ flatMap (1→0..N) ↔ peek (side effect, не меняет элемент)
+
+## Технология
+
+- Collectors: toList/toSet/toMap, groupingBy, partitioningBy, joining
+- Stream.of / IntStream.range / Stream.generate / Stream.iterate
+- Stream.toList() (Java 16+) — immutable; collect(Collectors.toList()) — mutable
+
+## Практика (упражнения)
+
+- Реализовать groupingBy + counting (количество слов по длине)
+- Преобразовать List<List<Integer>> в Stream<Integer> через flatMap
+- Замерить parallel stream на CPU-bound и IO-bound задачах (увидеть разницу)
+
+## Маркеры освоения
+
+- Можешь сказать, что выведет peek без collect (ответ: ничего)
+- Знаешь разницу map vs flatMap и где flatMap незаменим
+- Не используешь parallel stream для IO без понимания ForkJoinPool
+
+## Антипаттерны
+
+- Использовать stream второй раз после terminal — IllegalStateException
+- Parallel stream на блокирующих операциях — забивается общий ForkJoinPool
+- Stream API ради «модно» там, где for-each короче и читаемее
+
+## Где в стеке
+
+**Уровень 0: Java Core.** Фундамент языка. Без него все следующие уровни рассыпаются: equals/hashCode не работает в HashMap, Stream API ломается на peek без терминалки, String Pool путается с new String.

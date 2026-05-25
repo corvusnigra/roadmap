@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-gc
+title: "GC: Young/Old gen, Serial/Parallel/G1/ZGC"
+summary: "Какой GC выбрать для приложения с 50GB heap и SLA 10ms?"
+status: published
+estimatedMinutes: 35
+prerequisites: []
+learningOutcomes:
+  - "Можешь объяснить разницу Minor vs Full GC"
+  - "Знаешь, какой GC default в Java 8, 11, 17, 21"
+  - "Можешь прочитать GC лог и сказать, в чём bottleneck"
+  - "Выполнять регулярно: Запустить приложение с разными GC, замерить throughput и pause через -Xlog:gc"
+  - "Выполнять регулярно: Снять GC лог за час прода, визуализировать в GCViewer или GCEasy"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «GC: Young/Old gen, Serial/Parallel/G1/ZGC» начала работать?"
+    options:
+      - "Можешь объяснить разницу Minor vs Full GC"
+      - "Звать System.gc() в продовом коде"
+      - "Использовать -XX:+UseParallelGC для low-latency сервиса"
+      - "Огромный -Xmx без выбора GC — Full GC pause в минуты"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Можешь объяснить разницу Minor vs Full GC» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «Generational (Young/Old) ↔ Region-based (G1)»?"
+    back: "Generational (Young/Old) ↔ Region-based (G1). GC основан на гипотезе weak generational hypothesis: большинство объектов умирают молодыми"
+  - front: "Что стоит за различением «Stop-the-world ↔ Concurrent (ZGC/Shenandoah)»?"
+    back: "Stop-the-world ↔ Concurrent (ZGC/Shenandoah). Young gen: Eden (новые объекты), 2 Survivor (S0/S1)"
+  - front: "Что стоит за различением «Throughput (Parallel) ↔ Low-latency (G1/ZGC)»?"
+    back: "Throughput (Parallel) ↔ Low-latency (G1/ZGC). Minor GC — копирующий, перемещает живые из Eden+S0 в S1, потом в Old после N циклов (tenuring)"
+  - front: "Что стоит за различением «Mark-Sweep ↔ Mark-Sweep-Compact ↔ Copying»?"
+    back: "Mark-Sweep ↔ Mark-Sweep-Compact ↔ Copying. Major/Full GC — на Old gen, дороже"
+  - front: "По какому маркеру понять, что освоено: «Можешь объяснить разницу Minor vs Full GC»?"
+    back: "Можешь объяснить разницу Minor vs Full GC"
+  - front: "По какому маркеру понять, что освоено: «Знаешь, какой GC default в Java 8, 11, 17, 21»?"
+    back: "Знаешь, какой GC default в Java 8, 11, 17, 21"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «GC: Young/Old gen, Serial/Parallel/G1/ZGC» в центр?"
+    options:
+      - "Какой GC выбрать для приложения с 50GB heap и SLA 10ms?"
+      - "Звать System.gc() в продовом коде"
+      - "Использовать -XX:+UseParallelGC для low-latency сервиса"
+      - "Огромный -Xmx без выбора GC — Full GC pause в минуты"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Какой GC выбрать для приложения с 50GB heap и SLA 10ms?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «GC: Young/Old gen, Serial/Parallel/G1/ZGC»?"
+    options:
+      - "Звать System.gc() в продовом коде"
+      - "Запустить приложение с разными GC, замерить throughput и pause через -Xlog:gc"
+      - "Можешь объяснить разницу Minor vs Full GC"
+      - "Знаешь, какой GC default в Java 8, 11, 17, 21"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Звать System.gc() в продовом коде»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «GC: Young/Old gen, Serial/Parallel/G1/ZGC»?"
+    options:
+      - "Generational (Young/Old) ↔ Region-based (G1)"
+      - "Звать System.gc() в продовом коде"
+      - "Использовать -XX:+UseParallelGC для low-latency сервиса"
+      - "Огромный -Xmx без выбора GC — Full GC pause в минуты"
+    answerIndex: 0
+    explanation: "Различение «Generational (Young/Old) ↔ Region-based (G1)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «GC: Young/Old gen, Serial/Parallel/G1/ZGC»?"
+    options:
+      - "Запустить приложение с разными GC, замерить throughput и pause через -Xlog:gc"
+      - "Звать System.gc() в продовом коде"
+      - "Использовать -XX:+UseParallelGC для low-latency сервиса"
+      - "Огромный -Xmx без выбора GC — Full GC pause в минуты"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Запустить приложение с разными GC, замерить throughput и pause через -Xlog:gc»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «GC: Young/Old gen, Serial/Parallel/G1/ZGC» работает?"
+    options:
+      - "Можешь объяснить разницу Minor vs Full GC"
+      - "Звать System.gc() в продовом коде"
+      - "Использовать -XX:+UseParallelGC для low-latency сервиса"
+      - "Огромный -Xmx без выбора GC — Full GC pause в минуты"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Можешь объяснить разницу Minor vs Full GC». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «GC: Young/Old gen, Serial/Parallel/G1/ZGC» как опору?"
+    options:
+      - "-XX:+UseG1GC (default ≥ Java 9)"
+      - "Звать System.gc() в продовом коде"
+      - "Использовать -XX:+UseParallelGC для low-latency сервиса"
+      - "Огромный -Xmx без выбора GC — Full GC pause в минуты"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «-XX:+UseG1GC (default ≥ Java 9)»"
+---
+
+## Зачем
+
+GC основан на гипотезе weak generational hypothesis: большинство объектов умирают молодыми. Young gen: Eden (новые объекты), 2 Survivor (S0/S1). Minor GC — копирующий, перемещает живые из Eden+S0 в S1, потом в Old после N циклов (tenuring). Major/Full GC — на Old gen, дороже. Сборщики: Serial (1 поток, embedded, -XX:+UseSerialGC), Parallel (multi-thread, throughput, default до Java 8), G1 (region-based, low-latency, default с Java 9, регионы 1-32MB), ZGC (concurrent, sub-millisecond pause, -XX:+UseZGC, JDK 11+, для huge heap), Shenandoah (concurrent compaction, Red Hat, JDK 12+). Современный выбор: G1 (default, до 32GB heap, цель ≤ 200ms pause), ZGC (для huge heap или SLA ≤ 10ms).
+
+## Ключевые различения
+
+- Generational (Young/Old) ↔ Region-based (G1)
+- Stop-the-world ↔ Concurrent (ZGC/Shenandoah)
+- Throughput (Parallel) ↔ Low-latency (G1/ZGC)
+- Mark-Sweep ↔ Mark-Sweep-Compact ↔ Copying
+
+## Технология
+
+- -XX:+UseG1GC (default ≥ Java 9)
+- -XX:+UseZGC -XX:+ZGenerational (JDK 21+)
+- -XX:MaxGCPauseMillis=200 (целевая пауза G1)
+- -Xlog:gc* — структурированный GC лог (Java 9+)
+
+## Практика (упражнения)
+
+- Запустить приложение с разными GC, замерить throughput и pause через -Xlog:gc
+- Снять GC лог за час прода, визуализировать в GCViewer или GCEasy
+- Спровоцировать Full GC через System.gc() (если -XX:+DisableExplicitGC не выставлен)
+
+## Маркеры освоения
+
+- Можешь объяснить разницу Minor vs Full GC
+- Знаешь, какой GC default в Java 8, 11, 17, 21
+- Можешь прочитать GC лог и сказать, в чём bottleneck
+
+## Антипаттерны
+
+- Звать System.gc() в продовом коде
+- Использовать -XX:+UseParallelGC для low-latency сервиса
+- Огромный -Xmx без выбора GC — Full GC pause в минуты
+
+## Где в стеке
+
+**Уровень 3: JVM, GC, диагностика.** Что происходит «под капотом». Уровень между junior («GC чистит память») и senior (tuning под нагрузку). Middle должен знать виды OOM и план диагностики через heap dump.

@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: db-indexes
+title: "B-tree индексы, leftmost prefix, когда не помогает"
+summary: "Почему составной индекс (a, b, c) не используется в WHERE b = 1?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Знаешь leftmost prefix rule"
+  - "Понимаешь, почему индекс на boolean бесполезен"
+  - "Используешь CREATE INDEX CONCURRENTLY в проде"
+  - "Выполнять регулярно: Создать индекс (a, b, c), выполнить WHERE b = 1 — увидеть Seq Scan"
+  - "Выполнять регулярно: Создать functional index ON LOWER(email) для case-insensitive search"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «B-tree индексы, leftmost prefix, когда не помогает» начала работать?"
+    options:
+      - "Знаешь leftmost prefix rule"
+      - "Индекс на каждую колонку — replication overhead, slow write"
+      - "Индекс на boolean — selectivity слишком низкая"
+      - "Использовать LIKE 'abc%' для prefix search без поняти, что 'a%' уже работает"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Знаешь leftmost prefix rule» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «B-tree (универсальный) ↔ Hash (только =) ↔ GIN (JSONB) ↔ GiST (geo/range) ↔ BRIN (sequential data)»?"
+    back: "B-tree (универсальный) ↔ Hash (только =) ↔ GIN (JSONB) ↔ GiST (geo/range) ↔ BRIN (sequential data). B-tree — балансированное дерево, O(log n) поиск"
+  - front: "Что стоит за различением «Index Scan ↔ Index Only Scan (covering) ↔ Bitmap Index Scan (для OR / много rows)»?"
+    back: "Index Scan ↔ Index Only Scan (covering) ↔ Bitmap Index Scan (для OR / много rows). Default тип индекса в PostgreSQL/MySQL"
+  - front: "Что стоит за различением «Leftmost prefix rule для составных индексов»?"
+    back: "Leftmost prefix rule для составных индексов. Поддерживает: =, <, >, BETWEEN, IN, ORDER BY"
+  - front: "Что стоит за различением «Selectivity — почему индекс на boolean бесполезен (5/95)»?"
+    back: "Selectivity — почему индекс на boolean бесполезен (5/95). Не поддерживает: LIKE '%abc' (анкорить нечего), function на колонке (WHERE LOWER(name) = 'abc' — нужен functional index CREATE INDEX ON tbl (LOWER(name)))"
+  - front: "По какому маркеру понять, что освоено: «Знаешь leftmost prefix rule»?"
+    back: "Знаешь leftmost prefix rule"
+  - front: "По какому маркеру понять, что освоено: «Понимаешь, почему индекс на boolean бесполезен»?"
+    back: "Понимаешь, почему индекс на boolean бесполезен"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «B-tree индексы, leftmost prefix, когда не помогает» в центр?"
+    options:
+      - "Почему составной индекс (a, b, c) не используется в WHERE b = 1?"
+      - "Индекс на каждую колонку — replication overhead, slow write"
+      - "Индекс на boolean — selectivity слишком низкая"
+      - "Использовать LIKE 'abc%' для prefix search без поняти, что 'a%' уже работает"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Почему составной индекс (a, b, c) не используется в WHERE b = 1?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «B-tree индексы, leftmost prefix, когда не помогает»?"
+    options:
+      - "Индекс на каждую колонку — replication overhead, slow write"
+      - "Создать индекс (a, b, c), выполнить WHERE b = 1 — увидеть Seq Scan"
+      - "Знаешь leftmost prefix rule"
+      - "Понимаешь, почему индекс на boolean бесполезен"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «Индекс на каждую колонку — replication overhead, slow write»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «B-tree индексы, leftmost prefix, когда не помогает»?"
+    options:
+      - "B-tree (универсальный) ↔ Hash (только =) ↔ GIN (JSONB) ↔ GiST (geo/range) ↔ BRIN (sequential data)"
+      - "Индекс на каждую колонку — replication overhead, slow write"
+      - "Индекс на boolean — selectivity слишком низкая"
+      - "Использовать LIKE 'abc%' для prefix search без поняти, что 'a%' уже работает"
+    answerIndex: 0
+    explanation: "Различение «B-tree (универсальный) ↔ Hash (только =) ↔ GIN (JSONB) ↔ GiST (geo/range) ↔ BRIN (sequential data)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «B-tree индексы, leftmost prefix, когда не помогает»?"
+    options:
+      - "Создать индекс (a, b, c), выполнить WHERE b = 1 — увидеть Seq Scan"
+      - "Индекс на каждую колонку — replication overhead, slow write"
+      - "Индекс на boolean — selectivity слишком низкая"
+      - "Использовать LIKE 'abc%' для prefix search без поняти, что 'a%' уже работает"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Создать индекс (a, b, c), выполнить WHERE b = 1 — увидеть Seq Scan»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «B-tree индексы, leftmost prefix, когда не помогает» работает?"
+    options:
+      - "Знаешь leftmost prefix rule"
+      - "Индекс на каждую колонку — replication overhead, slow write"
+      - "Индекс на boolean — selectivity слишком низкая"
+      - "Использовать LIKE 'abc%' для prefix search без поняти, что 'a%' уже работает"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Знаешь leftmost prefix rule». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «B-tree индексы, leftmost prefix, когда не помогает» как опору?"
+    options:
+      - "CREATE INDEX idx_users_email ON users(email);"
+      - "Индекс на каждую колонку — replication overhead, slow write"
+      - "Индекс на boolean — selectivity слишком низкая"
+      - "Использовать LIKE 'abc%' для prefix search без поняти, что 'a%' уже работает"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «CREATE INDEX idx_users_email ON users(email);»"
+---
+
+## Зачем
+
+B-tree — балансированное дерево, O(log n) поиск. Default тип индекса в PostgreSQL/MySQL. Поддерживает: =, <, >, BETWEEN, IN, ORDER BY. Не поддерживает: LIKE '%abc' (анкорить нечего), function на колонке (WHERE LOWER(name) = 'abc' — нужен functional index CREATE INDEX ON tbl (LOWER(name))). Составной индекс (a, b, c) — leftmost prefix rule: используется для WHERE a = ?, WHERE a = ? AND b = ?, WHERE a = ? AND b = ? AND c = ?. НЕ используется (или используется частично) для WHERE b = ? (без a). Покрывающий индекс (covering / INCLUDE) — содержит все нужные колонки, planner делает Index Only Scan без обращения к heap. Другие типы: Hash (только =, in-memory), GIN (для JSONB, массивов, полнотекстового), GiST (для геометрии, range), BRIN (для огромных таблиц с физическим порядком).
+
+## Ключевые различения
+
+- B-tree (универсальный) ↔ Hash (только =) ↔ GIN (JSONB) ↔ GiST (geo/range) ↔ BRIN (sequential data)
+- Index Scan ↔ Index Only Scan (covering) ↔ Bitmap Index Scan (для OR / много rows)
+- Leftmost prefix rule для составных индексов
+- Selectivity — почему индекс на boolean бесполезен (5/95)
+
+## Технология
+
+- CREATE INDEX idx_users_email ON users(email);
+- CREATE INDEX CONCURRENTLY (без table lock, но дольше)
+- CREATE INDEX ... INCLUDE (col_x) — covering
+- CREATE INDEX ... USING GIN (data_jsonb)
+
+## Практика (упражнения)
+
+- Создать индекс (a, b, c), выполнить WHERE b = 1 — увидеть Seq Scan
+- Создать functional index ON LOWER(email) для case-insensitive search
+- Сравнить размер таблицы и индекса через pg_size_pretty
+
+## Маркеры освоения
+
+- Знаешь leftmost prefix rule
+- Понимаешь, почему индекс на boolean бесполезен
+- Используешь CREATE INDEX CONCURRENTLY в проде
+
+## Антипаттерны
+
+- Индекс на каждую колонку — replication overhead, slow write
+- Индекс на boolean — selectivity слишком низкая
+- Использовать LIKE 'abc%' для prefix search без поняти, что 'a%' уже работает
+
+## Где в стеке
+
+**Уровень 5: Database, JPA, Hibernate.** После Spring — самый частый блок. N+1 спросят в 8/8 компаний. Уровни изоляции, planner B-tree, lazy/eager — must-know.

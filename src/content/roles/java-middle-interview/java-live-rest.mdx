@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: java-live-rest
+title: "Live coding: REST + DTO + @Valid + Mockito-тест"
+summary: "За 30 минут собрать CRUD endpoint и unit-тест?"
+status: published
+estimatedMinutes: 40
+prerequisites: []
+learningOutcomes:
+  - "Сразу пишешь Constructor injection"
+  - "Не путаешь DTO и Entity"
+  - "Используешь @Valid вместо ручной валидации"
+  - "Выполнять регулярно: Собрать full CRUD за 30 минут (контроллер + сервис + репозиторий + тест)"
+  - "Выполнять регулярно: Добавить @RestControllerAdvice с 3 handler'ами"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «Live coding: REST + DTO + @Valid + Mockito-тест» начала работать?"
+    options:
+      - "Сразу пишешь Constructor injection"
+      - "@Autowired на поле в live-задаче — minus от интервьюера"
+      - "Прокинуть Entity сразу в response — leak полей БД"
+      - "Голый try-catch вокруг каждой операции — junior-почерк"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Сразу пишешь Constructor injection» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «DTO (контракт API) ↔ Entity (модель БД) — не один тот же класс»?"
+    back: "DTO (контракт API) ↔ Entity (модель БД) — не один тот же класс. Типичная live-задача на Middle Java: «реализуй POST /users + GET /users/{id} с валидацией и тестом»"
+  - front: "Что стоит за различением «Constructor injection (best) ↔ Field injection»?"
+    back: "Constructor injection (best) ↔ Field injection. Алгоритм: (1) DTO: CreateUserDto (record с @NotBlank/@Email/@Size), UserDto; (2) Entity: User с @Id/@Email (или MapStruct mapper); (3) Repository: extends JpaRepository<User, Long>; (4) Service: с constructor injection, методы create() / findById(); (5) Controller: @RestController + @PostMapping + @Valid @RequestBody, @GetMapping + @PathVariable + ResponseEntity (или ResponseStatusException), (6) GlobalExceptionHandler: @RestControllerAdvice с @ExceptionHandler для MethodArgumentNotValidException → 400, NotFoundException → 404; (7) Тест: @ExtendWith(MockitoExtension.class), @Mock UserRepository, @InjectMocks UserService, when(repo.save(any())).thenReturn(saved), ArgumentCaptor для проверки email"
+  - front: "Что стоит за различением «@RestController ↔ @Controller (с @ResponseBody на каждом методе)»?"
+    back: "@RestController ↔ @Controller (с @ResponseBody на каждом методе). Code smells, которые ищет интервьюер: голый @Autowired на поле, отсутствие @Valid, ловля Exception, голый ResponseEntity.ok без typing."
+  - front: "Что стоит за различением «GlobalExceptionHandler ↔ try-catch в каждом методе»?"
+    back: "GlobalExceptionHandler ↔ try-catch в каждом методе. Типичная live-задача на Middle Java: «реализуй POST /users + GET /users/{id} с валидацией и тестом». Алгоритм: (1) DTO: CreateUserDto (record с @NotBlank/@Email/@Size), UserDto; (2) Entity: User с @Id/@Email (или MapStruct mapper); (3) Repository: extends JpaRepository<User, Long>; (4) Service: с constructor injection, методы create() / findById(); (5) Controller: @RestController + @PostMapping + @Valid @RequestBody, @GetMapping + @PathVariable + ResponseEntity (или ResponseStatusException), (6) GlobalExceptionHandler: @RestControllerAdvice с @ExceptionHandler для MethodArgumentNotValidException → 400, NotFoundException → 404; (7) Тест: @ExtendWith(MockitoExtension.class), @Mock UserRepository, @InjectMocks UserService, when(repo.save(any())).thenReturn(saved), ArgumentCaptor для проверки email. Code smells, которые ищет интервьюер: голый @Autowired на поле, отсутствие @Valid, ловля Exception, голый ResponseEntity.ok без typing."
+  - front: "По какому маркеру понять, что освоено: «Сразу пишешь Constructor injection»?"
+    back: "Сразу пишешь Constructor injection"
+  - front: "По какому маркеру понять, что освоено: «Не путаешь DTO и Entity»?"
+    back: "Не путаешь DTO и Entity"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «Live coding: REST + DTO + @Valid + Mockito-тест» в центр?"
+    options:
+      - "За 30 минут собрать CRUD endpoint и unit-тест?"
+      - "@Autowired на поле в live-задаче — minus от интервьюера"
+      - "Прокинуть Entity сразу в response — leak полей БД"
+      - "Голый try-catch вокруг каждой операции — junior-почерк"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «За 30 минут собрать CRUD endpoint и unit-тест?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «Live coding: REST + DTO + @Valid + Mockito-тест»?"
+    options:
+      - "@Autowired на поле в live-задаче — minus от интервьюера"
+      - "Собрать full CRUD за 30 минут (контроллер + сервис + репозиторий + тест)"
+      - "Сразу пишешь Constructor injection"
+      - "Не путаешь DTO и Entity"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «@Autowired на поле в live-задаче — minus от интервьюера»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «Live coding: REST + DTO + @Valid + Mockito-тест»?"
+    options:
+      - "DTO (контракт API) ↔ Entity (модель БД) — не один тот же класс"
+      - "@Autowired на поле в live-задаче — minus от интервьюера"
+      - "Прокинуть Entity сразу в response — leak полей БД"
+      - "Голый try-catch вокруг каждой операции — junior-почерк"
+    answerIndex: 0
+    explanation: "Различение «DTO (контракт API) ↔ Entity (модель БД) — не один тот же класс» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «Live coding: REST + DTO + @Valid + Mockito-тест»?"
+    options:
+      - "Собрать full CRUD за 30 минут (контроллер + сервис + репозиторий + тест)"
+      - "@Autowired на поле в live-задаче — minus от интервьюера"
+      - "Прокинуть Entity сразу в response — leak полей БД"
+      - "Голый try-catch вокруг каждой операции — junior-почерк"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Собрать full CRUD за 30 минут (контроллер + сервис + репозиторий + тест)»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «Live coding: REST + DTO + @Valid + Mockito-тест» работает?"
+    options:
+      - "Сразу пишешь Constructor injection"
+      - "@Autowired на поле в live-задаче — minus от интервьюера"
+      - "Прокинуть Entity сразу в response — leak полей БД"
+      - "Голый try-catch вокруг каждой операции — junior-почерк"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Сразу пишешь Constructor injection». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «Live coding: REST + DTO + @Valid + Mockito-тест» как опору?"
+    options:
+      - "Spring Boot: @RestController, @RequestMapping, @PathVariable, @Valid"
+      - "@Autowired на поле в live-задаче — minus от интервьюера"
+      - "Прокинуть Entity сразу в response — leak полей БД"
+      - "Голый try-catch вокруг каждой операции — junior-почерк"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «Spring Boot: @RestController, @RequestMapping, @PathVariable, @Valid»"
+---
+
+## Зачем
+
+Типичная live-задача на Middle Java: «реализуй POST /users + GET /users/{id} с валидацией и тестом». Алгоритм: (1) DTO: CreateUserDto (record с @NotBlank/@Email/@Size), UserDto; (2) Entity: User с @Id/@Email (или MapStruct mapper); (3) Repository: extends JpaRepository<User, Long>; (4) Service: с constructor injection, методы create() / findById(); (5) Controller: @RestController + @PostMapping + @Valid @RequestBody, @GetMapping + @PathVariable + ResponseEntity (или ResponseStatusException), (6) GlobalExceptionHandler: @RestControllerAdvice с @ExceptionHandler для MethodArgumentNotValidException → 400, NotFoundException → 404; (7) Тест: @ExtendWith(MockitoExtension.class), @Mock UserRepository, @InjectMocks UserService, when(repo.save(any())).thenReturn(saved), ArgumentCaptor для проверки email. Code smells, которые ищет интервьюер: голый @Autowired на поле, отсутствие @Valid, ловля Exception, голый ResponseEntity.ok без typing.
+
+## Ключевые различения
+
+- DTO (контракт API) ↔ Entity (модель БД) — не один тот же класс
+- Constructor injection (best) ↔ Field injection
+- @RestController ↔ @Controller (с @ResponseBody на каждом методе)
+- GlobalExceptionHandler ↔ try-catch в каждом методе
+
+## Технология
+
+- Spring Boot: @RestController, @RequestMapping, @PathVariable, @Valid
+- Spring Data JPA: JpaRepository, derived queries (findByEmail)
+- JUnit 5 + Mockito + AssertJ
+- MapStruct для DTO ↔ Entity
+
+## Практика (упражнения)
+
+- Собрать full CRUD за 30 минут (контроллер + сервис + репозиторий + тест)
+- Добавить @RestControllerAdvice с 3 handler'ами
+- Прогнать тест с MockMvc + @WebMvcTest как integration
+
+## Маркеры освоения
+
+- Сразу пишешь Constructor injection
+- Не путаешь DTO и Entity
+- Используешь @Valid вместо ручной валидации
+
+## Антипаттерны
+
+- @Autowired на поле в live-задаче — minus от интервьюера
+- Прокинуть Entity сразу в response — leak полей БД
+- Голый try-catch вокруг каждой операции — junior-почерк
+
+## Где в стеке
+
+**Уровень 6: System Design, Tools, DevOps.** Прикладная часть. На middle — концептуальное понимание Kafka ordering, Circuit Breaker состояний, Docker multi-stage. JUnit+Mockito — практика на live coding.

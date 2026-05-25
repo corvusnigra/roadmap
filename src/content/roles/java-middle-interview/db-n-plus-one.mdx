@@ -1,0 +1,133 @@
+---
+schemaVersion: 1
+slug: db-n-plus-one
+title: "N+1 проблема и решения (JOIN FETCH, @EntityGraph, @BatchSize)"
+summary: "Я загрузил 100 заказов и обращаюсь к order.getItems(). Сколько запросов?"
+status: published
+estimatedMinutes: 30
+prerequisites: []
+learningOutcomes:
+  - "Видишь N+1 в логе SQL до того, как поднимется issue"
+  - "Знаешь 4 способа решения и когда какой"
+  - "Не используешь EAGER как костыль"
+  - "Выполнять регулярно: Включить spring.jpa.show-sql + p6spy — увидеть N+1 в логе"
+  - "Выполнять регулярно: Решить через JOIN FETCH, заметить дубликаты — добавить DISTINCT"
+practice:
+  - kind: mcq
+    prompt: "По какому из признаков честно судить, что дисциплина «N+1 проблема и решения (JOIN FETCH, @EntityGraph, @BatchSize)» начала работать?"
+    options:
+      - "Видишь N+1 в логе SQL до того, как поднимется issue"
+      - "EAGER на @OneToMany — решение хуже проблемы"
+      - "JOIN FETCH с пагинацией — Hibernate ругается, делает в памяти"
+      - "Несколько JOIN FETCH на @OneToMany в одной query — cartesian product"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение, которое появляется регулярно. «Видишь N+1 в логе SQL до того, как поднимется issue» — именно такой признак."
+flashcards:
+  - front: "Что стоит за различением «N+1 (lazy без JOIN FETCH) ↔ Cartesian explosion (несколько JOIN FETCH в одном)»?"
+    back: "N+1 (lazy без JOIN FETCH) ↔ Cartesian explosion (несколько JOIN FETCH в одном). N+1: 1 запрос для main collection + N запросов для каждой lazy-relation"
+  - front: "Что стоит за различением «JOIN FETCH ↔ @EntityGraph ↔ @BatchSize ↔ DTO projection»?"
+    back: "JOIN FETCH ↔ @EntityGraph ↔ @BatchSize ↔ DTO projection. List<Order> orders = repository.findAll(); for (Order o : orders) o.getItems().size(); — 1 + N SELECT"
+  - front: "Что стоит за различением «EAGER — НЕ решение N+1 (просто всегда грузит)»?"
+    back: "EAGER — НЕ решение N+1 (просто всегда грузит). Решения по сложности: (1) JOIN FETCH в JPQL: SELECT o FROM Order o JOIN FETCH o.items — 1 запрос с JOIN, но дубликаты строк (нужен DISTINCT или Set), не работает с пагинацией (HHH000104 warning); (2) @EntityGraph(\"order-with-items\") — декларативное FETCH; (3) @BatchSize(size = 100) — IN-batching, 1 + N/100 запросов; (4) DTO projection — самое чистое, query напрямую в DTO без JPA-сущности; (5) Hibernate fetch profiles"
+  - front: "Что стоит за различением «DISTINCT при JOIN FETCH (default ON для коллекций)»?"
+    back: "DISTINCT при JOIN FETCH (default ON для коллекций). EAGER — НЕ решение N+1, она просто меняет lazy на always-load, что хуже в большинстве сценариев."
+  - front: "По какому маркеру понять, что освоено: «Видишь N+1 в логе SQL до того, как поднимется issue»?"
+    back: "Видишь N+1 в логе SQL до того, как поднимется issue"
+  - front: "По какому маркеру понять, что освоено: «Знаешь 4 способа решения и когда какой»?"
+    back: "Знаешь 4 способа решения и когда какой"
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой вопрос ставит дисциплина «N+1 проблема и решения (JOIN FETCH, @EntityGraph, @BatchSize)» в центр?"
+    options:
+      - "Я загрузил 100 заказов и обращаюсь к order.getItems(). Сколько запросов?"
+      - "EAGER на @OneToMany — решение хуже проблемы"
+      - "JOIN FETCH с пагинацией — Hibernate ругается, делает в памяти"
+      - "Несколько JOIN FETCH на @OneToMany в одной query — cartesian product"
+    answerIndex: 0
+    explanation: "Дисциплина задаёт фокусирующий вопрос — он определяет, что считать работой, а что — её имитацией. Здесь это: «Я загрузил 100 заказов и обращаюсь к order.getItems(). Сколько запросов?»"
+  - kind: mcq
+    prompt: "Что из перечисленного — антипаттерн дисциплины «N+1 проблема и решения (JOIN FETCH, @EntityGraph, @BatchSize)»?"
+    options:
+      - "EAGER на @OneToMany — решение хуже проблемы"
+      - "Включить spring.jpa.show-sql + p6spy — увидеть N+1 в логе"
+      - "Видишь N+1 в логе SQL до того, как поднимется issue"
+      - "Знаешь 4 способа решения и когда какой"
+    answerIndex: 0
+    explanation: "Антипаттерн — типовой способ имитировать дисциплину, не осваивая её. В материалах он отмечен явно: «EAGER на @OneToMany — решение хуже проблемы»"
+  - kind: mcq
+    prompt: "Какое из утверждений — ключевое различение в «N+1 проблема и решения (JOIN FETCH, @EntityGraph, @BatchSize)»?"
+    options:
+      - "N+1 (lazy без JOIN FETCH) ↔ Cartesian explosion (несколько JOIN FETCH в одном)"
+      - "EAGER на @OneToMany — решение хуже проблемы"
+      - "JOIN FETCH с пагинацией — Hibernate ругается, делает в памяти"
+      - "Несколько JOIN FETCH на @OneToMany в одной query — cartesian product"
+    answerIndex: 0
+    explanation: "Различение «N+1 (lazy без JOIN FETCH) ↔ Cartesian explosion (несколько JOIN FETCH в одном)» лежит в основе дисциплины и определяет, как видеть её объекты."
+  - kind: mcq
+    prompt: "Какое действие в основе регулярной практики «N+1 проблема и решения (JOIN FETCH, @EntityGraph, @BatchSize)»?"
+    options:
+      - "Включить spring.jpa.show-sql + p6spy — увидеть N+1 в логе"
+      - "EAGER на @OneToMany — решение хуже проблемы"
+      - "JOIN FETCH с пагинацией — Hibernate ругается, делает в памяти"
+      - "Несколько JOIN FETCH на @OneToMany в одной query — cartesian product"
+    answerIndex: 0
+    explanation: "Регулярная практика — то, что превращает знание в навык. Здесь это: «Включить spring.jpa.show-sql + p6spy — увидеть N+1 в логе»"
+  - kind: mcq
+    prompt: "По какому маркеру судить, что «N+1 проблема и решения (JOIN FETCH, @EntityGraph, @BatchSize)» работает?"
+    options:
+      - "Видишь N+1 в логе SQL до того, как поднимется issue"
+      - "EAGER на @OneToMany — решение хуже проблемы"
+      - "JOIN FETCH с пагинацией — Hibernate ругается, делает в памяти"
+      - "Несколько JOIN FETCH на @OneToMany в одной query — cartesian product"
+    answerIndex: 0
+    explanation: "Маркер освоения — наблюдаемое поведение: «Видишь N+1 в логе SQL до того, как поднимется issue». Не ощущение, а действие."
+  - kind: mcq
+    prompt: "Какой инструмент использует дисциплина «N+1 проблема и решения (JOIN FETCH, @EntityGraph, @BatchSize)» как опору?"
+    options:
+      - "JPQL: SELECT o FROM Order o JOIN FETCH o.items"
+      - "EAGER на @OneToMany — решение хуже проблемы"
+      - "JOIN FETCH с пагинацией — Hibernate ругается, делает в памяти"
+      - "Несколько JOIN FETCH на @OneToMany в одной query — cartesian product"
+    answerIndex: 0
+    explanation: "Шаблон или инструмент удерживает дисциплину между сессиями. Здесь это: «JPQL: SELECT o FROM Order o JOIN FETCH o.items»"
+---
+
+## Зачем
+
+N+1: 1 запрос для main collection + N запросов для каждой lazy-relation. List<Order> orders = repository.findAll(); for (Order o : orders) o.getItems().size(); — 1 + N SELECT. Решения по сложности: (1) JOIN FETCH в JPQL: SELECT o FROM Order o JOIN FETCH o.items — 1 запрос с JOIN, но дубликаты строк (нужен DISTINCT или Set), не работает с пагинацией (HHH000104 warning); (2) @EntityGraph("order-with-items") — декларативное FETCH; (3) @BatchSize(size = 100) — IN-batching, 1 + N/100 запросов; (4) DTO projection — самое чистое, query напрямую в DTO без JPA-сущности; (5) Hibernate fetch profiles. EAGER — НЕ решение N+1, она просто меняет lazy на always-load, что хуже в большинстве сценариев.
+
+## Ключевые различения
+
+- N+1 (lazy без JOIN FETCH) ↔ Cartesian explosion (несколько JOIN FETCH в одном)
+- JOIN FETCH ↔ @EntityGraph ↔ @BatchSize ↔ DTO projection
+- EAGER — НЕ решение N+1 (просто всегда грузит)
+- DISTINCT при JOIN FETCH (default ON для коллекций)
+
+## Технология
+
+- JPQL: SELECT o FROM Order o JOIN FETCH o.items
+- @EntityGraph(attributePaths = {"items"})
+- @BatchSize(size = 100) на @OneToMany
+- DTO projection: SELECT new com.x.OrderDto(o.id, o.total) FROM Order o
+
+## Практика (упражнения)
+
+- Включить spring.jpa.show-sql + p6spy — увидеть N+1 в логе
+- Решить через JOIN FETCH, заметить дубликаты — добавить DISTINCT
+- Заменить на @EntityGraph — увидеть тот же SQL
+
+## Маркеры освоения
+
+- Видишь N+1 в логе SQL до того, как поднимется issue
+- Знаешь 4 способа решения и когда какой
+- Не используешь EAGER как костыль
+
+## Антипаттерны
+
+- EAGER на @OneToMany — решение хуже проблемы
+- JOIN FETCH с пагинацией — Hibernate ругается, делает в памяти
+- Несколько JOIN FETCH на @OneToMany в одной query — cartesian product
+
+## Где в стеке
+
+**Уровень 5: Database, JPA, Hibernate.** После Spring — самый частый блок. N+1 спросят в 8/8 компаний. Уровни изоляции, planner B-tree, lazy/eager — must-know.
