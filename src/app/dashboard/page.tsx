@@ -7,7 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ExploreModeSwitch } from "@/components/dashboard/explore-mode-switch";
 import { ProgressRing } from "@/components/dashboard/progress-ring";
-import { RoleSwitcher } from "@/components/dashboard/role-switcher";
+import {
+  GuestRoleSwitcher,
+  RoleSwitcher,
+} from "@/components/dashboard/role-switcher";
 import { Sparkline } from "@/components/dashboard/sparkline";
 import { signOut } from "@/app/login/actions";
 import { DEMO_MODE } from "@/lib/auth/demo-mode";
@@ -24,7 +27,16 @@ import { logEvent } from "@/lib/progress/transitions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { pluralRu } from "@/lib/i18n/plural";
 
-export default async function DashboardPage() {
+interface DashboardPageProps {
+  // Гость в DEMO_MODE выбирает роль через `?role=<slug>` (см. GuestRoleSwitcher),
+  // т.к. setActiveRole требует auth и не запишет в profiles. Авторизованного
+  // пользователя query-param тоже override-ит (удобно для шаринга ссылок),
+  // но persist'ить в профиль из такого открытия мы не будем.
+  searchParams?: Promise<{ role?: string }>;
+}
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const sp = (await searchParams) ?? {};
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -60,10 +72,16 @@ export default async function DashboardPage() {
     .from(rolesTable)
     .where(eq(rolesTable.status, "published"));
 
-  // Active role is whatever the profile says, falling back to the first
-  // available published role. If neither exists we 404 — the seed should
-  // always provide at least one role.
-  const activeSlug = profile?.activeRoleSlug ?? availableRoles[0]?.slug;
+  // Priority: ?role=<slug> в URL → profile.activeRoleSlug → первая роль.
+  // Query-param нужен для гостя в DEMO_MODE (у него нет profile),
+  // и заодно даёт shareable-ссылки на дашборд под нужную роль.
+  const requestedSlug = typeof sp.role === "string" ? sp.role : undefined;
+  const requestedValid = requestedSlug
+    ? availableRoles.some((r) => r.slug === requestedSlug)
+    : false;
+  const activeSlug = requestedValid
+    ? requestedSlug
+    : (profile?.activeRoleSlug ?? availableRoles[0]?.slug);
   const role =
     availableRoles.find((r) => r.slug === activeSlug) ?? availableRoles[0];
   if (!role) notFound();
@@ -112,12 +130,15 @@ export default async function DashboardPage() {
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               {isGuest ? "Демо-роль:" : "Текущая роль:"}
             </p>
-            {/* В демо-режиме switcher всё ещё отображает список ролей,
-                но смена не персистится — server action setActiveRole без
-                юзера упадёт с явной ошибкой. Простой способ это закрыть:
-                просто рендерим текст имени активной роли вместо select. */}
+            {/* В DEMO_MODE гость получает client-side switcher через
+                `?role=` (см. GuestRoleSwitcher). Авторизованному
+                пользователю даём form-based RoleSwitcher с persist'ом
+                в profiles. */}
             {isGuest ? (
-              <span className="text-xs font-medium">{role.title}</span>
+              <GuestRoleSwitcher
+                options={availableRoles}
+                activeSlug={role.slug}
+              />
             ) : (
               <RoleSwitcher options={availableRoles} activeSlug={role.slug} />
             )}

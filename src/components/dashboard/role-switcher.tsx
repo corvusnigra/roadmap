@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import { setActiveRole } from "@/app/dashboard/actions";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,53 @@ export interface RoleOption {
 interface RoleSwitcherProps {
   options: RoleOption[];
   activeSlug: string;
+}
+
+/**
+ * Гостевой switcher (DEMO_MODE без auth): не пишет в profiles, а просто
+ * перемещает дашборд на `?role=<slug>`. Серверный компонент дашборда
+ * читает этот параметр и выбирает активную роль из URL вместо profile.
+ *
+ * Зачем не reuse основной RoleSwitcher: тот шлёт form action `setActiveRole`,
+ * который требует `auth.getUser()`; для гостя он бы отвалился с 401.
+ */
+export function GuestRoleSwitcher({ options, activeSlug }: RoleSwitcherProps) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
+  if (options.length <= 1) return null;
+
+  return (
+    <>
+      <label className="sr-only" htmlFor="role-switcher-guest">
+        Активная роль (демо)
+      </label>
+      <select
+        key={activeSlug}
+        id="role-switcher-guest"
+        defaultValue={activeSlug}
+        disabled={pending}
+        onChange={(e) => {
+          const slug = e.currentTarget.value;
+          startTransition(() => {
+            router.push(`/dashboard?role=${encodeURIComponent(slug)}`);
+          });
+        }}
+        className={cn(
+          "h-8 cursor-pointer rounded-md border border-input bg-background px-2 text-xs",
+          "focus:outline-none focus:ring-1 focus:ring-ring",
+          pending && "opacity-60",
+        )}
+        data-testid="role-switcher-guest"
+      >
+        {options.map((o) => (
+          <option key={o.slug} value={o.slug}>
+            {o.title}
+          </option>
+        ))}
+      </select>
+    </>
+  );
 }
 
 /**
