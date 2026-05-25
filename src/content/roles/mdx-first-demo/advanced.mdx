@@ -1,0 +1,97 @@
+---
+schemaVersion: 1
+slug: advanced
+title: "Продвинутое использование"
+summary: "Prereq edges и автогенерация позиций."
+status: draft
+level: 1
+estimatedMinutes: 15
+prerequisites: ["intro"]
+learningOutcomes:
+  - "Понимаешь, как заданы edges"
+  - "Знаешь, как вычисляется позиция"
+practice:
+  - kind: mcq
+    prompt: "Откуда content:sync берёт prereq edges?"
+    options:
+      - "Из массива prerequisites во frontmatter"
+      - "Из имени файла"
+      - "Из level"
+      - "Авто-сгенерируются линейно"
+    answerIndex: 0
+    explanation: "prerequisites: ['slug1', 'slug2'] во frontmatter MDX. Sync upserts node_prerequisites edges."
+flashcards:
+  - front: "Что произойдёт с позициями, если у двух узлов одинаковый level?"
+    back: "Они окажутся в одной колонке, расставлены по Y в порядке файлов в файловой системе. Меняй level чтобы развести."
+  - front: "Какой минимум flashcards для status: published?"
+    back: "6 (по content:check). Меньше — будет warning или error для published узлов."
+  - front: "Какой минимум masteryQuiz?"
+    back: "5 для draft, 8 для published — чтобы random pick из 5 был действительно random."
+  - front: "Что делает 'level: 0' vs 'level: 6'?"
+    back: "level → positionX = 120 + level * 280. Узел с level 6 будет на 1680px правее, чем level 0."
+  - front: "Будет ли sync падать, если prereq указывает на узел из другой роли?"
+    back: "Edge не создастся (slugToId не найдёт slug в текущей роли), warning. Cross-role prereqs не поддерживаются."
+  - front: "Что произойдёт с пользовательским прогрессом при пересоздании узла через sync?"
+    back: "Прогресс сохранится: sync делает UPDATE существующих узлов по (role_id, slug), id остаётся тот же → user_node_progress целы."
+masteryQuiz:
+  - kind: mcq
+    prompt: "Чем UPDATE по (role_id, slug) лучше DELETE+INSERT?"
+    options:
+      - "Никаких отличий"
+      - "Сохраняет id узла → user_node_progress / skill_cards живы через FK"
+      - "Быстрее"
+      - "Меньше памяти"
+    answerIndex: 1
+    explanation: "Идемпотентность через UPDATE — пользовательские состояния (progress, FSRS-карточки) сохраняются. DELETE снёс бы их через cascade."
+  - kind: mcq
+    prompt: "Как обозначить, что узел A зависит от B и C?"
+    options:
+      - "prerequisites: ['b', 'c'] во frontmatter A"
+      - "Создать массив next в B и C"
+      - "Запихнуть в edges.json"
+      - "Никак — sync генерит линейно"
+    answerIndex: 0
+    explanation: "Prereqs декларируются у зависящего узла. Sync создаст 2 edges: A → B, A → C."
+  - kind: mcq
+    prompt: "Что произойдёт с MDX-файлом, который удалили из папки роли?"
+    options:
+      - "Узел останется в DB как orphan"
+      - "Sync удалит узел и связанные user_node_progress"
+      - "Sync упадёт"
+      - "Файл создастся обратно"
+    answerIndex: 0
+    explanation: "Текущий sync upsert-only — не удаляет узлы, которых нет в файловой системе. Это защита от случайного удаления контента."
+  - kind: mcq
+    prompt: "Какой scope у удаления flashcards в sync?"
+    options:
+      - "Удаляются все skill_cards в БД"
+      - "Только те у данного узла, чьего prompt больше нет в MDX"
+      - "Удаляются только if status: draft"
+      - "Никогда не удаляются"
+    answerIndex: 1
+    explanation: "Targeted delete по (nodeId, prompt NOT IN mdxPrompts). Cascade на user_card_state — старые FSRS-состояния стёртых карточек уходят вместе."
+  - kind: mcq
+    prompt: "Как обозначить, что роль временно не для юзеров?"
+    options:
+      - "status: 'draft' в _role.json"
+      - "Удалить из dashboard"
+      - "Не делать sync"
+      - "Префикс slug с _"
+    answerIndex: 0
+    explanation: "draft → роль есть в БД, но `dashboard.tsx` фильтрует SELECT по status = 'published'. Идеально для разработки."
+---
+
+## Зачем
+
+Второй узел — proof, что prereq edges работают: intro → advanced.
+Также этот узел на уровне 1, intro на 0 — на canvas они разнесены по X.
+
+## Как это видно на canvas
+
+После `pnpm content:sync` открой `/roles/mdx-first-demo` — увидишь:
+- intro в колонке 0 (positionX = 120)
+- advanced в колонке 1 (positionX = 400), связан стрелкой ← с intro
+
+## Где в стеке
+
+**Уровень 1: Связи.** Когда хочется показать зависимости между темами.

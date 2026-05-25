@@ -6,12 +6,13 @@ loadDotenv();
 import { syncContent } from "@/lib/content/sync";
 
 async function main() {
-  console.log("→ syncing MDX flashcards into skill_cards…");
+  console.log("→ MDX-first sync (roles + nodes + edges + skill_cards)…");
   const stats = await syncContent();
   console.log(
-    `✓ done: roles=${stats.rolesScanned}, nodes=${stats.nodesScanned}, ` +
-      `inserted=${stats.cardsInserted}, updated=${stats.cardsUpdated}, ` +
-      `deleted=${stats.cardsDeleted}`,
+    `✓ roles: ${stats.rolesUpserted}/${stats.rolesScanned} scanned, ` +
+      `nodes: ${stats.nodesUpserted}/${stats.nodesScanned}, ` +
+      `edges: ${stats.edgesUpserted}, ` +
+      `cards: +${stats.cardsInserted} ~${stats.cardsUpdated} -${stats.cardsDeleted}`,
   );
 }
 

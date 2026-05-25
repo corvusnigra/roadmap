@@ -53,6 +53,13 @@ const BaseFrontmatter = z.object({
   summary: z.string().min(1),
   status: NodeStatus.default("draft"),
   estimatedMinutes: z.number().int().positive().max(180),
+  /**
+   * Уровень на canvas (0..6) — определяет колонку (positionX) при
+   * `pnpm content:sync` для MDX-first ролей. Optional для обратной
+   * совместимости: старые роли получают позиции из `<slug>-curriculum.ts`,
+   * для них поле может отсутствовать.
+   */
+  level: z.number().int().min(0).max(6).optional(),
   prerequisites: z
     .array(z.string().regex(SLUG_REGEX, "prerequisite slugs must be kebab-case"))
     .default([]),

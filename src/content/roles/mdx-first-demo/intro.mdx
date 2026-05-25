@@ -1,0 +1,98 @@
+---
+schemaVersion: 1
+slug: intro
+title: "Введение"
+summary: "Базовая концепция MDX-first роли."
+status: draft
+level: 0
+estimatedMinutes: 10
+prerequisites: []
+learningOutcomes:
+  - "Понимаешь, что такое _role.json"
+  - "Знаешь, как level → position на canvas"
+practice:
+  - kind: mcq
+    prompt: "Что определяет колонку узла на canvas?"
+    options:
+      - "Поле level во frontmatter MDX"
+      - "Алфавитный порядок slug'ов"
+      - "Глобальная константа в seed.ts"
+      - "Размер MDX файла"
+    answerIndex: 0
+    explanation: "level (0..6) → positionX. Внутри уровня позиция Y вычисляется по порядку файлов."
+flashcards:
+  - front: "Что добавить в папку роли, чтобы content:sync её увидел?"
+    back: "_role.json с title, summary, status. Без него sync работает в legacy cards-only режиме."
+  - front: "Где задаётся колонка узла на canvas?"
+    back: "Поле level (0..6) во frontmatter MDX. Y считается автоматически по порядку файлов внутри уровня."
+  - front: "Чем content:sync отличается от content:sync:prod?"
+    back: "content:sync использует local DB через drizzle. content:sync:prod — через PostgREST + retry, обходя ETIMEDOUT pooler'а Supabase."
+  - front: "Что произойдёт с MDX, у которого нет соответствия в DB?"
+    back: "При full sync — узел будет создан. При cards-only — warning и пропуск (нужен db:seed)."
+  - front: "Какое поле frontmatter описывает связи между узлами?"
+    back: "prerequisites: массив slug'ов других узлов в этой же роли. Sync создаёт node_prerequisites edges."
+  - front: "Нужно ли регистрировать новую роль в src/db/seed.ts?"
+    back: "Нет — если есть _role.json, sync делает это сам. seed.ts нужен только для старых ролей без _role.json."
+masteryQuiz:
+  - kind: mcq
+    prompt: "Какой минимум нужен для появления роли в дашборде?"
+    options:
+      - "Папка + _role.json + хотя бы 1 MDX с status: published"
+      - "Регистрация в seed.ts и миграция"
+      - "Curriculum.ts + scaffolder"
+      - "Только MDX-файлы"
+    answerIndex: 0
+    explanation: "_role.json делает роль видимой для sync, status: published — для UI."
+  - kind: mcq
+    prompt: "Как идемпотентность достигается в sync?"
+    options:
+      - "Через DELETE и затем INSERT каждый раз"
+      - "Через UPSERT (onConflictDoUpdate) по (slug) и (role_id, slug)"
+      - "Через миграции Drizzle"
+      - "Никак — повторный sync ломает данные"
+    answerIndex: 1
+    explanation: "Postgres ON CONFLICT даёт идемпотентность. Удаление flashcards тоже targeted — только те, чьего prompt нет в MDX."
+  - kind: mcq
+    prompt: "Что произойдёт, если prerequisite ссылается на несуществующий slug?"
+    options:
+      - "Sync упадёт с error"
+      - "Warning в консоль, edge пропущен"
+      - "Молча создастся orphan edge"
+      - "Узел не создастся"
+    answerIndex: 1
+    explanation: "Sync логирует warning и пропускает edge — позволяет частичные роли в разработке."
+  - kind: mcq
+    prompt: "Когда использовать draft статус роли?"
+    options:
+      - "Когда роль в разработке и не готова для юзеров"
+      - "Когда роль для одного юзера"
+      - "Когда роль временная"
+      - "draft нельзя использовать"
+    answerIndex: 0
+    explanation: "draft = в БД есть, но в UI не показывается. published = доступна юзерам."
+  - kind: mcq
+    prompt: "Зачем _role.json в JSON, а не YAML?"
+    options:
+      - "JSON быстрее парсится"
+      - "Чтобы не добавлять js-yaml в deps (gray-matter уже парсит YAML внутри MDX)"
+      - "YAML не поддерживает строки"
+      - "Привычка"
+    answerIndex: 1
+    explanation: "Минимизация deps. gray-matter уже в проекте для MDX frontmatter — но он парсит YAML только внутри MDX-файлов, не отдельных _role.yaml."
+---
+
+## Зачем
+
+Эта роль — самопроверка `pnpm content:sync`. Создана без правки `seed.ts`,
+`curriculum.ts` или `scaffold-*.ts`. Только: папка → `_role.json` → 2 MDX → sync.
+
+## Минимальный набор для роли
+
+1. `src/content/roles/<slug>/_role.json` — title, summary, status
+2. ≥ 1 MDX-файл со status: published (или draft для разработки)
+3. `pnpm content:sync` — локально
+4. `pnpm content:sync:prod` — на prod (после vercel env pull)
+
+## Где в стеке
+
+**Уровень 0: Основы.** Понять идею перед тем как добавить вторую тему.

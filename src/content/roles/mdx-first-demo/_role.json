@@ -1,0 +1,5 @@
+{
+  "title": "MDX-First Demo",
+  "summary": "Тест-роль для проверки content:sync — создана без правки seed.ts или curriculum.ts, только через MDX + _role.json.",
+  "status": "draft"
+}
