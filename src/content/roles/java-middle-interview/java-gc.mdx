@@ -128,6 +128,239 @@ GC основан на гипотезе weak generational hypothesis: больш
 - Использовать -XX:+UseParallelGC для low-latency сервиса
 - Огромный -Xmx без выбора GC — Full GC pause в минуты
 
+## Развёрнутое объяснение
+
+Сборщик мусора в JVM — это набор алгоритмов поверх двух фундаментальных идей:
+**reachability** (объект жив, если до него есть путь от GC roots: thread stacks,
+static fields, JNI references, system classloader) и **weak generational hypothesis**
+(большинство объектов умирают молодыми, мало кто доживает до Old gen). Все
+mainstream-сборщики Java от Serial до G1 строятся на этой модели:
+
+```
+   Allocation                          Tenuring
+   ────────────►                       ────────►
+   ┌─────┐    promotion     ┌──────────────────┐
+   │Eden │ ──► S0 ──► S1 ──►│   Old / Tenured  │
+   └─────┘   (после N        └──────────────────┘
+              Minor GC,
+              MaxTenuringThreshold)
+```
+
+**Minor GC (Young collection).** Все сборщики, кроме ZGC/Shenandoah single-gen
+вариантов, копируют живые объекты из Eden + одного Survivor в другой Survivor, потом
+swap. Это «дёшево»: типичный Minor — десятки мс на гигабайт young gen. Если объект
+пережил `MaxTenuringThreshold` (по умолчанию 15) циклов — он промотируется в Old gen.
+
+**Major / Full GC.** Сбор Old gen или всего heap. Алгоритм зависит от сборщика:
+mark-sweep-compact (Serial Old, Parallel Old), concurrent mark + STW compact (G1
+Mixed + Full), concurrent everything (ZGC). Full GC — самый дорогой; для G1 с
+heap ≥ 8 ГБ Full может занять секунды.
+
+**Сборщики, которые ждут на собесе:**
+
+```
+┌────────────┬───────┬───────────┬──────────────┬─────────────────┐
+│ GC         │ Pause │ Throughput│ Heap target   │ Особенности    │
+├────────────┼───────┼───────────┼──────────────┼─────────────────┤
+│ Serial     │ ↑↑↑   │ ↓         │ < 100MB      │ embedded, 1 ядро│
+│ Parallel   │ ↑↑    │ ↑↑↑       │ < 4GB        │ default до Java 8│
+│ G1         │ ↑     │ ↑↑        │ 4–32GB       │ default ≥ Java 9│
+│ ZGC        │ <10ms │ ↑         │ до 16TB      │ Java 11+, Gen=21│
+│ Shenandoah │ <10ms │ ↑         │ до TB        │ Red Hat, Java 12│
+│ Epsilon    │ none  │ ↑↑↑↑      │ —            │ no-op, для тестов│
+└────────────┴───────┴───────────┴──────────────┴─────────────────┘
+```
+
+**G1 (Garbage-First).** Default с Java 9 (JEP 248). Heap делится на регионы по
+1–32 МБ. Каждый регион — либо Eden, либо Survivor, либо Old, либо Humongous
+(объекты > 50% размера региона). G1 на каждом Mixed cycle выбирает регионы с
+максимальным «мусорным выхлопом» (отсюда имя — Garbage First), копирует из них
+живое в новые регионы. Целевая пауза `-XX:MaxGCPauseMillis=200` — G1 будет
+автоматически подбирать размер young gen и число регионов в коллекции, чтобы
+уложиться.
+
+**ZGC (Z Garbage Collector).** Production с Java 15 (JEP 377), generational в Java 21
+(JEP 439, `-XX:+ZGenerational`). Использует **colored pointers** (16-битные метаданные
+в самом указателе) и **load barriers** — каждое чтение reference-поля проходит
+через инструкцию, проверяющую цвет указателя. Это даёт pause ≤ 1 мс почти на любом
+размере heap, но платой идёт ~5–10% throughput и обязательный 64-bit, требование
+`MAP_HUGETLB` или transparent huge pages для производительности.
+
+```bash
+# Современные опции и их интерпретация:
+-XX:+UseG1GC                       # default ≥ Java 9, для большинства middle-сервисов
+-XX:MaxGCPauseMillis=200           # цель в мс. Меньше — больше throughput cost
+-XX:G1HeapRegionSize=8m            # размер региона (auto в большинстве случаев)
+-XX:InitiatingHeapOccupancyPercent=45   # порог начала concurrent mark (default 45)
+-XX:+UseZGC -XX:+ZGenerational     # Java 21+, generational ZGC
+-Xlog:gc*,gc+heap=trace,gc+phases=debug:file=gc.log:time,uptime,level,tags  # унифицированный GC log
+-XX:+DisableExplicitGC             # запретить System.gc()
+```
+
+GC log в Java 9+ перешёл на унифицированный `-Xlog:gc*` (JEP 158). Старые
+`-XX:+PrintGCDetails`/`-Xloggc:` удалены. Анализаторы: **GCViewer** (open-source,
+graphs throughput/pauses), **GCEasy** (web), **Garbagecat** (CLI). Что искать:
+average + p99 pause, частота promotion failure, promotion to-space exhausted (G1
+не успел освободить регионы и упал в Full GC).
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank).** «Расскажите про Garbage Collector в Java.»
+
+Заходим сверху: GC = автоматическое освобождение объектов, на которые нет ссылок
+из GC roots. Дальше — структура: weak generational hypothesis → young/old → Minor
+(копирующий, быстрый) и Full (медленный). Перечисляем сборщики и где их выбирать:
+Serial — embedded и тесты, Parallel — batch с упором на throughput, G1 — default
+для большинства middle-сервисов (heap 4–32 ГБ, цель ≤ 200ms pause), ZGC — для
+SLA p99 ≤ 10ms или huge heap. Финал — диагностика: `-Xlog:gc*`, GCEasy, что
+смотрим: pause time распределение, частота Full GC, allocation rate.
+
+**Вопрос 2 (Альфа, VK).** «Что делает System.gc()?»
+
+`System.gc()` — это **подсказка** JVM собрать мусор. По JLS JVM не обязана его
+выполнять. На практике: Serial/Parallel/G1 запустят Full GC; ZGC — concurrent
+cycle; если выставлен `-XX:+DisableExplicitGC` — игнор. Опасности: непредсказуемая
+STW-пауза, ломает SLA. Когда вообще можно: профилировщики, тесты, перед heap dump.
+В продовом коде — никогда. Альтернатива для контроля памяти — TTL-кэш, пулы,
+явное закрытие ресурсов.
+
+**Вопрос 3 (Озон, Сбер).** «У вас G1, p99 pause 800ms, цель 200ms. План действий.»
+
+Структурированный план:
+1. **Замерить**, не выдумывать. `-Xlog:gc*,gc+phases=debug` → GCViewer → понять,
+   где время: Mark, Remark, Cleanup, Evacuation, Reference Processing.
+2. **Если Evacuation**: уменьшаем `-XX:G1NewSizePercent`, увеличиваем число регионов
+   через `-Xmx` или уменьшаем `-XX:G1HeapRegionSize` (если humongous частые).
+3. **Если Reference Processing**: проверяем количество `WeakReference`/`SoftReference`,
+   включаем `-XX:+ParallelRefProcEnabled`.
+4. **Если Full GC**: смотрим promotion failures (`to-space exhausted`) — значит,
+   объекты успевают набираться быстрее, чем G1 эвакуирует. Лечится повышением
+   `-XX:G1ReservePercent=20` или ранним началом mark cycle через
+   `-XX:InitiatingHeapOccupancyPercent=35`.
+5. **Если ничего не помогло** — пересмотр SLA или ZGC.
+
+## Один день из практики
+
+Понедельник, jira-тикет от QA: «smoke-тест прода: 80% запросов укладываются в 100мс,
+но 0.5% > 2 секунд». Grafana показывает: spikes латенси совпадают с GC паузами.
+GC log `-Xlog:gc*` выглядит так:
+
+```
+[2026-03-15T09:14:23.501+0300] GC(412) Pause Young (Normal) (G1 Evacuation Pause) 1.8s
+   Eden: 1024M->0M  Survivors: 32M->48M  Heap: 2.1G->1.1G
+[2026-03-15T09:14:42.103+0300] GC(413) Pause Young (Concurrent Start) 156ms
+[2026-03-15T09:14:42.260+0300] GC(414) Concurrent Mark Cycle
+[2026-03-15T09:14:48.700+0300] GC(414) Concurrent Mark Cycle 6.4s
+[2026-03-15T09:15:01.330+0300] GC(415) Pause Full (G1 Compaction Pause) 2.4s
+```
+
+Симптом: Concurrent mark не успевает, IHOP-порог достигается слишком поздно, G1
+сваливается в Full GC. Гипотеза — высокий allocation rate в Old gen (то есть
+объекты переживают tenuring, что само по себе странно).
+
+Шаг 1. Снимаем профиль:
+
+```bash
+jcmd <pid> JFR.start name=alloc duration=5m settings=profile.jfc filename=alloc.jfr
+# в JMC: TLAB Allocations / Heap → Outside TLAB → видим, что 60% аллокаций — char[]
+# Top method: com.acme.report.ReportBuilder.buildHugeReport (создаёт строки до 10MB)
+```
+
+Шаг 2. Размер аллокации > G1HeapRegionSize / 2 = humongous allocation. Каждый
+такой объект кладётся в свой регион, и при удалении не помогает обычный young copy.
+Лечение — либо разбить на стримы (не материализовать гигантский CSV в строку), либо
+увеличить `-XX:G1HeapRegionSize=32m`.
+
+Шаг 3. Конфигурация после фикса:
+
+```bash
+-Xmx6g
+-XX:+UseG1GC
+-XX:MaxGCPauseMillis=200
+-XX:G1HeapRegionSize=16m
+-XX:InitiatingHeapOccupancyPercent=35     # начинаем mark раньше
+-XX:+ParallelRefProcEnabled
+-Xlog:gc*,gc+heap=trace:file=/data/gc.log:time,uptime,level,tags:filecount=10,filesize=50M
+```
+
+Шаг 4. После релиза p99 упал с 2.1s до 280ms. Уроки: смотреть на **shape** аллокаций
+(rate, размер, humongous), не на default-конфиг. GCEasy / GCViewer — must-have
+инструмент.
+
+## Типичные провалы
+
+Кейс 1. Где проблема?
+
+```bash
+java -Xmx32g -jar app.jar
+# GC не указан, Java 17. На большом heap default G1 даёт паузы до 1s
+```
+
+На heap ≥ 16 ГБ G1 уже близок к пределу комфорта. Для SLA p99 ≤ 10 мс лучше ZGC:
+`-XX:+UseZGC -XX:+ZGenerational`. Просто увеличить heap «чтобы было» — рецепт
+адских Full GC.
+
+Кейс 2. Где проблема?
+
+```java
+@Scheduled(fixedDelay = 60_000)
+public void cleanup() {
+    System.gc();   // «помогает уменьшить heap»
+}
+```
+
+`System.gc()` каждую минуту = принудительный Full GC. p99 рушится, throughput
+падает. Если действительно нужно освободить direct buffers — `ByteBuffer.clean()`
+через JDK internals или `Cleaner` API; для on-heap — TTL-кэш.
+
+Кейс 3. Где проблема?
+
+```bash
+java -XX:+UseConcMarkSweepGC -Xmx8g -jar app.jar
+# на Java 17
+```
+
+CMS удалён в Java 14 (JEP 363). На Java 17 опция игнорится с warning, JVM
+переключается на G1. Нужно перепроверить config-файлы — `-XX:+UseConcMarkSweepGC`,
+`-XX:+UseParNewGC` и связанные опции CMS все deprecated/removed.
+
+Кейс 4. Где проблема?
+
+```java
+WeakReference<HeavyObject> ref = new WeakReference<>(load());
+// ...
+HeavyObject obj = ref.get();      // часто null после первого GC
+if (obj != null) obj.use();
+```
+
+`WeakReference` собирается на первом же GC после потери сильных ссылок. Для кэшей
+правильнее `SoftReference` (живёт, пока heap не близок к OOM), а ещё лучше —
+`Caffeine` с явным TTL и max size. `WeakHashMap` пригоден только для метаданных
+с естественным lifetime ключа.
+
+Кейс 5. Где проблема?
+
+```bash
+-XX:NewRatio=8         # young : old = 1 : 8 на G1
+-XX:NewSize=512m       # фиксированный young
+-XX:MaxNewSize=512m
+```
+
+В G1 ручное задание размера young gen ломает adaptive sizing. G1 сам выбирает young
+size по `MaxGCPauseMillis`. Если задать `-XX:G1NewSizePercent=20`+`G1MaxNewSizePercent=60`
+— это рамки, а не фикс. Жёстко задать young в G1 — антипаттерн.
+
+## Что почитать
+
+- [JEP 248: Make G1 the Default GC](https://openjdk.org/jeps/248) — обоснование выбора G1 в Java 9.
+- [JEP 377: ZGC: A Scalable Low-Latency Garbage Collector (Production)](https://openjdk.org/jeps/377) — про colored pointers и load barriers.
+- [JEP 439: Generational ZGC](https://openjdk.org/jeps/439) — Java 21+.
+- [JEP 158: Unified JVM Logging](https://openjdk.org/jeps/158) — единый формат `-Xlog`.
+- [JEP 363: Remove the Concurrent Mark Sweep (CMS) Garbage Collector](https://openjdk.org/jeps/363) — почему CMS больше нет.
+- Aleksey Shipilёv, [«One Stop Page»](https://shipilev.net/) — статьи и benchmark'и по G1, ZGC, Shenandoah.
+- *The Garbage Collection Handbook*, Richard Jones — фундаментальная теория сборщиков.
+- [GCEasy](https://gceasy.io/) — онлайн-анализатор GC логов.
+
 ## Где в стеке
 
 **Уровень 3: JVM, GC, диагностика.** Что происходит «под капотом». Уровень между junior («GC чистит память») и senior (tuning под нагрузку). Middle должен знать виды OOM и план диагностики через heap dump.

@@ -127,6 +127,221 @@ JVM — спецификация виртуальной машины (загру
 - «Java интерпретируется» — забывать про JIT
 - Думать, что JDK 17 заменяет JDK 11 (LTS живут параллельно)
 
+## Развёрнутое объяснение
+
+Различение JDK / JRE / JVM — это не педантичная мелочь, а карта ответственности.
+JVM — это **спецификация** (Java Virtual Machine Specification, JVMS, сейчас актуальна
+для Java 21+), описывающая bytecode-формат `.class`, class loader subsystem, runtime
+data areas (Heap, Stack, Method Area, PC Register, Native Method Stack), execution
+engine (interpreter + JIT), и native interface (JNI). Конкретная реализация спеки —
+это уже HotSpot (Oracle/OpenJDK), J9/OpenJ9 (IBM), GraalVM, Azul Zing. Слово «JVM»
+в обиходе чаще значит HotSpot, но это implementation detail.
+
+JRE = JVM + стандартная библиотека (java.base, java.sql, java.xml и т.д., начиная
+с Java 9 разбитая на модули JPMS, JEP 261). До Java 11 Oracle поставлял JRE
+отдельно — «runtime для пользователей, у которых нет нужды компилировать». С Java 11
+этот продукт отменён (JEP 322 + General Availability notes); ваш «JRE» теперь либо
+полный JDK без `javac`, либо собранный через `jlink` под конкретное приложение
+custom runtime (JEP 282).
+
+JDK = JRE + tooling: `javac` (компилятор Java → bytecode), `jar` (упаковщик),
+`jlink` (сборщик custom runtime), `jdeps` (анализатор зависимостей модулей),
+`jshell` (REPL, JEP 222), плюс диагностика — `jstack`, `jmap`, `jstat`, `jcmd`,
+`jfr` (Java Flight Recorder, JEP 328, открыли в Java 11). На middle-уровне ждут,
+что вы хотя бы раз снимали thread/heap dump в проде, поэтому знание `jcmd <pid> ...`
+— must-have.
+
+```bash
+javac Hello.java                 # компиляция .java → .class (bytecode)
+java Hello                       # запуск: JVM грузит .class через ClassLoader, интерпретирует, JIT компилирует горячие методы
+jar cf hello.jar Hello.class     # упаковка в JAR
+jlink --add-modules java.base \
+      --output myjre              # собрать минимальный JRE под приложение (Java 9+)
+jcmd <pid> Thread.print           # thread dump через JCMD (рекомендованная замена jstack)
+jcmd <pid> GC.heap_dump heap.bin  # heap dump без остановки jmap
+jcmd <pid> JFR.start duration=60s filename=profile.jfr  # запись профиля Java Flight Recorder
+```
+
+История: LTS-релизы (Long-Term Support) — Java 8 (2014), 11 (2018), 17 (2021),
+21 (2023), 25 (2025). Non-LTS живут полгода (например, Java 14 → Java 15). Дистрибутивы:
+**OpenJDK** (open-source reference build), **Oracle JDK** (бывший коммерческий,
+с Java 17 LTS снова свободен для production по NFTC), **Eclipse Temurin** (Adoptium,
+сообщество, бесплатно, рекомендован для прода), **Amazon Corretto** (AWS, бесплатно,
+с расширенной поддержкой LTS), **Azul Zulu / Prime** (Zing — proprietary GC C4),
+**GraalVM** (Oracle, добавляет AOT-компиляцию native-image и polyglot runtime).
+
+Bytecode и JIT — отдельный сюжет. Когда вы запускаете `java Hello`:
+1. ClassLoader (Bootstrap → Platform → Application) грузит `.class`.
+2. Verifier проверяет bytecode на безопасность.
+3. Interpreter начинает выполнение — это медленно, но стартует мгновенно.
+4. JIT (C1 / C2) собирает профиль исполнения. Для «горячих» методов (порог
+   `-XX:CompileThreshold`, default 10 000 invocations в tiered compilation)
+   компилирует bytecode в native-код, кладёт в Code Cache.
+5. Tiered Compilation (default с Java 8): C1 для быстрой компиляции с минимальной
+   оптимизацией, C2 для агрессивной оптимизации горячих методов. JEP 295 (Java 9)
+   добавил AOT через `jaotc`, но он deprecated в Java 17 — теперь AOT делается через
+   GraalVM native-image.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Яндекс, Лига).** «JDK, JRE, JVM — в чём разница?»
+
+Развёрнутый ответ. JVM — спецификация виртуальной машины и её реализация (чаще всего
+HotSpot). JVM исполняет bytecode `.class`, управляет памятью через GC, оптимизирует
+JIT. JRE — JVM плюс стандартная библиотека: минимум, чтобы запустить уже
+скомпилированную программу. JDK — JRE плюс инструменты разработчика: `javac` для
+компиляции `.java → .class`, `jar`, диагностика (`jstack`, `jmap`, `jcmd`). Важный
+маркер middle-уровня: «начиная с Java 11 Oracle не поставляет отдельный JRE — мы
+ставим JDK, либо собираем runtime через `jlink`». Обычно второй вопрос-доводка —
+«а что такое bytecode и где JIT?» — ответ через цепочку javac → .class → ClassLoader
+→ Interpreter → JIT (C1 + C2 в tiered mode) → native code в Code Cache.
+
+**Вопрос 2 (Альфа, T-Bank).** «Какие LTS-версии Java вы знаете и в чём принципиальная
+разница 8 → 11 → 17 → 21?»
+
+Ответ-таблица:
+- **Java 8 (2014)**: лямбды, Stream API, `Optional`, `java.time`, default methods. До сих пор
+  большинство легаси.
+- **Java 11 (2018)**: модули (JPMS из Java 9), `var`, HTTP Client API (`java.net.http`),
+  ZGC и Epsilon GC, deprecation Nashorn. Конец Oracle-JRE.
+- **Java 17 (2021)**: sealed classes (JEP 409), pattern matching for `instanceof`,
+  records (JEP 395), text blocks. Renaming JVMTI threads (`Thread.threadId()`).
+  Удалены: Applet API, RMI Activation, Security Manager (deprecated в 17, удалён в 21).
+- **Java 21 (2023)**: virtual threads (JEP 444), pattern matching for `switch`
+  (JEP 441), Sequenced Collections (JEP 431), generational ZGC.
+
+**Вопрос 3 (Лига).** «Зачем `jlink`?»
+
+`jlink` — сборщик custom Java runtime под конкретное приложение из набора модулей
+(JEP 282). Раньше Docker-образ с Java тянул весь JRE ~150 МБ. С `jlink` мы
+анализируем зависимости через `jdeps`, режем лишние модули и получаем runtime
+30–60 МБ. Это особенно важно для serverless / Lambda / minimal Docker base
+(distroless, Alpine).
+
+## Один день из практики
+
+В пятницу вечером падает прод. Алерт: pod рестартует с exit code 137 (SIGKILL от
+OOMKiller Kubernetes). В логах нет stack trace — JVM не успела дописать.
+
+Шаг 1. Включаем диагностику в Deployment.yaml:
+
+```yaml
+env:
+  - name: JAVA_TOOL_OPTIONS
+    value: >-
+      -XX:+HeapDumpOnOutOfMemoryError
+      -XX:HeapDumpPath=/data/heap.hprof
+      -XX:+ExitOnOutOfMemoryError
+      -Xlog:gc*:file=/data/gc.log:time,uptime,level,tags
+      -XX:NativeMemoryTracking=summary
+```
+
+Шаг 2. Подключаемся к живому pod, снимаем native memory tracking:
+
+```bash
+kubectl exec -it api-7d5c -- jcmd 1 VM.native_memory summary
+# смотрим: heap + metaspace + code + thread + GC + internal + native ≈ RSS?
+# если RSS значительно больше — утечка в native (JNI, off-heap ByteBuffer)
+
+kubectl exec -it api-7d5c -- jcmd 1 GC.class_histogram | head -20
+# топ-классов по памяти. Видим byte[] и char[] на 60% — подозрение на кэш строк
+```
+
+Шаг 3. Снимаем heap dump (без остановки приложения):
+
+```bash
+kubectl exec api-7d5c -- jcmd 1 GC.heap_dump /data/heap.bin
+kubectl cp api-7d5c:/data/heap.bin ./heap.bin
+# открываем в Eclipse MAT, идём в Dominator Tree
+```
+
+Шаг 4. В MAT находим `ConcurrentHashMap` на 1.8 ГБ — кэш JWT-токенов без TTL.
+Чинится через Caffeine с `expireAfterWrite(15, MINUTES)`.
+
+Шаг 5. Перед коммитом убеждаемся, что в образе именно JDK с тулзами (не slim JRE),
+иначе `jcmd` в проде не работает:
+
+```dockerfile
+FROM eclipse-temurin:21-jdk-alpine    # не jre-alpine — нужны jcmd/jstack/jmap
+```
+
+## Типичные провалы
+
+Кейс 1. Где проблема?
+
+```dockerfile
+FROM openjdk:11-jre-slim
+COPY app.jar /app.jar
+ENTRYPOINT ["java", "-jar", "/app.jar"]
+```
+
+Образ `openjdk:11-jre-slim` deprecated — Oracle снёс official `-jre-` теги. Плюс
+JRE не содержит `jstack`/`jmap`/`jcmd` — в проде нечем диагностировать. Правильно:
+`eclipse-temurin:21-jdk` или собрать custom runtime через `jlink`.
+
+Кейс 2. Где проблема?
+
+```bash
+# CI пайплайн
+JAVA_HOME=/opt/java-17 javac -source 17 -target 17 Main.java
+JAVA_HOME=/opt/java-11 java Main      # UnsupportedClassVersionError
+```
+
+Скомпилировали под target 17, запустили на JRE 11. Bytecode major version 61 (Java 17)
+старше, чем понимает JRE 11. Лечится либо `--release 11` при компиляции, либо подъёмом
+JRE.
+
+Кейс 3. Где проблема?
+
+```java
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello".intern());
+        Runtime.getRuntime().gc();              // OK
+        System.gc();                            // OK
+        System.runFinalization();               // deprecated forRemoval
+    }
+}
+```
+
+`System.runFinalization` и финализаторы вообще deprecated forRemoval в Java 18 (JEP 421).
+Не закладываемся на финализаторы для cleanup ресурсов — `try-with-resources`/`Cleaner`/`PhantomReference`.
+
+Кейс 4. Где проблема?
+
+```bash
+java -version
+# openjdk version "1.8.0_372"
+mvn package
+# артефакт собрался под Java 8
+# на проде:
+java --enable-preview -jar app.jar
+# Unrecognized option: --enable-preview
+```
+
+`--enable-preview` появилась в Java 13 (JEP 12 «Preview Features»). На JRE 8 такой
+опции нет. Запуск с preview обязан совпадать с версией компиляции.
+
+Кейс 5. Где проблема?
+
+«Команда: "хочу AOT, переключаемся на GraalVM. Native-image выдаёт `Class not found:
+com.fasterxml.jackson...`».
+
+GraalVM native-image требует reflection-config / serialization-config / resource-config
+для всех reflectively-загружаемых классов. Spring Boot 3 решает это через AOT-плагин
+(Spring Native), но любая ручная reflection ломает build. Лекарство — `META-INF/native-image/`
+конфиги или `--features` plugin'ы из Spring Native.
+
+## Что почитать
+
+- [The Java Language Specification, Java SE 21 Edition](https://docs.oracle.com/javase/specs/jls/se21/html/index.html) — JLS.
+- [The Java Virtual Machine Specification, Java SE 21 Edition](https://docs.oracle.com/javase/specs/jvms/se21/html/index.html) — JVMS, bytecode и runtime.
+- [JEP 282: jlink: The Java Linker](https://openjdk.org/jeps/282) — про сборку custom runtime.
+- [JEP 322: Time-Based Release Versioning](https://openjdk.org/jeps/322) — почему отменили отдельный JRE.
+- [JEP 328: Java Flight Recorder](https://openjdk.org/jeps/328) — диагностический инструмент.
+- [Adoptium Temurin](https://adoptium.net/) — официальный community-build, дефолт для прода.
+- *Java Performance*, Scott Oaks (O'Reilly, 2-е изд.) — главы 1–3 про tooling и JIT.
+
 ## Где в стеке
 
 **Уровень 0: Java Core.** Фундамент языка. Без него все следующие уровни рассыпаются: equals/hashCode не работает в HashMap, Stream API ломается на peek без терминалки, String Pool путается с new String.

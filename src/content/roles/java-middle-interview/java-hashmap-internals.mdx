@@ -127,6 +127,373 @@ HashMap — массив бакетов (default capacity 16, load factor 0.75).
 - Использовать HashMap в многопоточном коде (Java 7 — infinite loop при resize!)
 - Менять mutable-ключ после put
 
+## Развёрнутое объяснение
+
+`HashMap` — самая популярная коллекция Java и одновременно самая «сюрпризная» по
+внутренностям. На middle ждут понимания трёх вещей: hash spreading, treeify, resize.
+
+**1. Hash spreading.** Поле `hash` в `HashMap.Node` — это **не** `key.hashCode()`,
+а его «размытая» версия:
+
+```java
+// java.util.HashMap.hash (OpenJDK 21)
+static final int hash(Object key) {
+    int h;
+    return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+}
+```
+
+Зачем XOR со сдвинутыми верхними 16 битами? При capacity = 16 (default) индекс
+бакета считается как `hash & (cap - 1) = hash & 0b1111`. Использовались бы только
+младшие 4 бита — а у многих типов ключей именно младшие биты предсказуемы (id,
+последовательные числа). XOR смешивает верхние и нижние, давая равномерное
+распределение даже на маленьких capacity. На capacity = 16 это даёт качественный
+эффект, на больших — почти бесплатно.
+
+**2. Структура бакета.** До Java 8 — `LinkedList<Node>`. С Java 8 (JEP не отдельный,
+но баг JDK-8023463 + патч) при достижении `TREEIFY_THRESHOLD = 8` элементов в
+одном бакете И capacity ≥ `MIN_TREEIFY_CAPACITY = 64`, бакет конвертируется в
+**Red-Black Tree** через `treeifyBin`. Если capacity < 64 — вместо treeify
+происходит resize. Обратная конвертация: при сжатии до `UNTREEIFY_THRESHOLD = 6`
+дерево обратно становится списком.
+
+Это даёт защиту от hash-DoS атак: даже если все ключи имеют одинаковый hashCode
+(или специально подобраны коллизии), поиск в бакете деградирует с O(n) до O(log n).
+
+```java
+// Упрощённый псевдокод путVal:
+static final int TREEIFY_THRESHOLD = 8;
+static final int UNTREEIFY_THRESHOLD = 6;
+static final int MIN_TREEIFY_CAPACITY = 64;
+
+V putVal(int hash, K key, V value) {
+    int i = (n - 1) & hash;
+    Node<K,V> p = table[i];
+    if (p == null) table[i] = new Node<>(hash, key, value, null);
+    else {
+        // обход списка или дерева, бин-count++
+        if (binCount >= TREEIFY_THRESHOLD - 1) {
+            if (n < MIN_TREEIFY_CAPACITY) resize();
+            else treeifyBin(table, hash);
+        }
+    }
+    if (++size > threshold) resize();
+}
+```
+
+**3. Resize и Java 8 фикс «split bucket в две части».** До Java 8 при resize
+пересчитывался индекс каждого элемента: `new_index = hash & (newCap - 1)`. В
+многопоточном HashMap это могло привести к **infinite loop** (циклическому списку
+в бакете) — печально известный баг, который убивал серверы. Java 8 переделал
+алгоритм: новая capacity всегда `oldCap * 2`, значит у `hash` появляется один
+новый «значимый» бит. Элемент остаётся в исходном бакете, если этот бит = 0,
+или уходит в `oldIndex + oldCap`, если = 1. Без полного rehash, два прохода
+независимы — и infinite loop невозможен. Но HashMap всё ещё **не thread-safe**:
+size, modCount, treeify теряют согласованность под concurrent write.
+
+**4. Equals / hashCode контракт.** Без него HashMap не работает:
+
+```java
+// Контракт:
+// 1. a.equals(b) => a.hashCode() == b.hashCode()
+// 2. !a.equals(b) НЕ ОБЯЗАН значить hashCode разные (коллизии допустимы)
+// 3. hashCode стабилен в течение жизни объекта (если equals не зависит от изменений)
+```
+
+Если переопределить `equals`, но не `hashCode`, HashMap будет класть «равные»
+объекты в разные бакеты и `containsKey` вернёт false. Если хешкод нестабилен
+(меняется при mutation поля, входящего в equals), `get(key)` после put может не
+найти ключ.
+
+**5. LinkedHashMap и TreeMap.** LinkedHashMap = HashMap + двусвязный список
+для сохранения порядка (insertion или access — через конструктор). Полезен для
+LRU-кэшей через override `removeEldestEntry`. TreeMap = Red-Black Tree поверх
+`Comparable` или `Comparator`. O(log n) на всё, но даёт упорядоченность по ключу
+и `subMap`/`headMap`/`tailMap`.
+
+```java
+// LRU-кэш на LinkedHashMap (вне production предпочесть Caffeine):
+public class LruCache<K, V> extends LinkedHashMap<K, V> {
+    private final int capacity;
+    public LruCache(int capacity) {
+        super(capacity, 0.75f, true);  // accessOrder = true
+        this.capacity = capacity;
+    }
+    @Override protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+        return size() > capacity;
+    }
+}
+```
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Яндекс, T-Bank — спросят почти точно).** «Как устроена HashMap
+изнутри?»
+
+Структурированный ответ:
+1. **Массив бакетов** (`Node<K,V>[] table`), default capacity 16, всегда степень
+   двойки.
+2. **Индекс бакета**: `(hash ^ (hash >>> 16)) & (capacity - 1)` — XOR-spread + битовая
+   маска вместо modulo (быстрее).
+3. **Коллизии**: до 8 элементов в бакете — связный список, ≥ 8 при capacity ≥ 64 —
+   красно-чёрное дерево (treeify, Java 8+).
+4. **Resize** при `size > capacity * loadFactor` (default 0.75): новая capacity =
+   старая × 2, элементы перераспределяются по одному биту нового hash.
+5. **Контракт equals/hashCode** — без него map ломается.
+
+**Вопрос 2 (Альфа, VK).** «Что произойдёт, если все ключи имеют hashCode = 0?»
+
+Все попадают в один бакет. До Java 7 — O(n) на get/put. С Java 8 при ≥ 8 элементах
+бакет treeify'ится в RB-tree, и поиск становится O(log n). Но **деревья требуют
+сравнимости ключей**: если ключ implements Comparable, используется compareTo;
+если нет — fallback на linked list даже после treeify (см. `comparableClassFor`
+в OpenJDK). Это защита от hash-DoS, но за неё платится константа: tree-узел
+дороже list-узла по памяти (8 ссылок против 1).
+
+**Вопрос 3 (Сбер, Озон).** «Что не так?»
+
+```java
+public class Point {
+    int x, y;
+    public Point(int x, int y) { this.x = x; this.y = y; }
+    @Override public boolean equals(Object o) {
+        return o instanceof Point p && x == p.x && y == p.y;
+    }
+    // hashCode() не переопределён
+}
+
+Map<Point, String> map = new HashMap<>();
+map.put(new Point(1, 2), "a");
+map.get(new Point(1, 2));  // null
+```
+
+Без `hashCode` использовался `Object.hashCode()` (identity-based), у двух разных
+объектов он разный. `put` положил в один бакет, `get` ищет в другом — `null`.
+Решение: переопределить `hashCode` (например, `Objects.hash(x, y)` или
+`Integer.hashCode(x) * 31 + Integer.hashCode(y)`).
+
+**Вопрос 4 (T-Bank, продвинутый).** «Чем HashMap отличается от ConcurrentHashMap?»
+
+Тезисно:
+- HashMap — НЕ thread-safe, concurrent put может породить data race, потерю записей,
+  в Java 7 — infinite loop при resize.
+- CHM — thread-safe, неблокирующий read, CAS-put на пустые бакеты, `synchronized`
+  на голове цепочки/дерева при коллизии. Размер хранится через `CounterCell[]`
+  (striped counter), `size()` — приблизительный.
+- CHM не поддерживает `null` ключ или значение.
+- CHM есть `compute`, `merge`, `putIfAbsent` атомарные.
+
+## Один день из практики
+
+Тебя позвали в дебаг: «после релиза `/users/{id}` отдаёт 404 в 5% случаев. На дев
+не воспроизводится». Идём смотреть код:
+
+```java
+@Service
+public class UserCache {
+    private final Map<UserKey, User> cache = new HashMap<>();
+
+    public User get(String tenant, long id) {
+        return cache.computeIfAbsent(new UserKey(tenant, id), this::load);
+    }
+}
+
+public class UserKey {
+    String tenant; long id;
+    public UserKey(String t, long i) { tenant = t; id = i; }
+    @Override public boolean equals(Object o) {
+        return o instanceof UserKey k && k.tenant.equals(tenant) && k.id == id;
+    }
+    @Override public int hashCode() {
+        return tenant.hashCode() + (int) id;
+    }
+}
+```
+
+Проблемы. Во-первых, `UserKey` mutable — `tenant` не final. Если кто-то изменит
+поле после put, hashCode «уплывёт» и get не найдёт. На дев один тенант, на проде —
+несколько, гонка на изменение поля проявляется.
+
+Во-вторых, HashMap в singleton'е под нагрузкой — два потока одновременно вызывают
+`computeIfAbsent`, гонка на resize, redo-цикл, потеря записей.
+
+В-третьих, кэш без TTL — Memory leak.
+
+Фикс:
+
+```java
+public final class UserKey {
+    private final String tenant;
+    private final long id;
+    public UserKey(String t, long i) { tenant = t; id = i; }
+
+    @Override public boolean equals(Object o) {
+        return o instanceof UserKey k && k.id == id && k.tenant.equals(tenant);
+    }
+    @Override public int hashCode() {
+        return Objects.hash(tenant, id);
+    }
+}
+
+@Service
+public class UserCache {
+    private final Cache<UserKey, User> cache = Caffeine.newBuilder()
+        .maximumSize(100_000)
+        .expireAfterWrite(Duration.ofMinutes(10))
+        .build();
+}
+```
+
+Регресс-тест:
+
+```java
+@Test
+void hashCode_should_be_stable() {
+    UserKey k = new UserKey("acme", 42);
+    int h1 = k.hashCode();
+    // immutable — нет способа изменить
+    assertEquals(h1, k.hashCode());
+}
+
+@Test
+void concurrent_put_no_data_loss() throws Exception {
+    Cache<UserKey, User> cache = ...;
+    int N = 100_000;
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    IntStream.range(0, N).forEach(i ->
+        executor.submit(() -> cache.put(new UserKey("t", i), new User(i)))
+    );
+    executor.shutdown(); executor.awaitTermination(30, TimeUnit.SECONDS);
+    assertEquals(N, cache.estimatedSize());
+}
+```
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+Map<List<Integer>, String> map = new HashMap<>();
+List<Integer> key = new ArrayList<>(List.of(1, 2, 3));
+map.put(key, "x");
+key.add(4);
+System.out.println(map.get(List.of(1, 2, 3, 4)));  // null
+System.out.println(map.get(List.of(1, 2, 3)));     // null
+```
+
+`ArrayList.hashCode()` зависит от содержимого. После `key.add(4)` хеш-код ключа в
+бакете изменился, но ключ лежит в старом бакете (по старому хешу). Поиск по любому
+ключу не найдёт его. **Правило**: ключи HashMap должны быть immutable, или мы не
+должны мутировать их после put.
+
+Кейс 2. Где баг?
+
+```java
+Map<MyDto, Integer> counts = new HashMap<>();
+for (MyDto d : items) {
+    counts.put(d, counts.getOrDefault(d, 0) + 1);
+}
+// результат всегда: каждое значение = 1
+```
+
+`MyDto` не переопределяет equals/hashCode → используется identity. Два DTO с
+одинаковыми полями — разные ключи. Лекарство: либо `@EqualsAndHashCode` (Lombok),
+либо `record MyDto(...)`, либо ручной override.
+
+Кейс 3. Где баг (Java 7 на старом enterprise)?
+
+```java
+Map<String, Object> shared = new HashMap<>();   // не synchronized!
+
+// в нескольких потоках:
+shared.put("key" + Math.random(), value);
+```
+
+В Java 7 concurrent resize мог создать круговую ссылку в бакете → `get` входит
+в infinite loop и съедает 100% CPU. На Java 8 баг с infinite loop исправлен, но
+данные всё равно теряются. Лекарство: `ConcurrentHashMap`.
+
+Кейс 4. Где баг?
+
+```java
+public class Account {
+    String id;
+    @Override public int hashCode() { return id.hashCode(); }
+    @Override public boolean equals(Object o) { return o instanceof Account a && a.id.equals(id); }
+}
+
+Set<Account> accounts = new HashSet<>();
+Account a = new Account("ID1");
+accounts.add(a);
+a.id = "ID2";              // мутация
+accounts.contains(a);      // false (!) — ищется по new hash, лежит по старому
+accounts.remove(a);        // не удалит
+```
+
+Тот же сюжет, что в кейсе 1, но через Set (внутри тот же HashMap). Mutable id —
+зло. Делать `final id`, или хранить snapshot.
+
+Кейс 5. Где баг?
+
+```java
+Map<Integer, String> map = new HashMap<>();
+for (int i = 0; i < 1_000_000; i++) map.put(i, "v");
+// потом много рандомных get — внезапно медленно
+```
+
+Default capacity 16 → при росте до 1M будет ≥ 20 resize'ов (`16 → 32 → 64 → ... → 1.3M`).
+Каждый resize — O(n). Решение: предзадать capacity → `new HashMap<>(2_000_000)`.
+HashMap округлит вверх до степени двойки.
+
+Кейс 6. Где баг?
+
+```java
+record Pair(String a, String b) {}
+
+Map<Pair, Integer> map = new HashMap<>();
+map.put(new Pair("x", "y"), 1);
+// hashCode у records считается через каждое поле — это ок
+// но:
+Pair p = new Pair(null, "y");
+map.put(p, 2);    // OK
+map.containsKey(new Pair(null, "y"));   // true — потому что hashCode null поля = 0
+```
+
+Не баг, просто чтобы пояснить: `record` сам генерирует корректные equals/hashCode
+с обработкой null. Это очень удобно для composite-ключей. На live coding часто
+просят написать «по двум полям ищем в Map» — record для этого идеален.
+
+Кейс 7. Где баг?
+
+```java
+Map<String, List<Order>> byUser = new HashMap<>();
+for (Order o : orders) {
+    if (!byUser.containsKey(o.userId)) {
+        byUser.put(o.userId, new ArrayList<>());
+    }
+    byUser.get(o.userId).add(o);
+}
+```
+
+`containsKey` + `get` — два прохода. Идиоматичнее:
+```java
+byUser.computeIfAbsent(o.userId, k -> new ArrayList<>()).add(o);
+```
+Или одна строка:
+```java
+Map<String, List<Order>> byUser = orders.stream()
+    .collect(Collectors.groupingBy(Order::userId));
+```
+
+## Что почитать
+
+- [OpenJDK 21 HashMap source](https://github.com/openjdk/jdk/blob/jdk-21+0/src/java.base/share/classes/java/util/HashMap.java) — обязательное чтение: `hash`, `putVal`, `resize`, `treeifyBin`.
+- [JDK-8023463: Improve HashMap performance with poor hash code distributions](https://bugs.openjdk.org/browse/JDK-8023463) — патч, добавивший treeify.
+- *Effective Java, 3rd Edition*, Joshua Bloch — **Item 10** (Obey the general contract when overriding `equals`), **Item 11** (Always override `hashCode` when you override `equals`).
+- Brian Goetz, [«Translation of HashMap»](https://wiki.openjdk.org/display/HotSpot/) — внутренние заметки команды HotSpot.
+- [Java HashMap and ConcurrentHashMap internals](https://shipilev.net/talks/devoxx-Nov2013-concurrent-collections.pdf) — слайды Шипилёва о коллекциях.
+- *Java Performance Companion*, Charlie Hunt — глава о коллекциях и cache locality.
+
 ## Где в стеке
 
 **Уровень 1: Collections.** Топ-частотный блок (HashMap спросят в 8/8 компаний). Знать внутренности: treeify в Java 8, resize, cache locality LinkedList, segmenting в ConcurrentHashMap.

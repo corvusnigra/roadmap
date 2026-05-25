@@ -128,6 +128,336 @@ masteryQuiz:
 - Игнорировать heap dump («долго анализировать») — баг возвращается
 - Считать, что GC сломан, когда дело в утечке
 
+## Развёрнутое объяснение
+
+Диагностика OOM в Java — это **не «увеличить -Xmx и забыть»**, а пошаговый
+протокол. Главное определение: **memory leak в Java — это объекты, на которые
+есть путь от GC roots, но которые приложению уже не нужны.** GC не «сломан»; он
+честно держит то, до чего может дотянуться по ссылкам. Поиск утечки — это поиск
+лишних рёбер reachability-графа.
+
+**Пять видов OutOfMemoryError**, как они звучат в stack trace и где их искать:
+
+```
+java.lang.OutOfMemoryError: Java heap space
+   ↑ heap кончился. Утечка либо недостаток -Xmx. Самый частый случай.
+
+java.lang.OutOfMemoryError: GC overhead limit exceeded
+   ↑ JVM провела > 98% времени в GC и освободила < 2% heap за 5 циклов.
+   Симптом heap-утечки на финальной стадии.
+
+java.lang.OutOfMemoryError: Metaspace
+   ↑ class metadata переполнилось. Class loader leak (Tomcat hot-reload,
+   Groovy/JavaScript scripting, CGLIB proxy без кэша).
+
+java.lang.OutOfMemoryError: Direct buffer memory
+   ↑ off-heap DirectByteBuffer не освобождается. Netty, NIO, Kafka client.
+
+java.lang.OutOfMemoryError: unable to create new native thread
+   ↑ упёрлись в OS-лимит (ulimit -u, /proc/sys/kernel/threads-max) или
+   суммарный stack RAM кончился.
+```
+
+**Протокол диагностики heap OOM:**
+
+1. **Подготовка**, ставим заранее (в JAVA_TOOL_OPTIONS):
+   ```
+   -XX:+HeapDumpOnOutOfMemoryError
+   -XX:HeapDumpPath=/data/heap-%p.hprof
+   -XX:+ExitOnOutOfMemoryError              # чтобы k8s рестартовал, а не висел в полуживом
+   -XX:+PrintClassHistogramAfterFullGC
+   -Xlog:gc*:file=/data/gc.log:time:filecount=10,filesize=50M
+   ```
+
+2. **При живом процессе** до падения:
+   ```
+   jcmd <pid> GC.heap_info
+   jcmd <pid> GC.class_histogram | head -30        # топ-20 классов по retained
+   jcmd <pid> GC.heap_dump /data/snapshot.hprof    # без -dump:live, чтобы поймать «лишнее»
+   jcmd <pid> VM.native_memory summary             # если NMT включён
+   jcmd <pid> JFR.start name=mem duration=5m filename=mem.jfr settings=profile
+   ```
+
+3. **Анализ heap dump в Eclipse MAT:**
+   - **Leak Suspects Report** (автоматический) — быстрая первая прикидка.
+   - **Dominator Tree** — кто кого «доминирует» (если выкинуть X, скольки объектам
+     это даст право умереть). Главный инструмент: смотрим топ-объекты,
+     путь до GC root.
+   - **Histogram** + Group by classloader — для Metaspace OOM и class loader leak.
+   - **OQL** — SQL-подобный язык по heap dump:
+     ```
+     SELECT * FROM java.util.HashMap WHERE this.size > 10000
+     SELECT s FROM java.lang.String s WHERE toString(s) LIKE ".*ERROR.*"
+     ```
+
+**Типичные источники утечек** (порядок частоты на собесе):
+
+```
+1. static Map/List без eviction.        // см. примеры в "Типичные провалы"
+2. ThreadLocal в Executor pool без remove().
+3. Незакрытые ресурсы (Stream, Connection, FileChannel).
+4. Listener'ы, не отписанные при destroy.
+5. Inner class / lambda, держащий outer (anonymous class в long-lived).
+6. ClassLoader leak: Tomcat hot-reload, Groovy.parseClass без кэша.
+7. Кэш с unbounded size (HashMap.put в цикле).
+8. Direct buffer без Cleaner-триггера.
+```
+
+**ThreadLocal в Executor** — особый случай. Executor переиспользует потоки.
+ThreadLocal, который вы поставили в одной задаче, остаётся в Thread, и его значение
+дожидается следующей задачи (или до конца жизни пула). Если значение тяжёлое —
+утечка. Лекарство: `try { tl.set(x); ... } finally { tl.remove(); }` или вообще не
+использовать ThreadLocal в managed-пулах.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank).** «Прод упал с OutOfMemoryError. Опишите план диагностики.»
+
+Структурированный ответ:
+
+1. **Идентифицировать вид OOM** — стек-трейс или (если pod убит без stack trace —
+   exit code 137 и Kubernetes Event «OOMKilled») — k8s memory limit, а не heap.
+2. **Heap dump** — либо уже снят через `-XX:+HeapDumpOnOutOfMemoryError`, либо
+   снять `jmap -dump:live,format=b` или `jcmd GC.heap_dump`.
+3. **MAT**: Leak Suspects → Dominator Tree → найти главного «жирного» → GC root path.
+4. **Подтвердить гипотезу**: сравнить два heap dump'а с разницей по времени
+   (Compare Two Snapshots в MAT), увидеть, какие объекты растут.
+5. **Фикс + регресс-тест** (`jol` для размера, JFR/MAT для воспроизводимости).
+6. **Алёрт**: настроить `jvm.memory.used / max > 0.85` в Prometheus, чтобы поймать
+   до OOM.
+
+**Вопрос 2 (Альфа, Озон).** «Что такое утечка памяти в Java, если у нас GC?»
+
+Утечка = объект reachable из GC roots (Thread stack, static field, JNI handle,
+classloader), но приложением фактически не нужен. GC не может его собрать, потому
+что ссылка существует. Классические корни:
+- `static Map<K, V>` без eviction.
+- ThreadLocal, который не `remove()` в managed-пуле.
+- Listener / Observer, не отписанный после use.
+- Inner class / lambda, замыкающий outer объект.
+
+Каждый из этих случаев — НЕ баг JVM. Это application-level bug.
+
+**Вопрос 3 (Сбер, VK).** «Pod в k8s падает с exit 137, в логах OOM нет. Что делать?»
+
+Exit 137 = SIGKILL от OOMKiller'а Linux (или k8s по limit). JVM не успела
+обработать сигнал и записать heap dump. План:
+
+1. **Проверить, что мы упёрлись в k8s limit, а не heap:**
+   ```bash
+   kubectl describe pod | grep -A5 "Last State"
+   # OOMKilled подтверждает.
+   kubectl top pod   # RSS близок к limit?
+   ```
+2. **Native memory** (виноват не heap, а off-heap):
+   ```bash
+   # включить NMT в pod заранее:
+   -XX:NativeMemoryTracking=summary
+   # потом:
+   jcmd 1 VM.native_memory summary
+   ```
+3. **Если NMT показал** Direct = 2 ГБ — Netty/Kafka leak. Если Thread = 500 МБ —
+   слишком много потоков × Xss. Если Metaspace = 600 МБ — class loader leak.
+4. **Поставить «парашют»**:
+   ```yaml
+   env:
+     - { name: JAVA_TOOL_OPTIONS, value: "-XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/data/heap.hprof -XX:MaxRAMPercentage=70" }
+   resources: { limits: { memory: "4Gi" } }
+   volumeMounts: [{ name: heap-storage, mountPath: /data }]
+   ```
+
+## Один день из практики
+
+Вторник, инцидент: api.acme.com за час до релиза падает с OOM. В Sentry stack trace:
+
+```
+java.lang.OutOfMemoryError: Java heap space
+   at java.util.HashMap.resize(HashMap.java:702)
+   at java.util.HashMap.putVal(HashMap.java:661)
+   at com.acme.metrics.MetricRegistry.record(MetricRegistry.java:42)
+```
+
+Шаг 1. Heap dump приехал в S3 (включён `HeapDumpOnOutOfMemoryError`). Скачиваем
+2.6 ГБ файл, открываем в MAT.
+
+Шаг 2. Leak Suspects Report говорит: «1.8 GB retained by single instance of
+java.util.concurrent.ConcurrentHashMap loaded by sun.misc.Launcher$AppClassLoader».
+
+Шаг 3. Dominator Tree → раскрываем CHM → 14M entries.
+
+Шаг 4. Path to GC Root:
+```
+com.acme.metrics.MetricRegistry.METRICS  (static field)
+   ↳ ConcurrentHashMap (14M entries)
+       ↳ MetricEntry × 14M
+```
+
+Шаг 5. Идём в код, видим:
+
+```java
+public class MetricRegistry {
+    private static final Map<String, MetricEntry> METRICS = new ConcurrentHashMap<>();
+
+    public void record(String name, double value) {
+        METRICS.computeIfAbsent(name, k -> new MetricEntry()).add(value);
+    }
+}
+```
+
+Проблема: `name` — это `endpoint + statusCode + userId`. На 1M уникальных
+пользователей растёт линейно, без TTL. Lекарство:
+
+```java
+// 1. Метрики per-user — антипаттерн. Группируем по endpoint+statusCode.
+// 2. Кардинальность ключа ограничена набором endpoint'ов (~50) × кодов (5).
+// 3. Если действительно нужен per-user — Caffeine с expireAfterAccess:
+
+private static final Cache<String, MetricEntry> METRICS = Caffeine.newBuilder()
+    .maximumSize(100_000)
+    .expireAfterAccess(10, TimeUnit.MINUTES)
+    .build();
+```
+
+Шаг 6. Регресс-тест: бомбардируем endpoint `/record` 100K уникальными ключами,
+снимаем heap dump после, размер CHM/Cache < 100K (а не 100K + старые). Прошло.
+
+Шаг 7. Добавить алёрт `jvm.memory.heap.used / max > 0.85 for 5m` в Prometheus,
+чтобы в следующий раз поймать заранее.
+
+## Типичные провалы
+
+Кейс 1. Где утечка?
+
+```java
+public class CacheService {
+    private static final Map<UserId, User> CACHE = new HashMap<>();
+
+    public User get(UserId id) {
+        return CACHE.computeIfAbsent(id, this::loadFromDb);
+    }
+}
+```
+
+`static` + без eviction = вечный рост. Лечение: `Caffeine` с TTL+maximumSize, или
+WeakHashMap (если UserId можно держать слабо), или Spring `@Cacheable` с
+конфигурацией.
+
+Кейс 2. Где утечка?
+
+```java
+public class RequestContext {
+    private static final ThreadLocal<RequestData> CURRENT = new ThreadLocal<>();
+
+    public static void set(RequestData d) { CURRENT.set(d); }
+}
+
+// в Servlet filter:
+RequestContext.set(buildRequestData(req));
+chain.doFilter(req, resp);
+// нет remove() в finally
+```
+
+В Tomcat thread pool потоки переиспользуются. Поле `CURRENT` остаётся со значением
+прошлого запроса до следующего `set`. Хуже того: пока pool жив, RequestData
+GC-roots-reachable. Лечение: `try { CURRENT.set(d); chain.doFilter(...) } finally { CURRENT.remove(); }`.
+
+Кейс 3. Где утечка?
+
+```java
+public class EventBus {
+    private final List<Listener> listeners = new ArrayList<>();
+    public void subscribe(Listener l) { listeners.add(l); }
+    // нет unsubscribe
+}
+
+// в каком-то компоненте:
+@PostConstruct
+void init() {
+    eventBus.subscribe(this::handleEvent);
+}
+```
+
+`this::handleEvent` — это lambda с захватом `this`. EventBus держит ссылку на
+компонент через lambda. Если компонент Prototype scope или `@RequestScoped` —
+он не GC'ится после use. Лечение: явный `unsubscribe` в `@PreDestroy`, или
+`WeakReference<Listener>` в EventBus.
+
+Кейс 4. Где утечка?
+
+```java
+@Service
+public class ReportService {
+    public String build() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 100_000_000; i++) {
+            sb.append("row-").append(i).append("\n");
+        }
+        return sb.toString();
+    }
+}
+```
+
+`StringBuilder` для 100M строк = 1+ ГБ char[]. На `toString()` ещё одна копия. OOM
+гарантирован. Стримить в OutputStream, не материализовать в строку.
+
+Кейс 5. Где утечка?
+
+```java
+@RestController
+public class Api {
+    @GetMapping("/data")
+    public Stream<User> all() {
+        return userRepo.findAll().stream();  // findAll() возвращает List<User>
+    }
+}
+```
+
+JPA `findAll()` сначала грузит всё в память. Stream поверх него не делает ничего.
+Лечение: `@QueryHints({@QueryHint(name="org.hibernate.fetchSize", value="100")})`
++ `Stream<User> stream()` репозитория + `@Transactional(readOnly=true)` + cursor-based
+pagination.
+
+Кейс 6. Где утечка (Metaspace)?
+
+```java
+while (true) {
+    GroovyShell shell = new GroovyShell();
+    Class<?> c = shell.parse(userScript).getClass();
+    c.newInstance();
+}
+```
+
+Каждый `GroovyShell.parse` создаёт новый `GroovyClassLoader`. Класс + его
+classloader живёт, пока на него есть ссылки. В цикле без переиспользования
+classloader Metaspace растёт. Лечение: один `GroovyShell` на приложение, или
+`GroovyClassLoader.clearCache()`, или кеширование `Class<?>` по hash скрипта.
+
+Кейс 7. Где утечка (Direct memory)?
+
+```java
+public byte[] fetch(String url) throws Exception {
+    HttpResponse<byte[]> resp = client.send(req, HttpResponse.BodyHandlers.ofByteArray());
+    return resp.body();
+}
+
+// при 1000 RPS RSS растёт, heap не растёт
+```
+
+Java HTTP Client использует DirectByteBuffer для приёма данных. Cleaner на них
+триггерится только при GC. Если allocation rate в heap низкий — direct накапливается.
+Лечение: `-XX:MaxDirectMemorySize=512m` явно (упадёт раньше с понятным OOM), пул
+буферов, или Netty с pooled allocator.
+
+## Что почитать
+
+- [Eclipse Memory Analyzer Tool (MAT)](https://eclipse.dev/mat/) — главный инструмент.
+- Aleksey Shipilёv, [«One Instance of OutOfMemoryError»](https://shipilev.net/blog/2014/exceptional-performance/) — глубокий разбор стек-трейсов OOM.
+- [Native Memory Tracking docs](https://docs.oracle.com/en/java/javase/21/troubleshoot/diagnostic-tools.html#GUID-2EAE6C76-EF3B-46C3-8155-3149A0A82C92) — как читать NMT summary/detail.
+- [JEP 328: Flight Recorder](https://openjdk.org/jeps/328) — для непрерывной диагностики аллокаций в проде.
+- *Java Performance: The Definitive Guide* (Scott Oaks) — глава 7, Heap Analysis.
+- [Garbagecat](https://github.com/mgm3746/garbagecat) — CLI-анализатор GC log с эвристиками.
+- [GCEasy heap dump analyzer](https://gceasy.io/) — облачный фоллбек, если MAT не справляется с гигантскими дампами.
+
 ## Где в стеке
 
 **Уровень 3: JVM, GC, диагностика.** Что происходит «под капотом». Уровень между junior («GC чистит память») и senior (tuning под нагрузку). Middle должен знать виды OOM и план диагностики через heap dump.

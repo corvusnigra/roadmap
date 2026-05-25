@@ -128,6 +128,271 @@ masteryQuiz:
 - Игнорировать Metaspace в Java 8+ — DI/proxy/CGLIB могут раздуть его
 - Увеличивать -Xmx без анализа причины OOM (часто это утечка, не недостаток)
 
+## Развёрнутое объяснение
+
+Карта памяти JVM по JVMS делится на **per-JVM** области (общие на процесс) и
+**per-thread** (на каждый поток):
+
+```
+┌────────────────────── процесс JVM (RSS) ──────────────────────┐
+│                                                                │
+│  HEAP (общий, GC)                                              │
+│  ┌──────────────────────────┬──────────────┐                  │
+│  │       Young Generation   │  Old Gen     │                  │
+│  │  ┌────┬─────┬─────┐      │              │                  │
+│  │  │Eden│ S0  │ S1  │      │ (tenured)    │                  │
+│  │  └────┴─────┴─────┘      │              │                  │
+│  └──────────────────────────┴──────────────┘                  │
+│  -Xms (initial)  ←—  -Xmx (max)                                │
+│                                                                │
+│  METASPACE (Java 8+, в native memory, auto-grow)              │
+│  -XX:MetaspaceSize / -XX:MaxMetaspaceSize                      │
+│   ┌─ class metadata, method bytecode, klass pointers ─┐       │
+│                                                                │
+│  CODE CACHE (JIT-скомпилированный native code)                │
+│  -XX:ReservedCodeCacheSize (default 240MB на C2)               │
+│                                                                │
+│  DIRECT MEMORY (off-heap, ByteBuffer.allocateDirect)          │
+│  -XX:MaxDirectMemorySize (default = -Xmx, тихая ловушка)       │
+│                                                                │
+│  Per-thread:                                                   │
+│   STACK (frames, locals, operand stack)  -Xss (≈ 512KB-1MB)   │
+│   PC Register (адрес текущей bytecode инструкции)             │
+│   Native Method Stack (JNI вызовы)                            │
+│                                                                │
+│  + GC internal, symbol tables, JNI handles, etc.              │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Что важно понимать:
+
+1. **На стеке — только примитивы и ссылки.** Сам объект, на который указывает
+   ссылка `User u = new User()`, лежит в куче. Слово «эскейп-анализ» (Escape Analysis,
+   `-XX:+DoEscapeAnalysis`, default on) — это оптимизация JIT, которая может
+   аллоцировать локальные не-escaping объекты на стеке или даже scalar-replace
+   (раскидать поля по регистрам). Это не контракт языка, на это не закладываются.
+
+2. **Stack overflow ≠ OutOfMemoryError.** Когда поток исчерпывает свой `-Xss`,
+   летит `java.lang.StackOverflowError`. Это типично при «рекурсии без базы»,
+   или при огромных стек-фреймах. Увеличить `-Xss` можно, но платой будет уменьшение
+   максимального числа потоков на процесс (см. native OOM ниже).
+
+3. **Metaspace заменил PermGen в Java 8 (JEP 122).** PermGen был частью heap с
+   фиксированным размером; class loader leak убивал JVM. Metaspace живёт в **native
+   memory**, по дефолту auto-grow до доступной OS-памяти. Поэтому в контейнере с
+   2 ГБ memory limit и Java 8 без `-XX:MaxMetaspaceSize` контейнер тихо съест memory
+   limit вместо heap OOM, и Kubernetes пришлёт SIGKILL (exit 137) без heap dump.
+   Лекарство — выставлять `-XX:MaxMetaspaceSize=256m` явно. С Java 10 контейнер-aware
+   JVM (JEP 341 + cgroup v2 в Java 15+) сама умеет считать `-Xmx` от cgroup limit,
+   но Metaspace всё равно нужен лимит.
+
+4. **Direct memory — отдельная ловушка.** `ByteBuffer.allocateDirect(N)` берёт память
+   **вне heap**, лимит — `-XX:MaxDirectMemorySize` (по умолчанию равен `-Xmx`). Netty,
+   Kafka client, gRPC сильно используют direct buffers. Если не выставить
+   `-XX:MaxDirectMemorySize=256m` явно, можно получить `OutOfMemoryError: Direct
+   buffer memory` или, ещё хуже, тихое раздутие RSS до Kill-9.
+
+5. **Code Cache** — место для JIT-кода. На большом количестве классов и AOT может
+   переполниться: `CodeCache is full. Compiler has been disabled.` — после этого
+   все методы исполняются только interpreter'ом, и латенси растёт x10. Лечится
+   `-XX:ReservedCodeCacheSize=512m` и `-XX:+UseCodeCacheFlushing`.
+
+```bash
+# Снять полную карту памяти на живом процессе:
+jcmd <pid> VM.native_memory summary
+
+# Пример вывода (важные строки):
+# Total: reserved=4.2GB, committed=2.1GB
+#   Java Heap (reserved=1.5GB, committed=1.5GB)
+#   Class (reserved=290MB, committed=80MB)        ← Metaspace
+#   Thread (reserved=512MB, committed=20MB)       ← 500 потоков × 1MB
+#   Code (reserved=240MB, committed=70MB)         ← Code Cache
+#   GC (reserved=80MB, committed=70MB)
+#   Internal (reserved=50MB)
+```
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа).** «Что такое Metaspace и чем он отличается от PermGen?»
+
+Развёрнутый ответ. PermGen (Permanent Generation) — в Java ≤ 7 это была отдельная
+область **внутри heap**, фиксированного размера (`-XX:MaxPermSize`), куда складывалось
+class metadata: представления `Class<?>`, bytecode методов, static-поля, internёные
+строки. Главная проблема — class loader leak в long-running серверах (Tomcat) убивал
+JVM: PermGen переполнялся, OOM. С Java 8 (JEP 122) PermGen удалён, заменён на
+**Metaspace** — отдельная область в **native memory**, не часть heap, auto-grow по
+умолчанию. Internёные строки и static переехали в heap, чтобы их трогал обычный GC.
+Старый `-XX:PermSize` / `-XX:MaxPermSize` молча игнорируются в Java 8+.
+
+Доводка: «а зачем в Kubernetes выставлять `-XX:MaxMetaspaceSize` явно?» — потому что
+без него контейнерный memory limit будет выедаться без heap OOM, и OOMKiller
+прибьёт под без heap dump.
+
+**Вопрос 2 (T-Bank, VK).** «У вас сервис ест 4 ГБ RSS, а `-Xmx=2g`. Куда делись
+ещё 2 ГБ?»
+
+Структурированный ответ: RSS = Heap + Metaspace + Thread stacks + Code Cache + Direct
+buffers + GC internal + JNI/native libs + glibc malloc overhead. Конкретный план:
+
+```bash
+jcmd <pid> VM.native_memory summary    # точная разбивка
+# если Thread = 1 ГБ → много потоков × Xss. Считаем: 1000 × 1MB = 1 GB
+# если Metaspace разрастается → leak class loader (CGLIB, Groovy, hot-reload)
+# если Direct = 800 МБ → Netty не освобождает буферы
+# если разница в RSS, но не в native summary → нативная утечка (JNI, glibc)
+```
+
+**Вопрос 3 (Сбер, Озон).** «Опишите 5 видов OutOfMemoryError».
+
+| Сообщение | Где | Чинится |
+|---|---|---|
+| `Java heap space` | heap | -Xmx, утечка |
+| `GC overhead limit exceeded` | heap | то же, но >98% времени в GC |
+| `Metaspace` | native | -XX:MaxMetaspaceSize, class leak |
+| `Direct buffer memory` | native | -XX:MaxDirectMemorySize, ByteBuffer leak |
+| `unable to create new native thread` | OS limit | ulimit -u, уменьшить -Xss, executor pool |
+
+Бонус: `Compressed class space` — отдельный OOM при `-XX:+UseCompressedClassPointers`
+(default), отдельный размер `-XX:CompressedClassSpaceSize` (default 1 ГБ).
+
+## Один день из практики
+
+Пятница, прод-инцидент. Pod рестартует каждые 4 часа, в Grafana RSS pod ползёт от
+1.2 ГБ до 3.8 ГБ (limit 4 ГБ), потом 137. В логах OOM нет.
+
+Шаг 1. Заходим в pod, проверяем dimensions:
+
+```bash
+jcmd 1 GC.heap_info
+# heap committed=1.5G used=900M — не он
+jcmd 1 VM.native_memory summary
+# Metaspace committed=200M — норм
+# Thread committed=180M (≈ 180 потоков × 1MB) — много, но не криминал
+# Direct buffers — не отслеживаются через NMT, отдельно:
+jcmd 1 VM.system_properties | grep -i direct
+```
+
+Шаг 2. Снимаем профиль через JFR:
+
+```bash
+jcmd 1 JFR.start name=mem duration=10m filename=/tmp/mem.jfr
+# подождать 10 минут
+kubectl cp pod:/tmp/mem.jfr ./mem.jfr
+# открываем в JDK Mission Control, вкладка Memory → Native Allocations
+```
+
+Шаг 3. В JFR видим: 70% растущих nativeMemory приходят из `Unsafe.allocateMemory` —
+вызывает `io.netty.buffer.PoolThreadCache$MemoryRegionCache`. Это Netty,
+DirectByteBuffer не возвращается в пул из-за ThreadLocal'а в virtual threads (Java 21).
+
+Шаг 4. Лечение:
+
+```yaml
+# заменили часть JAVA_TOOL_OPTIONS:
+-XX:MaxDirectMemorySize=512m       # явный лимит, чтобы OOM упал в нашу сторону
+-Dio.netty.allocator.numDirectArenas=2  # уменьшили пулы под virtual threads
+-Dio.netty.tryReflectionSetAccessible=true
+-Xmx2g
+-XX:MaxMetaspaceSize=256m
+```
+
+После рестарта RSS стабилизировался на 2.6 ГБ. Урок: контейнер мерит **весь** RSS
+процесса, JVM-флаги мерят отдельные пулы — план диагностики начинается с
+`VM.native_memory summary`, а не с увеличения `-Xmx`.
+
+## Типичные провалы
+
+Кейс 1. Где проблема?
+
+```yaml
+resources:
+  limits:
+    memory: "1Gi"
+env:
+  - name: JAVA_OPTS
+    value: "-Xmx900m"
+```
+
+Heap 900 МБ + Metaspace ~200 МБ (default no limit, может больше) + Thread stacks
+(на 200 потоков по 1 МБ = 200 МБ) + Code Cache 240 МБ ≈ 1.5 ГБ. Контейнер с 1 ГБ
+лимитом получит OOMKill. Правило: `-Xmx` ≈ 50–70% от memory limit, обязательно
+ставим `-XX:MaxMetaspaceSize`, `-XX:MaxDirectMemorySize`, `-Xss`.
+
+Кейс 2. Где проблема?
+
+```java
+ExecutorService es = Executors.newFixedThreadPool(10_000);   // 10k threads
+```
+
+На дефолтном `-Xss=1m` это резервирует 10 ГБ виртуального адресного пространства
+под стек. На 64-bit Linux может пройти (reserved ≠ committed), но `unable to create
+new native thread` обычно ловится раньше из-за `/proc/sys/kernel/threads-max` или
+`ulimit -u`. В Java 21+ ответ — virtual threads (JEP 444).
+
+Кейс 3. Где проблема?
+
+```java
+for (int i = 0; i < 1_000_000; i++) {
+    "constant".intern();
+    ("dynamic-" + i).intern();
+}
+```
+
+Internёные строки в Java 7+ живут в heap (а не в Metaspace), но они **постоянно
+reachable** через StringTable — для GC они корни. Бесконтрольный `.intern()` на
+динамических строках раздувает heap и StringTable (`-XX:StringTableSize`, default
+60013 на Java 17). В диагностике: `jcmd <pid> VM.stringtable`.
+
+Кейс 4. Где проблема?
+
+```bash
+java -Xmx512m -Xms512m -jar app.jar
+# в проде Java 8, контейнер с 4 ГБ:
+# -Xmx не подхвачен, heap прыгает до 1 ГБ
+```
+
+До Java 10 (JEP 341) JVM не была cgroup-aware. На Java 8 < 8u191 без явного `-Xmx`
+JVM мерила память от **host**, не контейнера. Лечится либо явным `-Xmx`, либо обновлением
+до 8u191+ (там `-XX:+UseContainerSupport` default on).
+
+Кейс 5. Где проблема?
+
+```java
+public class Cache {
+    private static final Map<String, byte[]> CACHE = new HashMap<>();
+    public void put(String k, byte[] v) { CACHE.put(k, v); }
+}
+```
+
+`static` Map без eviction. Объекты в нём reachable до конца жизни JVM. Это
+не «утечка GC», а **memory leak by design**. Любой long-lived static-кэш должен
+быть `Caffeine`/`Guava Cache` с TTL+max size, либо `WeakHashMap` если ключ можно
+отпускать.
+
+Кейс 6. Где проблема?
+
+```java
+ByteBuffer buf = ByteBuffer.allocateDirect(1024 * 1024 * 100);  // 100 MB off-heap
+// ... используем
+// buf уходит из области видимости
+```
+
+DirectBuffer освобождается через `Cleaner` (PhantomReference), который триггерится
+**GC**. Если в приложении мало GC (большой heap, низкая аллокация on-heap), direct
+память не освобождается долго. Симптом — RSS растёт без heap activity. Лекарство:
+явный пул direct-buffer'ов (`io.netty.buffer.PooledByteBufAllocator`) или принудительный
+`System.gc()` (нет, не надо).
+
+## Что почитать
+
+- [JVM Specification (JVMS), Chapter 2: The Structure of the Java Virtual Machine](https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-2.html) — официальная карта runtime data areas.
+- [JEP 122: Remove the Permanent Generation](https://openjdk.org/jeps/122) — про переход PermGen → Metaspace.
+- [JEP 341: Default CDS Archives](https://openjdk.org/jeps/341) — контейнер-aware JVM.
+- [JEP 444: Virtual Threads](https://openjdk.org/jeps/444) — как стек больше не main cost.
+- Aleksey Shipilёv, [«Java Object Layout (JOL)»](https://openjdk.org/projects/code-tools/jol/) — реальный размер объектов в heap.
+- *Java Performance: The Definitive Guide*, Scott Oaks — главы 5–6 про tuning памяти.
+- [Native Memory Tracking guide (Oracle)](https://docs.oracle.com/en/java/javase/21/troubleshoot/diagnostic-tools.html#GUID-2EAE6C76-EF3B-46C3-8155-3149A0A82C92) — как читать вывод `jcmd VM.native_memory`.
+
 ## Где в стеке
 
 **Уровень 3: JVM, GC, диагностика.** Что происходит «под капотом». Уровень между junior («GC чистит память») и senior (tuning под нагрузку). Middle должен знать виды OOM и план диагностики через heap dump.

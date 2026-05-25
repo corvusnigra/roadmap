@@ -127,6 +127,319 @@ Stream — это pipeline ленивых операций. Intermediate (filter
 - Parallel stream на блокирующих операциях — забивается общий ForkJoinPool
 - Stream API ради «модно» там, где for-each короче и читаемее
 
+## Развёрнутое объяснение
+
+Stream API пришёл в Java 8 (март 2014) вместе с лямбдами и method references — это
+часть JSR 335 «Lambda Expressions» и JEP 107 «Bulk Data Operations for Collections».
+До восьмёрки collections-pipelines строились вручную: внешний `for`, временные
+коллекции, императивный «как». Stream API даёт декларативное «что»: цепочка
+функциональных операций, которую runtime волен выполнить sequentially, parallel,
+fused (несколько Intermediate ops сливаются в один проход), или вовсе short-circuit
+оборвать на `findFirst`.
+
+Главная инженерная идея — **разделение Spliterator и Pipeline**. `Spliterator`
+(java.util.Spliterator, тоже Java 8) — это источник: знает, как поделить себя на
+две половины (`trySplit`), как пробежаться (`tryAdvance`), и какие у него
+характеристики (`SIZED`, `ORDERED`, `DISTINCT`, `IMMUTABLE`). Pipeline — это
+описание операций. Pipeline ничего не делает, пока на конце не появится terminal
+operation: тогда движок собирает `Sink`-цепочку (см. `java.util.stream.AbstractPipeline`),
+прогоняет через неё spliterator, и опционально использует `ForkJoinTask` для
+parallel-исполнения.
+
+Отсюда — все «странные» свойства Stream API:
+
+```java
+// 1. Stream однопроходный. Pipeline хранит ссылку на источник + цепочку Sink.
+//    После terminal флаг linkedOrConsumed = true и любой intermediate бросит ISE.
+Stream<Integer> s = Stream.of(1, 2, 3);
+s.count();              // terminal — pipeline закрыт
+s.map(x -> x * 2);      // IllegalStateException: stream has already been operated upon or closed
+
+// 2. peek БЕЗ terminal — pipeline не запускается, side effects не происходят.
+Stream.of(1, 2, 3).peek(System.out::println); // печатает: ничего
+Stream.of(1, 2, 3).peek(System.out::println).count(); // печатает 1 2 3
+
+// 3. filter после map vs map после filter — для stateless ops runtime сам fusion-ит.
+//    Но порядок ВАЖЕН: filter сначала → меньше работы для map.
+list.stream().filter(x -> x > 100).map(this::expensive).toList(); // дешевле
+list.stream().map(this::expensive).filter(x -> x > 100).toList(); // дороже
+```
+
+Stateful операции (`sorted`, `distinct`, `limit` на parallel) — главный пожиратель
+памяти. `sorted()` без аргументов кладёт **все** элементы в буфер, потом сортирует;
+на бесконечном `Stream.iterate` это OOM. `distinct` держит `HashSet` уже виденного.
+Поэтому идиома `stream.sorted().limit(N)` — это «top-N с полной сортировкой» (O(n log n)
+и память O(n)); если N маленькое — выгоднее самому держать min-heap размера N.
+
+Parallel streams через `ForkJoinPool.commonPool()` — основной источник проблем на
+middle-уровне. Common pool один на JVM, по умолчанию имеет
+`Runtime.getRuntime().availableProcessors() - 1` worker'ов. Если внутри parallel
+stream сделать блокирующий вызов (HTTP, JDBC, `Thread.sleep`) — все worker'ы пула
+встают, и НИКАКОЙ другой код в процессе, использующий common pool (CompletableFuture
+без явного executor, `Arrays.parallelSort`, любой parallel stream в этом же
+приложении), не сможет прогрессировать. Запускать parallel stream надо только на
+CPU-bound операциях с большим объёмом данных (десятки тысяч+ элементов) и предсказуемой
+стоимостью элемента.
+
+История продолжается. Java 9 принесла `takeWhile`/`dropWhile` (JEP 269 не про это —
+это про factory methods, но Stream-доработки шли тем же релизом) и трёхаргументный
+`Stream.iterate(seed, hasNext, next)` — наконец-то корректный finite stream-from-iterate.
+Java 16 добавила `Stream.toList()` (JDK-8180352) — immutable, разрешает null, короче
+`.collect(Collectors.toUnmodifiableList())`. Java 24 финализировала **Stream Gatherers**
+(JEP 485) — `Stream.gather(Gatherer<T,A,R>)`: универсальный intermediate, аналог
+`Collector`, но для промежуточных операций. С ним наконец-то можно писать `windowed(3)`,
+`fold`, `scan` без выхода из stream pipeline.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига / Яндекс).** «Что выведет такой код, и почему?»
+
+```java
+List.of(1, 2, 3, 4, 5).stream()
+    .map(x -> { System.out.print("m" + x + " "); return x; })
+    .filter(x -> x > 2)
+    .map(x -> { System.out.print("M" + x + " "); return x; })
+    .toList();
+```
+
+Развёрнутый ответ: `m1 m2 m3 M3 m4 M4 m5 M5`. Это проверка двух идей сразу:
+во-первых, terminal (`.toList()`) запускает pipeline — без него вывод пустой.
+Во-вторых, Stream API исполняет элементы **вертикально, а не горизонтально**:
+для каждого элемента вся цепочка операций отрабатывает до конца (или до короткого
+замыкания), потом берётся следующий. То есть это не «сначала весь map, потом весь
+filter» — а «элемент 1 → m1 → filter (отсев) → элемент 2 → ...». Промежуточная
+коллекция между стадиями не материализуется, отсюда возможность fusion в один
+проход через спулиратор и поддержка short-circuit на `findFirst`/`anyMatch`/`limit`.
+
+**Вопрос 2 (Лига).** «Дай List<Employee>, верни Map<String, Long> — отдел → число
+сотрудников. И то же самое, но только отделы с >5 человек.»
+
+```java
+public Map<String, Long> countByDept(List<Employee> emps) {
+    return emps.stream()
+        .collect(Collectors.groupingBy(
+            Employee::getDepartment,
+            Collectors.counting()           // downstream collector
+        ));
+}
+
+public Map<String, Long> largeDepts(List<Employee> emps) {
+    return emps.stream()
+        .collect(Collectors.groupingBy(
+            Employee::getDepartment,
+            Collectors.counting()
+        ))
+        .entrySet().stream()
+        .filter(e -> e.getValue() > 5)
+        .collect(Collectors.toMap(
+            Map.Entry::getKey,
+            Map.Entry::getValue
+        ));
+}
+```
+
+Что в ответе ценят: знание downstream-коллекторов (`counting`, `summingInt`,
+`averagingDouble`, `mapping`, `filtering` — последние два появились в Java 9),
+понимание, что `Collectors.toMap` без merge-функции упадёт на duplicate key, и что
+`groupingBy` по дефолту возвращает `HashMap<K, ArrayList<V>>` — если нужен порядок,
+надо передать `LinkedHashMap::new` фабрикой.
+
+**Вопрос 3 (T-Bank / Ozon).** «Когда parallel stream даст ускорение, а когда —
+замедление или баг?»
+
+Развёрнутый ответ строится на трёх осях:
+1. **CPU-bound vs IO-bound.** Parallel = win только на CPU-heavy задачах с большим N
+   (≥ 10⁴ элементов и дороже μs/элемент). На IO — общий `ForkJoinPool.commonPool()`
+   забивается блокированными worker'ами, и весь процесс встаёт.
+2. **Источник стрима.** `ArrayList`/`array` хорошо сплитятся (SIZED + random access).
+   `LinkedList`/`Stream.iterate` — плохо: split идёт O(n), весь parallel-эффект
+   съедается.
+3. **Stateful intermediate ops.** `sorted`, `distinct`, `limit` для ORDERED-стрима
+   ставят барьер: parallel вынужден синхронизироваться. Сначала `unordered()`,
+   потом `parallel()` — если порядок не нужен.
+
+Бонусный пункт, который выделяет middle от junior: collectors должны быть **concurrent**
+(`Collectors.toConcurrentMap`, `groupingByConcurrent`), иначе combine-фаза идёт
+single-threaded.
+
+## Один день из практики
+
+Тебе пришёл тикет: «отчёт `/api/reports/sales/monthly` тормозит, на проде падает с
+OOM при экспорте больших клиентов». Открываешь сервис:
+
+```java
+public byte[] export(LocalDate month) {
+    List<Sale> all = saleRepo.findByMonth(month);             // 1.2M строк
+    return all.parallelStream()                                // (!)
+        .sorted(Comparator.comparing(Sale::getCustomerId))     // (!)
+        .map(this::enrichWithCustomerName)                     // ходит в БД (!)
+        .collect(Collectors.toList())                          // mutable, лишний шаг
+        .stream()
+        .map(this::toCsvRow)
+        .collect(Collectors.joining("\n"))
+        .getBytes(StandardCharsets.UTF_8);
+}
+```
+
+Три проблемы, узнаваемые сразу:
+
+1. **`sorted` грузит весь 1.2M-список в буфер.** Если в сервисе 4 ГБ heap, а каждый
+   Sale ~500 байт + накладные расходы — это уже 600+ МБ только на сортировку.
+   В сочетании с одновременным запросом второго пользователя — OOM.
+2. **`enrichWithCustomerName` внутри parallel stream.** Метод делает SQL-запрос.
+   Это блокирующая операция на common pool — он встанет, и параллельный код в
+   приложении тоже встанет.
+3. **`parallelStream` на `ArrayList` из JPA** — спулиратор хороший, но смысла нет,
+   потому что узкое место — БД, а не CPU.
+
+Правильная версия — поток + JDBC streaming + батч-обогащение:
+
+```java
+public StreamingResponseBody export(LocalDate month) {
+    return output -> {
+        try (Stream<Sale> sales = saleRepo.streamByMonth(month);   // Spring Data + @Transactional(readOnly=true)
+             Writer w = new OutputStreamWriter(output, UTF_8)) {
+
+            // батч-обогащение: 1 запрос на 1000 строк, не 1.2M запросов
+            Iterators.partition(sales.iterator(), 1000).forEachRemaining(batch -> {
+                Map<Long, String> names = customerRepo.findNamesByIds(
+                    batch.stream().map(Sale::getCustomerId).toList()
+                );
+                batch.forEach(sale -> {
+                    w.write(toCsvRow(sale, names.get(sale.getCustomerId())));
+                    w.write('\n');
+                });
+            });
+        }
+    };
+}
+```
+
+Что изменилось: Stream больше не строит коллекций в памяти, sorted ушёл (если нужен
+порядок — сделать в SQL через `ORDER BY`, planner отработает по индексу), N+1 убран
+батчингом, parallel выкинули.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+// Подсчёт суммы с фильтром
+double total = orders.stream()
+    .filter(o -> o.getAmount() > 0)
+    .map(Order::getAmount)
+    .reduce(0.0, Double::sum);
+```
+
+`Double::sum` корректно — но `BigDecimal` для денег. На большом N плавающая точка
+накапливает ошибку. Правильно — `BigDecimal` + `reduce(BigDecimal.ZERO, BigDecimal::add)`.
+
+Кейс 2. Где баг?
+
+```java
+Stream<String> s = lines.stream().filter(x -> x.startsWith("ERROR"));
+long count = s.count();
+List<String> errors = s.toList();   // IllegalStateException
+```
+
+После `count()` поток закрыт. Каждый terminal использует поток один раз. Правильно —
+два запроса или `s.peek` без двух terminal.
+
+Кейс 3. Где баг?
+
+```java
+Map<String, Integer> counts = new HashMap<>();
+words.parallelStream().forEach(w -> counts.merge(w, 1, Integer::sum));
+```
+
+`HashMap` не thread-safe. Внутри parallel `forEach` callback'и идут из разных потоков.
+Возможна потеря записей, бесконечный цикл при resize, NPE. Правильно — `Collectors.toMap`
+с merge-функцией или `Collectors.toConcurrentMap` / `groupingByConcurrent`.
+
+Кейс 4. Где баг?
+
+```java
+List<String> result = Stream.iterate(1, i -> i + 1)
+    .filter(i -> i % 7 == 0)
+    .limit(10)
+    .map(String::valueOf)
+    .sorted()
+    .toList();
+```
+
+`sorted` на бесконечном источнике (`Stream.iterate` без `hasNext` — это Java 8).
+`limit(10)` стоит ДО `sorted`, но порядок операций — это порядок объявления, а не
+исполнения. На самом деле fusion runtime'а сначала возьмёт 10, потом отсортирует —
+здесь сработает. Но если поменять местами `limit` и `sorted` — OOM. Правило: для
+bounded stateful ops источник должен быть либо SIZED, либо до них стоит short-circuit.
+
+Кейс 5. Где баг?
+
+```java
+public Stream<User> findActive() {
+    Connection conn = dataSource.getConnection();
+    return new JdbcTemplate(...).queryForStream(...);   // утечка connection
+}
+```
+
+Stream — это lazy ресурс. Возвращать его наружу — значит передать ответственность
+закрывать вызывающему. Если caller забудет `try-with-resources` или вообще
+не вызовет terminal — connection не вернётся в пул. Правило: метод, открывающий
+ресурс, должен и закрыть его (consume внутри + return `List`), либо явно документировать
+`@MustBeClosed` и обязательность `try(Stream<...> s = ...)`.
+
+Кейс 6. Где баг?
+
+```java
+employees.stream()
+    .collect(Collectors.toMap(Employee::getName, e -> e));
+```
+
+Если два сотрудника с одинаковым именем — `IllegalStateException: Duplicate key`.
+`toMap` без merge-функции (3-арный конструктор) — мина замедленного действия.
+Правильно: `toMap(Employee::getName, e -> e, (a, b) -> a)` или `groupingBy`.
+
+Кейс 7. Где баг?
+
+```java
+public List<Order> paid(List<Order> orders) {
+    return orders.stream()
+        .peek(o -> o.setStatus(PAID))      // мутация в peek
+        .filter(o -> o.getAmount() > 100)
+        .toList();
+}
+```
+
+`peek` для side effects (мутации входных данных) — антипаттерн «Prefer side-effect-free
+functions in streams» (Effective Java Item 46). Поведение зависит от того, дошёл ли
+элемент до terminal: при `filter` после `peek` элементы ≤ 100 уже получили `PAID`
+из-за вертикального исполнения. Корректно — `filter` до `peek`, или вообще без peek
+(подобные мутации делаем явным циклом).
+
+## Что почитать
+
+**Спецификации и JEPs**
+- [JSR 335: Lambda Expressions for the Java Programming Language](https://jcp.org/en/jsr/detail?id=335) — официальная спека лямбд и stream-инфраструктуры.
+- [JEP 107: Bulk Data Operations for Collections](https://openjdk.org/jeps/107) — обоснование Stream API в Java 8.
+- [JEP 485: Stream Gatherers](https://openjdk.org/jeps/485) — финализированная Java 24, расширение intermediate ops.
+- [Javadoc java.util.stream package summary](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/stream/package-summary.html) — обязательный референс по характеристикам spliterator'ов и контракту операций.
+
+**Книги**
+- *Effective Java, 3rd Edition*, Joshua Bloch — **Item 45** (Use streams judiciously),
+  **Item 46** (Prefer side-effect-free functions), **Item 47** (Prefer Collection
+  to Stream as a return type), **Item 48** (Use caution when making streams parallel).
+- *Modern Java in Action* (3rd ed.), Urma/Fusco/Mycroft — главы 4–7, плюс глава 17
+  про reactive vs streams.
+
+**Статьи Brian Goetz и команды**
+- Brian Goetz, [«Translation of Lambda Expressions»](https://wiki.openjdk.org/display/HotSpot/LambdaTranslation) —
+  как лямбды на самом деле компилируются и почему capturing lambda дешевле, чем
+  inner class.
+- Stuart Marks, [«Stream.toList in Java 16»](https://stuartmarks.wordpress.com/2020/12/16/stream-tolist-in-java-16/) —
+  про разницу `toList()` vs `Collectors.toList()` vs `Collectors.toUnmodifiableList()`.
+- Doug Lea, [«A Java Fork/Join Framework»](https://gee.cs.oswego.edu/dl/papers/fj.pdf) —
+  фундамент под parallel streams.
+
 ## Где в стеке
 
 **Уровень 0: Java Core.** Фундамент языка. Без него все следующие уровни рассыпаются: equals/hashCode не работает в HashMap, Stream API ломается на peek без терминалки, String Pool путается с new String.
