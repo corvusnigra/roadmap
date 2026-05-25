@@ -128,6 +128,421 @@ CAS (Compare-And-Swap) — атомарная операция CPU: compareAndSw
 - AtomicLong как счётчик статистики — лучше LongAdder
 - Spin без backoff в CAS-loop — burn CPU
 
+## Развёрнутое объяснение
+
+**CAS (Compare-And-Swap)** — атомарная инструкция CPU, на которой построена вся
+lock-free concurrency Java. Спецификация:
+
+```
+CAS(addr, expected, new):
+  atomically {
+    if (*addr == expected) {
+      *addr = new
+      return true
+    } else {
+      return false
+    }
+  }
+```
+
+На x86 — инструкция `lock cmpxchg`. На ARM — пара `ldxr/stxr` (load-linked /
+store-conditional). На обоих стоит ~20-50 ns без contention, ~100-500 ns с
+contention (когда нескольким ядрам нужен один cache line).
+
+**Lock-free алгоритм через CAS** — типичный паттерн «read-modify-loop»:
+
+```java
+// AtomicInteger.incrementAndGet (Java 8)
+public final int incrementAndGet() {
+    int current, next;
+    do {
+        current = get();             // volatile read
+        next = current + 1;
+        // если кто-то изменил между get и compareAndSet — повторить
+    } while (!compareAndSet(current, next));
+    return next;
+}
+```
+
+**Проблема ABA.** CAS проверяет только **значение**, не «изменения с момента
+прошлого чтения». Если значение T2 поменяло A→B→A, T1 видит «A → A», CAS
+успешен, но между этим могла произойти важная операция:
+
+```java
+// Lock-free stack на AtomicReference
+public class TreiberStack<E> {
+    private final AtomicReference<Node<E>> top = new AtomicReference<>();
+
+    public void push(E e) {
+        Node<E> newTop = new Node<>(e);
+        Node<E> oldTop;
+        do {
+            oldTop = top.get();
+            newTop.next = oldTop;
+        } while (!top.compareAndSet(oldTop, newTop));
+    }
+
+    public E pop() {
+        Node<E> oldTop;
+        Node<E> newTop;
+        do {
+            oldTop = top.get();
+            if (oldTop == null) return null;
+            newTop = oldTop.next;
+        } while (!top.compareAndSet(oldTop, newTop));
+        return oldTop.value;
+    }
+}
+```
+
+ABA-сценарий:
+```
+T1: oldTop = A, newTop = A.next (готовится к pop)
+T2: pop()  → top = B
+T2: pop()  → top = null
+T2: push() → top = A     ← тот же узел, переиспользован из пула
+T1: CAS(A, A.next) → УСПЕХ, но A.next теперь null или другое
+```
+
+Стек после операции в неконсистентном состоянии. С GC языками типа Java часть
+проблем смягчается (GC не вернёт удалённый Node, пока T1 на него ссылается),
+но не все: если объект-узел из пула (object pool), ABA воспроизводится.
+
+**Решение ABA — версия (stamp):**
+
+```java
+AtomicStampedReference<Node<E>> top = new AtomicStampedReference<>(null, 0);
+
+public void push(E e) {
+    Node<E> newTop = new Node<>(e);
+    int[] stampHolder = new int[1];
+    Node<E> oldTop;
+    int stamp;
+    do {
+        oldTop = top.get(stampHolder);
+        stamp = stampHolder[0];
+        newTop.next = oldTop;
+    } while (!top.compareAndSet(oldTop, newTop, stamp, stamp + 1));
+}
+```
+
+Теперь `compareAndSet(expectedRef, newRef, expectedStamp, newStamp)` проверяет
+**и** ссылку, **и** версию. Если T2 «отбросил» A и вернул A, версия инкрементировалась —
+CAS T1 не пройдёт. `AtomicMarkableReference` — то же, но с одним boolean (хватает
+для большинства lock-free структур).
+
+**LongAdder и Striped64.** При высокой contention CAS-loop на AtomicLong
+становится bottleneck. Каждый поток бьётся за одну volatile-ячейку, cache line
+ping-pong между ядрами (cache coherence через MESI на 50+ ns каждое RPC между
+ядрами). Doug Lea решил это в `Striped64`:
+
+```java
+public class LongAdder {
+    private Cell[] cells;        // массив, padded по cache line (~128 байт каждая)
+    private volatile long base;
+
+    public void increment() {
+        // 1. Попробовать CAS на base
+        if (cellsBusy && cells == null) {
+            casBase(base, base + 1);
+        }
+        // 2. Если contention, попасть в свою cell по threadId % cells.length
+        Cell c = cells[hashOfThread % cells.length];
+        c.casValue(c.value, c.value + 1);
+        // 3. Если cell тоже contention — grow cells[]
+    }
+
+    public long sum() {
+        long s = base;
+        for (Cell c : cells) s += c.value;
+        return s;
+    }
+}
+```
+
+На 32+ потоках LongAdder x10 быстрее AtomicLong. Цена — `sum()` — O(cells) и
+slightly inconsistent (другие потоки могут писать в неподсчитанные cells).
+Для metrics (где slight inconsistency ОК) — идеален.
+
+**VarHandle (Java 9+, JEP 193).** Низкоуровневый API для CAS/volatile/atomic
+ops, без использования `Unsafe`:
+
+```java
+private long counter;
+private static final VarHandle COUNTER_VH;
+static {
+    try {
+        COUNTER_VH = MethodHandles.lookup().findVarHandle(MyClass.class, "counter", long.class);
+    } catch (Exception e) { throw new Error(e); }
+}
+
+public void increment() {
+    long c, n;
+    do {
+        c = (long) COUNTER_VH.getVolatile(this);
+        n = c + 1;
+    } while (!COUNTER_VH.compareAndSet(this, c, n));
+}
+```
+
+VarHandle позволяет выбирать уровень consistency — `getVolatile` / `getAcquire`
+/ `getOpaque` / `getPlain` — то же, что C++ memory_order_*.
+
+**Spin-loop без backoff — burn CPU.** На большой contention CAS retry может
+зацикливаться. Добавить backoff:
+
+```java
+int spins = 0;
+while (!cas(...)) {
+    if (spins++ < 10) {
+        // busy spin
+    } else if (spins < 100) {
+        Thread.onSpinWait();   // Java 9+, JEP 285 — даёт CPU hint
+    } else {
+        LockSupport.parkNanos(1);
+    }
+}
+```
+
+`Thread.onSpinWait` (JEP 285) — даёт hint процессору («я в spin-loop»). На x86
+это `PAUSE`-инструкция, экономит энергию и улучшает hyper-threading.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, продвинутый).** «Что такое CAS и где его
+используют?»
+
+CAS = compare-and-swap, атомарная инструкция CPU. Compare `*addr` с expected,
+если равно — swap на new, вернуть true. Используется в:
+- AtomicInteger/Long/Reference — счётчики, флаги.
+- ConcurrentHashMap.putVal — вставка в пустой бакет.
+- ReentrantLock — non-fair fast-path tryAcquire.
+- Spin-locks, Treiber stack, Michael-Scott queue (lock-free структуры).
+
+На x86 — `lock cmpxchg`, на ARM — `ldxr/stxr` пара.
+
+**Вопрос 2 (T-Bank).** «Что такое ABA-проблема? Как её решить?»
+
+Сценарий: T1 читает значение A, готовится к CAS. T2 делает A→B→A. T1's CAS
+проходит, но семантически это уже другой A.
+
+Решение: версия. `AtomicStampedReference<T>` хранит (ref, int stamp), CAS
+проверяет оба. `AtomicMarkableReference<T>` — (ref, boolean), для случаев
+«объект помечен на удаление».
+
+**Вопрос 3 (Альфа).** «AtomicLong vs LongAdder — когда что?»
+
+AtomicLong:
+- Один volatile-long, все потоки CAS-ят.
+- Под низкой contention — отличный.
+- Под высокой (10+ потоков) — bottleneck из-за cache line ping-pong.
+- `get()` точное.
+
+LongAdder:
+- Cell[] массив padded по cache line, потоки пишут в свои.
+- Под высокой contention — x10 быстрее.
+- `sum()` — O(cells), slightly inconsistent (может пропустить writes от других
+  потоков в момент чтения).
+- Для metrics, где точность на уровне «много» — идеален.
+
+Если нужно «точное значение здесь и сейчас» (например, ID-генератор) — AtomicLong.
+Если нужно «monotonic счётчик, читаемый редко» (metric, RPS counter) — LongAdder.
+
+**Вопрос 4 (Сбер, очень продвинутый).** «Опиши Treiber stack и его ABA.»
+
+Treiber stack — lock-free stack на AtomicReference<Node>. push/pop через
+compare-and-set на top. ABA: пока T1 готовится к pop, T2 успевает pop+pop+push
+того же объекта (из пула). CAS T1 проходит, но stack в неконсистентном
+состоянии. Решение — stamp или подсчёт ссылок (hazard pointers).
+
+## Один день из практики
+
+Тебя позвали разобраться: «metrics endpoint показывает 5K RPS, а в access-log
+20K. Куда теряются?»
+
+Открываем metric collector:
+
+```java
+@Component
+public class RequestCounter {
+    private final AtomicLong total = new AtomicLong();
+    private final AtomicLong errors = new AtomicLong();
+
+    public void recordSuccess() { total.incrementAndGet(); }
+    public void recordError()   { errors.incrementAndGet(); total.incrementAndGet(); }
+
+    public Snapshot snapshot() {
+        return new Snapshot(total.get(), errors.get());
+    }
+}
+```
+
+JFR-профайл показывает 18% CPU в `AtomicLong.incrementAndGet` под нагрузкой —
+contention. Замена на `LongAdder`:
+
+```java
+@Component
+public class RequestCounter {
+    private final LongAdder total  = new LongAdder();
+    private final LongAdder errors = new LongAdder();
+
+    public void recordSuccess() { total.increment(); }
+    public void recordError()   { errors.increment(); total.increment(); }
+
+    public Snapshot snapshot() {
+        return new Snapshot(total.sum(), errors.sum());
+    }
+}
+```
+
+После релиза CPU в counter упало с 18% до 0.5%, throughput вырос на 25%.
+
+Но дальше — снапшот несогласован. `total.sum()` и `errors.sum()` — два
+независимых вызова. Между ними другие потоки добавят events. На Grafana это
+проявляется как `errors > total` иногда. Если строгая consistency нужна:
+
+```java
+private final AtomicReference<Snapshot> latest = new AtomicReference<>(new Snapshot(0, 0));
+private final LongAdder totalCount = new LongAdder();
+private final LongAdder errorCount = new LongAdder();
+
+@Scheduled(fixedDelay = 1000)
+public void publishSnapshot() {
+    latest.set(new Snapshot(totalCount.sum(), errorCount.sum()));
+    // оба .sum() — между ними возможна inconsistency, но snapshot атомарен
+}
+
+public Snapshot snapshot() { return latest.get(); }
+```
+
+Это компромисс: LongAdder для горячего пути (записи), AtomicReference snapshot
+для consistency в чтении.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+private long counter;     // обычный long
+
+void inc() {
+    counter = counter + 1;    // ?
+}
+```
+
+Не atomic, не volatile. Два потока могут одновременно прочитать N, прибавить 1,
+записать N+1. Потеря инкрементов. Решение: AtomicLong, LongAdder, или
+synchronized.
+
+Кейс 2. Где баг?
+
+```java
+private volatile long counter;
+
+void inc() {
+    counter++;   // volatile же!
+}
+```
+
+volatile гарантирует видимость **одной переменной**, не атомарность RMW. `counter++` =
+read + 1 + write, между read и write contention. Лекарство: AtomicLong.
+
+Кейс 3. Где баг?
+
+```java
+AtomicReference<List<Item>> items = new AtomicReference<>(new ArrayList<>());
+
+void add(Item i) {
+    items.get().add(i);   // мутация LIST, не AtomicReference
+}
+```
+
+`items.get()` возвращает ссылку на ArrayList. `.add(i)` — мутация не-thread-safe
+коллекции. Лекарство: `items.updateAndGet(l -> { List<Item> next = new ArrayList<>(l); next.add(i); return next; })` — атомарная замена иммутабельным новым.
+
+Кейс 4. Где баг (ABA)?
+
+```java
+class ObjectPool {
+    private final AtomicReference<Node> top = new AtomicReference<>();
+
+    public PooledObject acquire() {
+        Node node;
+        do {
+            node = top.get();
+            if (node == null) return null;
+        } while (!top.compareAndSet(node, node.next));
+        return node.obj;
+    }
+}
+```
+
+Если pool переиспользует Node, ABA возможен. Pop узла A, pop узла B, push того
+же A → второй pop потока T1 (который читал top=A раньше) пройдёт CAS, хотя
+структура изменилась. Решение: `AtomicStampedReference` с инкрементом версии.
+
+Кейс 5. Где баг (spin без backoff)?
+
+```java
+while (!atomicFlag.compareAndSet(false, true)) {
+    // empty spin
+}
+```
+
+Поток в spin-loop сжигает 100% CPU. На контейнере под нагрузкой это съест
+весь CPU quota. Решение: `Thread.onSpinWait()` (Java 9+) или
+`LockSupport.parkNanos(1)` после N итераций.
+
+Кейс 6. Где баг (consistency)?
+
+```java
+class Stats {
+    private final AtomicLong success = new AtomicLong();
+    private final AtomicLong total = new AtomicLong();
+
+    void recordSuccess() {
+        success.incrementAndGet();
+        total.incrementAndGet();
+    }
+
+    double rate() {
+        return success.get() * 1.0 / total.get();    // может быть > 1.0!
+    }
+}
+```
+
+Между двумя `.get()` другой поток может выполнить только `total.incrementAndGet()`
+(если в `recordSuccess` инкременты порядок), и в момент чтения success > total.
+Решение: один atomic snapshot (pair в AtomicReference), либо synchronized
+вокруг rate() и обновлений.
+
+Кейс 7. Где баг (false sharing)?
+
+```java
+class Counters {
+    long count1;   // в одной cache line
+    long count2;
+    long count3;
+}
+
+// два потока пишут в разные счётчики — но они в одной cache line, ping-pong
+```
+
+Хоть переменные разные, они делят 64-байтную cache line. Запись одной
+инвалидирует кэш других. Решение: `@Contended` (Java 8+, требует
+`-XX:-RestrictContended` на не-JDK классах) или ручной padding (`long pad1,
+pad2, pad3, pad4` между полями).
+
+## Что почитать
+
+- *The Art of Multiprocessor Programming*, Maurice Herlihy & Nir Shavit — формальный учебник по lock-free.
+- *Java Concurrency in Practice*, Brian Goetz — глава 15 (Atomic Variables and Nonblocking Synchronization).
+- Doug Lea, [«Java's atomic and concurrent classes»](https://gee.cs.oswego.edu/cgi-bin/viewcvs.cgi/jsr166/) — оригинальный JSR-166.
+- [JEP 193: Variable Handles](https://openjdk.org/jeps/193) — VarHandle вместо Unsafe.
+- [JEP 285: Spin-Wait Hints](https://openjdk.org/jeps/285) — `Thread.onSpinWait()`.
+- Aleksey Shipilёv, [«Java Object Layout (JOL)»](https://openjdk.org/projects/code-tools/jol/) — измерить false sharing на своих структурах.
+- [JCStress](https://github.com/openjdk/jcstress) — тестирование lock-free кода под weak memory.
+
 ## Где в стеке
 
 **Уровень 2: Concurrency и JMM.** Самый «отсевочный» блок. JMM happens-before и контракт volatile различают junior от middle. На middle ожидают понимание ABA, ThreadPool параметров, и почему counter++ с volatile не атомарен.

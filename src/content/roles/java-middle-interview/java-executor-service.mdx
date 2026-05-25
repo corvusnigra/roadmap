@@ -128,6 +128,414 @@ ThreadPoolExecutor — 7 параметров: corePoolSize, maxPoolSize, keepAl
 - newFixedThreadPool с дефолтной queue (Integer.MAX_VALUE)
 - Игнорировать RejectionPolicy — задачи теряются молча
 
+## Развёрнутое объяснение
+
+`ExecutorService` — главный API многопоточности в Java с 1.5. Заменил
+ручную работу с `Thread`, дал thread pools, future-based async, scheduled tasks.
+
+**ThreadPoolExecutor — 7 параметров.** Все они есть в основном конструкторе:
+
+```java
+new ThreadPoolExecutor(
+    int corePoolSize,                 // минимум потоков, держатся всегда (по умолчанию)
+    int maximumPoolSize,              // максимум потоков
+    long keepAliveTime,               // сколько неактивный non-core поток живёт
+    TimeUnit unit,
+    BlockingQueue<Runnable> workQueue,
+    ThreadFactory threadFactory,      // как создавать поток (имена, priority, daemon)
+    RejectedExecutionHandler handler  // что делать, если пул отверг
+);
+```
+
+**Алгоритм приёма задачи** (если не знать — provalit'ся на собесе):
+
+```
+1. Если живых потоков < corePoolSize → создать новый поток
+2. Иначе → положить в workQueue
+3. Если очередь полна (offer вернул false) → создать поток до maximumPoolSize
+4. Если max достигнут → RejectedExecutionHandler
+```
+
+Это контринтуитивно: «сначала core, потом ОЧЕРЕДЬ, потом max» — а не «сначала
+core, потом сразу до max, потом очередь». Это значит:
+- `LinkedBlockingQueue` (по дефолту `Integer.MAX_VALUE`) — практически бесконечная,
+  до max никогда не дойдём, пул фактически фиксированный.
+- `SynchronousQueue` (без буфера) — offer всегда false, сразу создаётся новый
+  поток до max. Это и есть behaviour `newCachedThreadPool`.
+- `ArrayBlockingQueue(N)` — bounded, корректный backpressure.
+
+**Executors factory методы — типичные ловушки:**
+
+```java
+// УДОБНО, но опасно:
+ExecutorService cached = Executors.newCachedThreadPool();
+// = ThreadPoolExecutor(0, Integer.MAX_VALUE, 60s, SynchronousQueue)
+// при burst → создаёт тысячи потоков → OOM/native thread exhaustion
+
+ExecutorService fixed = Executors.newFixedThreadPool(10);
+// = ThreadPoolExecutor(10, 10, 0, LinkedBlockingQueue(Integer.MAX_VALUE))
+// queue не bounded → может накопить миллион задач → heap OOM
+
+ScheduledExecutorService sched = Executors.newScheduledThreadPool(4);
+// = ScheduledThreadPoolExecutor(4)
+// DelayedWorkQueue не bounded → накопление scheduled tasks при медленных воркерах
+
+ExecutorService single = Executors.newSingleThreadExecutor();
+// = LinkedBlockingQueue(MAX_VALUE) — те же проблемы что fixed
+```
+
+Goetz прямо в `Java Concurrency in Practice` и потом в JEP recommend'ах
+советует: **не использовать Executors.* в проде**. Вручную:
+
+```java
+ExecutorService prod = new ThreadPoolExecutor(
+    8,                              // core = max = 8 (предсказуемо)
+    8,
+    0L, TimeUnit.MILLISECONDS,
+    new ArrayBlockingQueue<>(100),  // bounded — backpressure
+    new ThreadFactory() {
+        private final AtomicInteger n = new AtomicInteger();
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(r, "myservice-" + n.incrementAndGet());
+            t.setDaemon(false);     // НЕ daemon — нужно успешно завершиться
+            return t;
+        }
+    },
+    new ThreadPoolExecutor.CallerRunsPolicy()  // backpressure через caller
+);
+```
+
+**Sizing формула.** Brian Goetz, JCIP:
+
+```
+N_threads = N_cores × U × (1 + W/C)
+
+где:
+  N_cores = доступных ядер (Runtime.getRuntime().availableProcessors())
+  U       = желаемая утилизация CPU (0..1)
+  W/C     = wait/compute ratio (IO bound тяжёлая → W/C большое)
+
+Примеры:
+  CPU-bound work (CPU 100%):   N = N_cores + 1
+  IO-bound HTTP fetch (W/C=5): N = N_cores × 6
+  Mixed:                       замерять в JFR
+```
+
+**RejectedExecutionHandler — 4 готовых стратегии:**
+
+```
+AbortPolicy        — default. Throw RejectedExecutionException. Caller узнаёт.
+CallerRunsPolicy   — caller сам выполняет задачу. Backpressure!
+DiscardPolicy      — silent drop. Опасно — потеря данных.
+DiscardOldestPolicy — удаляет oldest из queue, ставит новую. Тоже потеря.
+```
+
+Кастомные обработчики — fallback queue (запись в Kafka/DB для retry), metric
+counter, или throttling.
+
+**ForkJoinPool.** Специальный пул для work-stealing parallelism. Каждый поток
+имеет свою deque. Когда поток заканчивает свои задачи, он «крадёт» из хвоста
+deque другого потока. Используется для `parallelStream`, `CompletableFuture` (по
+дефолту), `RecursiveTask` / `RecursiveAction`.
+
+```java
+// commonPool — один на JVM
+ForkJoinPool common = ForkJoinPool.commonPool();
+// size = Runtime.getRuntime().availableProcessors() - 1
+
+// Custom для изоляции IO:
+ForkJoinPool ioPool = new ForkJoinPool(16);
+List<Future<X>> = ioPool.invokeAll(tasks);
+```
+
+**Java 21+ — Virtual Threads (JEP 444).** Изменили правила игры для IO-bound:
+
+```java
+// 10,000 потоков как обычные = OOM на native thread limit
+// 10,000 виртуальных потоков — без проблем:
+try (ExecutorService es = Executors.newVirtualThreadPerTaskExecutor()) {
+    for (Request r : requests) {
+        es.submit(() -> processBlocking(r));
+    }
+}
+```
+
+Virtual threads имеют дешёвую создание (~stack как 1KB вместо 1MB),
+multiplex'атся на небольшое число carrier OS-threads. На IO они «отпускают»
+carrier — масштабируемость как у NIO без callback hell.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, VK, Сбер).** «Расскажи про ThreadPoolExecutor.
+Какие параметры?»
+
+Структурированный ответ:
+1. `corePoolSize` — минимум потоков (постоянно живут).
+2. `maximumPoolSize` — максимум.
+3. `keepAliveTime` + `unit` — как долго non-core idle поток живёт.
+4. `workQueue` — BlockingQueue<Runnable> для буферизации.
+5. `threadFactory` — кастомизация (имена, daemon, priority).
+6. `rejectedExecutionHandler` — что при отказе.
+
+Доводка: «алгоритм приёма» — core → queue → max → reject. И вызов: «почему
+`newCachedThreadPool` плохо для прода?» — `Integer.MAX_VALUE` max + SynchronousQueue =
+burst → тысячи потоков → OOM.
+
+**Вопрос 2 (Лига).** «Что не так?»
+
+```java
+ExecutorService executor = Executors.newCachedThreadPool();
+for (Request r : million_requests) {
+    executor.submit(() -> process(r));
+}
+```
+
+Два бага. (1) `newCachedThreadPool` создаёт unlimited threads — при burst
+получим тысячи Thread, native thread exhaustion (`unable to create new native
+thread`) или OOM. (2) Очередь не bounded → если process медленный, накопим
+1М tasks в queue, OOM по heap. Решение: `ThreadPoolExecutor` с явным size,
+bounded queue, CallerRunsPolicy.
+
+**Вопрос 3 (Альфа, Озон).** «Как правильно остановить ExecutorService?»
+
+```java
+executor.shutdown();              // не принимать новые задачи, дать завершить текущие
+boolean done = executor.awaitTermination(30, TimeUnit.SECONDS);
+if (!done) {
+    List<Runnable> dropped = executor.shutdownNow();   // interrupt всех, остановить
+    log.warn("Forced shutdown, {} tasks dropped", dropped.size());
+}
+```
+
+Никогда — `executor.shutdownNow()` без `shutdown()` сначала: теряет
+завершённые-но-не-закоммиченные задачи.
+
+В Spring Boot правильно:
+```java
+@Bean(destroyMethod = "shutdown")    // или ExecutorConfigurationSupport
+ExecutorService myPool() {
+    return new ThreadPoolExecutor(...);
+}
+```
+
+Bean lifecycle вызовет `shutdown()` при контекст-destroy.
+
+**Вопрос 4 (T-Bank).** «Какой размер пула выбрать?»
+
+CPU-bound: `N_cores + 1`. IO-bound: формула Goetz `N_cores × U × (1 + W/C)`,
+обычно 2–10× cores. Mixed: замерять, не угадывать.
+
+Современный совет (Java 21+): для IO-bound — virtual threads, не вычисляем
+вручную.
+
+## Один день из практики
+
+Тебя поставили на оптимизацию endpoint `/orders/sync-from-erp` — он каждый
+час дёргает 500 контрагентов по их REST API, пишет в нашу БД. Сейчас один
+sync занимает 4 часа (последовательно по 500 × 30 сек).
+
+Версия 1, наивный пул:
+
+```java
+ExecutorService pool = Executors.newFixedThreadPool(50);
+List<Future<SyncResult>> futures = new ArrayList<>();
+for (Partner p : partners) {
+    futures.add(pool.submit(() -> syncOne(p)));
+}
+for (Future<SyncResult> f : futures) f.get();
+```
+
+Проблемы:
+1. **LinkedBlockingQueue(MAX_VALUE)** — если partners.size() = 500, всё
+   ОК. Но если расширится до 100K — heap OOM.
+2. **Нет таймаута на f.get()** — если один partner висит, виснет вся sync.
+3. **Нет retry** — упал один — drop.
+4. **Daemon/non-daemon** — пул создаёт non-daemon потоки, при JVM exit могут
+   не освободиться.
+
+Версия 2, production:
+
+```java
+@Bean(destroyMethod = "shutdown")
+ExecutorService partnerSyncPool() {
+    return new ThreadPoolExecutor(
+        50, 50,
+        0L, TimeUnit.MILLISECONDS,
+        new ArrayBlockingQueue<>(1000),    // bounded
+        new ThreadFactoryBuilder().setNameFormat("partner-sync-%d").build(),
+        new ThreadPoolExecutor.CallerRunsPolicy()   // backpressure
+    );
+}
+
+@Scheduled(cron = "0 0 * * * *")
+public void syncAll() throws InterruptedException {
+    List<Future<SyncResult>> futures = partners.stream()
+        .map(p -> pool.submit(() -> syncOneWithRetry(p)))
+        .toList();
+
+    for (Future<SyncResult> f : futures) {
+        try {
+            SyncResult r = f.get(60, SECONDS);
+            metrics.recordSuccess(r);
+        } catch (TimeoutException te) {
+            f.cancel(true);   // interrupt
+            metrics.recordTimeout();
+        } catch (ExecutionException ee) {
+            metrics.recordError(ee.getCause());
+        }
+    }
+}
+
+private SyncResult syncOneWithRetry(Partner p) {
+    return Retry.builder().maxAttempts(3).delay(Duration.ofSeconds(2))
+        .build()
+        .execute(() -> partnerApi.fetch(p));
+}
+```
+
+Версия 3, Java 21 virtual threads:
+
+```java
+@Bean
+ExecutorService virtualPool() {
+    return Executors.newVirtualThreadPerTaskExecutor();
+}
+
+@Scheduled(cron = "0 0 * * * *")
+public void syncAll() {
+    try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {  // JEP 480/505
+        for (Partner p : partners) {
+            scope.fork(() -> syncOne(p));
+        }
+        scope.joinUntil(Instant.now().plusMinutes(10));
+        scope.throwIfFailed();
+    }
+}
+```
+
+С virtual threads — 500 одновременно открытых HTTP коннектов на 8-ядерной
+машине без проблем, latency = max(individual) вместо sum. Sync пройдёт за
+~30 секунд вместо 4 часов.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+ExecutorService es = Executors.newCachedThreadPool();
+// в каждом @GetMapping:
+es.submit(() -> expensiveCall());
+```
+
+newCachedThreadPool на public endpoint = DoS-vulnerable. Атакующий отправляет
+10K параллельных запросов — JVM пытается создать 10K потоков, native OOM.
+Использовать bounded pool.
+
+Кейс 2. Где баг?
+
+```java
+ExecutorService es = Executors.newFixedThreadPool(10);
+for (int i = 0; i < 1_000_000; i++) {
+    es.submit(() -> work());
+}
+```
+
+LinkedBlockingQueue(MAX_VALUE). После 10 запущенных task'ов остальные 999_990
+лежат в очереди — ~1 ГБ heap на хранение Runnable lambdas. Лекарство: bounded
+queue + CallerRunsPolicy, чтобы submit блокировался, когда производитель
+обгоняет потребителя.
+
+Кейс 3. Где баг?
+
+```java
+@PreDestroy
+public void cleanup() {
+    executor.shutdownNow();    // принудительная остановка
+}
+```
+
+`shutdownNow` interrupt'ит все потоки и отменяет очередь. Незавершённые задачи
+теряются. Если они в середине транзакции — partial commit. Правильно:
+`shutdown()` + `awaitTermination(timeout)` + только в случае таймаута
+`shutdownNow()`.
+
+Кейс 4. Где баг (silent failure)?
+
+```java
+es.submit(() -> {
+    throw new IllegalStateException("oops");
+});
+```
+
+Submit возвращает Future. Exception хранится **в Future**. Если caller не
+зовёт `future.get()` — exception молча проглатывается. Spring Async то же:
+`@Async` без AsyncUncaughtExceptionHandler теряет ошибки. Решение: либо
+явно `.get()`, либо ThreadFactory с `setUncaughtExceptionHandler`, либо
+обёртка `try/catch внутри Runnable` с явным логированием.
+
+Кейс 5. Где баг (deadlock пула)?
+
+```java
+ExecutorService pool = Executors.newFixedThreadPool(2);
+
+CompletableFuture<X> a = CompletableFuture.supplyAsync(() -> {
+    return CompletableFuture.supplyAsync(this::dep, pool).join();  // deadlock!
+}, pool);
+```
+
+Внутренняя задача зависит от того, что pool освободит поток. Внешняя задача
+держит поток и ждёт. Если оба слота заняты — deadlock. Лекарство: один пул
+на «слой», или не блокировать pool своей же задачей (`thenCompose`).
+
+Кейс 6. Где баг (parallel stream commonPool)?
+
+```java
+List<Order> orders = sales.parallelStream()
+    .map(s -> httpClient.fetchOrder(s.id()))    // blocking IO
+    .toList();
+```
+
+Parallel stream использует ForkJoinPool.commonPool. Blocking IO в нём занимает
+worker'ы, и другие части приложения (`CompletableFuture` без явного executor,
+`Arrays.parallelSort`) тоже встают. Лекарство: явный executor для IO, не
+parallel stream:
+
+```java
+List<Order> orders;
+try (ExecutorService io = Executors.newVirtualThreadPerTaskExecutor()) {
+    var futures = sales.stream()
+        .map(s -> io.submit(() -> httpClient.fetchOrder(s.id())))
+        .toList();
+    orders = futures.stream().map(Future::get).toList();
+}
+```
+
+Кейс 7. Где баг (ThreadLocal leak)?
+
+```java
+static final ThreadLocal<UserContext> CTX = new ThreadLocal<>();
+
+executor.submit(() -> {
+    CTX.set(loadCtx());
+    doWork();
+    // CTX.remove() не вызван
+});
+```
+
+В пуле поток переиспользуется. ThreadLocal значение остаётся на потоке после
+завершения задачи — heap leak плюс leak бизнес-данных в следующую задачу.
+Решение: `try { CTX.set(...); ... } finally { CTX.remove(); }` или использовать
+`ScopedValue` (JEP 487, Java 22+).
+
+## Что почитать
+
+- *Java Concurrency in Practice*, Brian Goetz — глава 6 (Task Execution), глава 8 (Applying Thread Pools), глава 7 (Cancellation and Shutdown).
+- [JEP 444: Virtual Threads](https://openjdk.org/jeps/444) — про новую модель IO concurrency.
+- [JEP 480: Structured Concurrency](https://openjdk.org/jeps/480) — `StructuredTaskScope`, наследник ExecutorService для scoped lifetimes.
+- *Effective Java, 3rd Edition*, Joshua Bloch — **Item 80** (Prefer executors, tasks and streams to threads).
+- [Javadoc java.util.concurrent](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/package-summary.html) — обязательное чтение для middle.
+- Doug Lea, [«ForkJoinPool design»](https://gee.cs.oswego.edu/dl/papers/fj.pdf) — теория work-stealing.
+
 ## Где в стеке
 
 **Уровень 2: Concurrency и JMM.** Самый «отсевочный» блок. JMM happens-before и контракт volatile различают junior от middle. На middle ожидают понимание ABA, ThreadPool параметров, и почему counter++ с volatile не атомарен.

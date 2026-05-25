@@ -128,6 +128,381 @@ Java Memory Model (JMM, JSR-133, Java 5+) определяет, когда actio
 - Полагаться на «сначала write, потом read» без HB — JIT переставит
 - Тестировать concurrency «один раз прошло — значит работает»
 
+## Развёрнутое объяснение
+
+Happens-before — это **формальная** связь между двумя действиями (action) в
+программе, определённая в Java Language Specification §17.4.5. Если HB(A, B),
+то результат A видим в B, и эта гарантия даётся компилятором/JIT/CPU
+совместно. На middle ждут понимания: какие 5–7 «источников» HB существуют,
+почему transitivity критична, и почему без HB любая «синхронизация на флажке»
+обречена.
+
+**Базовые определения JMM (JSR-133, Java 5):**
+
+```
+shared variable read/write — операция на полем класса/массива/static
+synchronization action     — volatile read/write, lock/unlock, Thread.start/join,
+                              final-field freeze (в конце конструктора)
+program order              — порядок исполнения внутри одного потока
+synchronizes-with          — связь между двумя SA: unlock SW lock, volatile-write
+                              SW volatile-read того же поля, и т.д.
+happens-before             — транзитивное замыкание program order и synchronizes-with
+```
+
+**Семь источников happens-before (JLS §17.4.5):**
+
+```
+1. Program order: внутри потока, A пишется раньше B → HB(A, B).
+   Внутрипоточная гарантия — JIT может переставлять, но не нарушая HB.
+
+2. Monitor lock: unlock(M) HB любого последующего lock(M) того же монитора.
+   Включает synchronized методы и блоки.
+
+3. Volatile: write волатильного поля HB любого последующего read того же поля.
+
+4. Thread start: thread.start() HB первой операции запущенного потока.
+
+5. Thread termination: завершение всех операций потока HB thread.join() из
+   ожидающего.
+
+6. Thread interrupt: вызов thread.interrupt() HB обнаружения прерывания
+   (через isInterrupted/InterruptedException).
+
+7. Final fields: запись final-поля в конструкторе HB чтения этого поля любым
+   потоком, имеющим ссылку на объект (при условии, что this не утекло из конструктора).
+
+Транзитивность: HB(A, B) ∧ HB(B, C) → HB(A, C).
+```
+
+**Главный тезис JMM**: «JIT и CPU могут переставлять операции **как угодно**,
+если результат для одного потока (program order) идентичен. Между потоками
+гарантии существуют **только** там, где есть HB-цепочка.» Если её нет — поведение
+не определено.
+
+**Канонический пример без HB:**
+
+```java
+// Thread A
+data = 42;
+ready = true;
+
+// Thread B
+while (!ready) {}
+System.out.println(data);
+```
+
+Что увидит B? Без volatile/synchronized — **возможно всё**:
+- `data == 42` (повезло).
+- `data == 0` (B видит `ready == true` раньше, чем `data = 42` доехало).
+- B никогда не выйдет из while (JIT держит ready в регистре, не перечитывает).
+
+С `volatile boolean ready`:
+```
+A: data = 42       ← program order
+A: ready = true    ← volatile write
+B: ready (true)    ← volatile read SW volatile write A
+B: data            ← HB transitivity: A.data=42 → A.ready=true → B.ready=true → B.data
+```
+
+Видимость гарантирована.
+
+**Final field freeze — особый случай.** Один из самых полезных, и редко
+обсуждаемый. После завершения конструктора, любой поток, получивший ссылку на
+объект, видит инициализированные final-поля без дополнительной синхронизации:
+
+```java
+public final class Config {
+    private final String url;
+    private final int port;
+    public Config(String url, int port) {
+        this.url = url;
+        this.port = port;
+    }
+    public String getUrl()  { return url; }
+    public int getPort()    { return port; }
+}
+
+// Thread A
+Config cfg = new Config("api.acme", 443);   // freeze всех final после конструктора
+sharedRef = cfg;                             // не нужен volatile!
+
+// Thread B
+Config c = sharedRef;
+if (c != null) {
+    use(c.getUrl(), c.getPort());           // безопасно — final-freeze гарантирует
+}
+```
+
+Условие — `this` не должен утечь из конструктора (не передавать `this` в
+другой поток до завершения `new`). Самое полезное практическое следствие —
+immutable объекты безопасно публиковать через любую ссылку.
+
+**Reordering на практике.** На x86 (TSO model) JIT редко переставляет
+операции, но **компилятор Java** и **JIT C2** могут. На ARM (weak memory) и
+PowerPC видимость без HB ломается чаще. Это значит: тест прошёл на x86 ≠ работает
+на ARM (AWS Graviton, Apple Silicon, Raspberry Pi). Tests like JCStress (Aleksey
+Shipilёv) необходимы для верификации lock-free структур.
+
+**Подводный камень: HB ≠ atomicity, ≠ mutual exclusion.** HB только говорит «B
+видит то, что A написал». Не значит, что между A и B никто не вмешался. RMW
+типа `counter++` без atomicity ломается даже с volatile.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (T-Bank, Альфа, продвинутый).** «Что такое happens-before и почему
+оно важно?»
+
+Структурированный ответ:
+- HB — формальная связь в JMM, гарантирующая видимость действий между потоками.
+- Без HB JIT и CPU могут переставлять операции произвольно — поток B не увидит
+  изменений A, или увидит частично.
+- Источники: program order, monitor (unlock HB lock), volatile (write HB read),
+  Thread.start/join, final-fields, interrupt.
+- Транзитивность позволяет «протаскивать» видимость: A пишет data, потом
+  volatile-write ready=true; B читает ready=true, поэтому видит data.
+
+Доводка: «зачем нужна транзитивность?» — для volatile-piggybacking и DCL.
+Одна volatile-операция «открывает» видимость всех предшествующих
+non-volatile.
+
+**Вопрос 2 (T-Bank, VK).** «Какие гарантии даёт final-поле?»
+
+После завершения конструктора объекта значение final-поля видно всем потокам,
+получившим ссылку, **без дополнительной синхронизации**. Это уникальная
+гарантия — нет ни volatile, ни synchronized, но видимость есть. Условие —
+`this` не утекает из конструктора (не передаётся в другой поток до завершения
+`new`).
+
+Это делает безопасной публикацию immutable объектов (как Config, String, Integer)
+через простое присваивание ссылки.
+
+**Вопрос 3 (Сбер).** «Поясни эту картинку.»
+
+```java
+class Sample {
+    int x = 0;
+    volatile int y = 0;
+
+    void writer() {
+        x = 1;
+        y = 1;
+    }
+
+    void reader() {
+        if (y == 1) {
+            print(x);   // что может напечатать?
+        }
+    }
+}
+```
+
+Может напечатать только **1**. Цепочка HB:
+- В writer: `x = 1` HB `y = 1` (program order).
+- `y = 1` (volatile write) HB `y == 1` (volatile read) в reader.
+- `y == 1` HB `print(x)` (program order).
+- Транзитивность: `x = 1` HB `print(x)`.
+
+Видимый x — обязательно 1. Если убрать volatile — может быть 0 или вечный
+цикл в print(x), или печать 1.
+
+**Вопрос 4 (Лига).** «Почему `wait()`/`notify()` требуют synchronized?»
+
+Семантика wait/notify работает через monitor: поток должен владеть монитором,
+чтобы вызвать wait (атомарно отпускает монитор и засыпает). Без synchronized
+— `IllegalMonitorStateException`. notify будит ожидающий поток, но только
+после того, как notify-вызывающий отпустит монитор. HB-гарантии: данные,
+изменённые до notify, видны после возврата из wait.
+
+Современный аналог — `ReentrantLock` + `Condition.await/signal`, с явным
+ассоциированием Condition с конкретным Lock.
+
+## Один день из практики
+
+Тебе пришёл репорт: «periodic-таска, которая обрабатывает события, иногда
+обрабатывает события дважды, иногда — пропускает». Под нагрузкой ничего не
+ловится, на small dataset — стабильно работает.
+
+Открываем код:
+
+```java
+@Component
+public class EventProcessor {
+    private boolean processing = false;
+    private Event lastEvent;
+
+    public void enqueue(Event e) {
+        lastEvent = e;
+        processing = true;
+    }
+
+    @Scheduled(fixedDelay = 100)
+    public void process() {
+        if (processing) {
+            handle(lastEvent);
+            processing = false;
+        }
+    }
+}
+```
+
+Проблемы:
+1. `processing` и `lastEvent` — обычные поля, не volatile. Поток-планировщик
+   может вечно видеть `processing == false`, или увидеть `processing == true`,
+   а `lastEvent == null` (reordering).
+2. Между check (`if (processing)`) и act (`handle + processing = false`) другой
+   enqueue может прийти. Compound action без synchronized = race.
+3. `lastEvent` — одна переменная, не очередь. Параллельные enqueue теряются.
+
+Фикс — нормальная очередь + atomic publish:
+
+```java
+@Component
+public class EventProcessor {
+    private final BlockingQueue<Event> queue = new LinkedBlockingQueue<>();
+
+    public void enqueue(Event e) {
+        queue.offer(e);   // thread-safe, BlockingQueue даёт HB
+    }
+
+    @Scheduled(fixedDelay = 100)
+    public void process() {
+        Event e;
+        while ((e = queue.poll()) != null) {
+            handle(e);
+        }
+    }
+}
+```
+
+`BlockingQueue.offer` и `poll` дают HB: всё, что A видел до offer, B видит после
+poll того же элемента (Javadoc: «Memory consistency effects: Actions in a thread
+prior to placing an object into a BlockingQueue happen-before actions subsequent
+to the access or removal of that element from the BlockingQueue»).
+
+Под нагрузкой репорт не повторился. Урок: при любом «флажке» между потоками
+сразу думать «есть ли HB?» — если ответ «не уверен», использовать concurrent
+collection с явными HB-гарантиями.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+class Worker {
+    private boolean stop;
+    public void run() {
+        while (!stop) {
+            doWork();
+        }
+    }
+    public void stop() { stop = true; }
+}
+```
+
+Нет HB между write `stop = true` и read `while (!stop)`. JIT может загнать
+поле в регистр, поток будет вечно крутиться. volatile или AtomicBoolean.
+
+Кейс 2. Где баг?
+
+```java
+class Service {
+    Map<String, Worker> workers;
+    void start() {
+        workers = loadFromConfig();
+        // другой поток вызывает get
+    }
+    Worker get(String name) { return workers.get(name); }
+}
+```
+
+Без volatile на `workers` (или synchronized) другой поток может прочитать
+`workers == null` (видит up-to-date null instead of loaded map) или
+partially-constructed HashMap.
+
+Кейс 3. Где баг?
+
+```java
+class ImmutableHolder {
+    private int value;   // не final
+    public ImmutableHolder(int v) { value = v; }
+    public int get() { return value; }
+}
+
+// Thread A
+shared = new ImmutableHolder(42);
+
+// Thread B
+ImmutableHolder h = shared;
+if (h != null) h.get();   // может вернуть 0
+```
+
+Поле `value` не final → нет freeze guarantee. Другой поток может увидеть
+объект с value = 0 (default до конструктора). Лекарство: `final int value`,
+тогда JMM гарантирует видимость после конструктора.
+
+Кейс 4. Где баг?
+
+```java
+class Pool {
+    private List<Item> items = new ArrayList<>();
+    public synchronized void add(Item i) { items.add(i); }
+    public List<Item> getItems() { return items; }     // не synchronized!
+}
+```
+
+`getItems` возвращает живую ссылку без HB. Caller может увидеть items в
+несогласованном состоянии (resize ArrayList в процессе). Лекарства:
+`synchronized` на geter, или `Collections.unmodifiableList(new ArrayList<>(items))`.
+
+Кейс 5. Где баг?
+
+```java
+class Cache {
+    private final Map<String, V> map = new ConcurrentHashMap<>();
+    private boolean initialized;     // не volatile
+
+    void init() {
+        load(map);
+        initialized = true;
+    }
+
+    V get(String k) {
+        if (!initialized) initSync();
+        return map.get(k);
+    }
+}
+```
+
+`initialized` без volatile/synchronized — нет HB между write в init и read в
+get. Один поток может вечно думать `initialized == false`. CHM сам по себе
+HB-correct внутри, но `initialized`-флаг отдельно требует synchronization.
+
+Кейс 6. Где баг?
+
+```java
+class Counter {
+    final AtomicInteger total = new AtomicInteger();
+    final AtomicInteger errors = new AtomicInteger();
+
+    public Snapshot snapshot() {
+        return new Snapshot(total.get(), errors.get());
+    }
+}
+```
+
+Каждое поле атомарно, но снапшот **не консистентен**: между двумя `.get()`
+другой поток может изменить оба. Snapshot будет показывать сумму несовместимых
+моментов. Лекарство: snapshot через synchronized, или единый AtomicReference<Snapshot>.
+
+## Что почитать
+
+- [JLS §17.4 Memory Model](https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html#jls-17.4) — формальная спека JMM (длинно и тяжело, но это первоисточник).
+- [JSR-133: Java Memory Model FAQ](https://www.cs.umd.edu/~pugh/java/memoryModel/jsr-133-faq.html) — Bill Pugh, оригинальный FAQ.
+- *Java Concurrency in Practice*, Brian Goetz — глава 16 (The Java Memory Model) — самый понятный учебник.
+- Aleksey Shipilёv, [«Java Memory Model Pragmatics»](https://shipilev.net/blog/2014/jmm-pragmatics/) — практические выводы для прода.
+- [JCStress](https://github.com/openjdk/jcstress) — фреймворк для тестирования memory model сценариев. Обязательно для авторов lock-free.
+- Doug Lea, [«Using JDK 9 Memory Order Modes»](http://gee.cs.oswego.edu/dl/html/j9mm.html) — opaque/acquire/release/volatile уровни в VarHandle.
+
 ## Где в стеке
 
 **Уровень 2: Concurrency и JMM.** Самый «отсевочный» блок. JMM happens-before и контракт volatile различают junior от middle. На middle ожидают понимание ABA, ThreadPool параметров, и почему counter++ с volatile не атомарен.

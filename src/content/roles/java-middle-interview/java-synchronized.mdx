@@ -128,6 +128,414 @@ synchronized на методе экземпляра — лок на this. synchr
 - synchronized метод на mutable-объекте, который передаётся наружу
 - Двойной synchronized с разным порядком — гарантированный deadlock
 
+## Развёрнутое объяснение
+
+`synchronized` — встроенный в язык механизм взаимного исключения, существующий
+с Java 1.0. Это не просто «лок», а интегрированная с JMM сущность, дающая
+сразу четыре эффекта: взаимное исключение, видимость (через happens-before),
+запрет reordering, и reentrancy.
+
+**Что такое монитор объекта.** У каждого Java-объекта в header лежит **Mark
+Word** — несколько байт, кодирующих состояние блокировки. До Java 15 это
+состояние могло быть:
+- **Biased lock** (Java 6+, удалён в Java 15 по JEP 374): первый поток, взявший
+  лок, «помечает» объект собой, последующие захваты тем же потоком — без CAS;
+- **Thin lock** (lightweight): CAS на Mark Word, без явной OS-блокировки;
+- **Inflated lock** (fat lock): полноценный OS monitor (на Linux — futex).
+
+JIT начинает с biased, при contention эскалирует до thin, при долгом
+contention — до inflated. После Java 15 biased выпилен, потому что его польза
+была мала на новых workloads (lambdas, reactive, virtual threads), а сложность
+кода JVM огромна.
+
+**Bytecode уровень.** Метод `synchronized` получает флаг `ACC_SYNCHRONIZED` в
+class file. JVM при входе в метод выполняет неявный `monitorenter` на `this`
+(или `Class<?>` для static), при выходе (любом, включая exception) — `monitorexit`.
+Блок `synchronized(obj)` компилируется в явные `monitorenter`/`monitorexit`
+вокруг тела:
+
+```java
+// Source:
+public synchronized void foo() { ... }
+// Bytecode: метод с флагом ACC_SYNCHRONIZED, без явных monitor*
+
+public void bar() {
+    synchronized (lock) { ... }
+}
+// Bytecode:
+//   aload lock
+//   dup
+//   astore N
+//   monitorenter
+//   ... body ...
+//   aload N
+//   monitorexit
+```
+
+**Reentrancy.** Поток может вложенно взять тот же монитор — внутри `synchronized`
+метода вызвать другой `synchronized` метод того же объекта. Счётчик в Mark
+Word инкрементится. Это позволяет рекурсивный вызов:
+
+```java
+class Counter {
+    int x;
+    public synchronized void inc() { x++; }
+    public synchronized void incBy(int n) {
+        for (int i = 0; i < n; i++) inc();   // OK, reentrant
+    }
+}
+```
+
+**Альтернативы synchronized:**
+
+| Механизм | Когда выбрать |
+|---|---|
+| `synchronized` | Простые случаи, без timeout, без try-lock, без fairness |
+| `ReentrantLock` | Нужен timeout (`tryLock(time)`), interruptible, fairness, Condition |
+| `ReentrantReadWriteLock` | Много read, мало write |
+| `StampedLock` (Java 8+) | Optimistic read; для high-perf read-heavy без strict consistency |
+| `AtomicXxx` | Single-variable update, нет compound action |
+| `LongAdder` | High-contention counter; striped по ядрам |
+| `synchronized` (Java 21+) для virtual threads | Pinning fix в Java 24 (JEP 491) |
+
+**Virtual threads и pinning.** В Java 21 virtual thread, попавший в
+`synchronized` блок, **pins** к carrier thread — то есть virtual thread не
+может отпустить ядро в `wait`/`blocking`, пока не выйдет из synchronized.
+Это плохо для масштабируемости: 100 виртуалок с 10-секундным `synchronized`
+блоком сожгут все 8 carrier'ов. В Java 24 JEP 491 исправил pinning — теперь
+synchronized совместим с виртуальными потоками без блокировки carrier'а.
+До Java 24 в hot code path рекомендуется `ReentrantLock` вместо `synchronized`.
+
+**Deadlock — главная опасность.** Два потока берут локи в разном порядке:
+
+```java
+// Поток 1
+synchronized (a) {
+    synchronized (b) { ... }
+}
+
+// Поток 2
+synchronized (b) {
+    synchronized (a) { ... }
+}
+```
+
+Каждый поток успел взять свой первый лок и ждёт второй. Никто не отпустит.
+Лекарства:
+1. **Lock ordering** — всегда брать локи в одном глобальном порядке
+   (например, по `System.identityHashCode`).
+2. **Lock striping** — N независимых локов, выбор по `key.hashCode() % N`.
+3. **tryLock с timeout** — отпустить, если не получили за N секунд, retry
+   с экспоненциальным backoff.
+
+```java
+// Lock ordering для transfer между аккаунтами:
+public void transfer(Account from, Account to, BigDecimal amount) {
+    Account first  = from.id() < to.id() ? from : to;
+    Account second = from.id() < to.id() ? to   : from;
+    synchronized (first) {
+        synchronized (second) {
+            from.debit(amount);
+            to.credit(amount);
+        }
+    }
+}
+```
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, VK, Сбер).** «Что такое synchronized и как
+он работает?»
+
+Структурированный ответ:
+1. **Уровень языка**: ключевое слово для метода/блока, дающее взаимное
+   исключение, видимость (happens-before), и reentrancy.
+2. **Объект блокировки**: для метода экземпляра — `this`; для static — `Class<?>`
+   объект; для блока — указанный объект.
+3. **Bytecode**: ACC_SYNCHRONIZED флаг на методе или monitorenter/monitorexit
+   на блоке.
+4. **Reentrancy**: тот же поток может вложенно захватить тот же монитор.
+5. **JMM**: unlock happens-before lock того же монитора — гарантирует видимость
+   изменений другим потокам.
+
+Доводка: «когда synchronized vs ReentrantLock?» — synchronized для простых
+случаев; ReentrantLock для timeout, interruptibility, Condition, и (до Java 24)
+для virtual threads.
+
+**Вопрос 2 (T-Bank, продвинутый).** «Что такое biased locking и почему его
+убрали?»
+
+Biased locking (Java 6+) — оптимизация: первый поток, взявший лок на объект,
+«пометил» его собой через Mark Word. Последующие захваты тем же потоком
+становились бесплатными (без CAS, без memory barrier — почти как обычный
+вызов). При contention с другим потоком biased «разревокировался» в thin lock.
+
+Зачем убрали (JEP 374, Java 15): код revocation был очень сложным (требовал
+safepoint, обхода всех потоков), JIT и так efficient на uncontended thin locks,
+а на современных workloads (reactive, virtual threads) lock-heavy single-thread
+оптимизация даёт мало. Cost-benefit стал отрицательным.
+
+**Вопрос 3 (Альфа, Озон).** «Что не так?»
+
+```java
+public class Counter {
+    private long count = 0;
+    public synchronized void inc() { count++; }
+    public long get() { return count; }
+}
+```
+
+`get()` НЕ synchronized → может прочитать stale значение из-за reordering или
+кеша CPU. JMM гарантирует видимость только через synchronized/volatile. Фикс:
+либо `volatile long count`, либо `synchronized long get()`, либо переход на
+`AtomicLong`/`LongAdder`.
+
+**Вопрос 4 (VK, Сбер).** «Опиши deadlock и как его предотвратить.»
+
+Deadlock = два или более потока взаимно ждут локи друг друга. Четыре условия
+(Coffman conditions): mutual exclusion, hold and wait, no preemption, circular
+wait. Достаточно нарушить любое:
+1. **Глобальный порядок локов** (циркуляция невозможна).
+2. **tryLock с timeout** (no preemption нарушен).
+3. **Иерархия локов** (Hierarchy locks pattern).
+4. **Один лок** (нет hold and wait).
+
+Диагностика: `jstack <pid>` или `jcmd Thread.print` показывает «Found one Java-level
+deadlock» автоматически. JConsole, VisualVM подсвечивают deadlock'и.
+
+## Один день из практики
+
+Понедельник, инцидент: «сервис перестал отвечать после 4 часов работы. Никаких
+ошибок в логах». Логин на pod, `jcmd 1 Thread.print > dump.txt`. Открываем:
+
+```
+"http-nio-8080-exec-7" #28 daemon prio=5 os_prio=0 cpu=120.00ms
+   java.lang.Thread.State: BLOCKED (on object monitor)
+        at com.acme.AccountService.transfer(AccountService.java:42)
+        - waiting to lock <0x0000000700a5b3f0> (a com.acme.Account)
+        - locked <0x0000000700a5b510> (a com.acme.Account)
+
+"http-nio-8080-exec-12" #33 daemon prio=5 os_prio=0 cpu=130.00ms
+   java.lang.Thread.State: BLOCKED (on object monitor)
+        at com.acme.AccountService.transfer(AccountService.java:42)
+        - waiting to lock <0x0000000700a5b510> (a com.acme.Account)
+        - locked <0x0000000700a5b3f0> (a com.acme.Account)
+
+Found one Java-level deadlock:
+=============================
+"http-nio-8080-exec-7":
+  waiting to lock monitor 0x0000000700a5b3f0 (Account),
+  which is held by "http-nio-8080-exec-12"
+"http-nio-8080-exec-12":
+  waiting to lock monitor 0x0000000700a5b510 (Account),
+  which is held by "http-nio-8080-exec-7"
+```
+
+Классический deadlock на двух аккаунтах. Открываем код:
+
+```java
+public void transfer(Account from, Account to, BigDecimal amount) {
+    synchronized (from) {
+        synchronized (to) {        // если другой поток одновременно делает transfer(to, from), deadlock
+            from.debit(amount);
+            to.credit(amount);
+        }
+    }
+}
+```
+
+Фикс — глобальный порядок локов по id:
+
+```java
+public void transfer(Account from, Account to, BigDecimal amount) {
+    Account first  = from.id().compareTo(to.id()) < 0 ? from : to;
+    Account second = first == from ? to : from;
+    synchronized (first) {
+        synchronized (second) {
+            from.debit(amount);
+            to.credit(amount);
+        }
+    }
+}
+```
+
+Дополнительно для будущего: переход на `ReentrantLock` с `tryLock(timeout)`,
+чтобы если deadlock возник (логика расширится — три аккаунта, например), он
+не подвесил сервис, а вернул ошибку:
+
+```java
+private final ConcurrentHashMap<UUID, ReentrantLock> locks = new ConcurrentHashMap<>();
+
+public void transfer(Account from, Account to, BigDecimal amount) {
+    ReentrantLock lf = locks.computeIfAbsent(from.id(), k -> new ReentrantLock());
+    ReentrantLock lt = locks.computeIfAbsent(to.id(),   k -> new ReentrantLock());
+    Account[] order = from.id().compareTo(to.id()) < 0 ? new Account[]{from, to} : new Account[]{to, from};
+    ReentrantLock[] sorted = ... ;
+    if (!sorted[0].tryLock(2, SECONDS)) throw new TimeoutException();
+    try {
+        if (!sorted[1].tryLock(2, SECONDS)) throw new TimeoutException();
+        try {
+            from.debit(amount);
+            to.credit(amount);
+        } finally { sorted[1].unlock(); }
+    } finally { sorted[0].unlock(); }
+}
+```
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+synchronized ("LOCK") {
+    ... critical section ...
+}
+```
+
+`"LOCK"` интернируется в String Pool. Если ещё кто-то в JVM synchronized'ится
+на том же литерале (другая библиотека) — конфликт, лишний contention, потенциальный
+deadlock. Правило: использовать private final Object для лока (или `this` если
+безопасно):
+
+```java
+private final Object lock = new Object();
+synchronized (lock) { ... }
+```
+
+Кейс 2. Где баг?
+
+```java
+public class Service {
+    public synchronized void doWork() {
+        externalApi.call();   // блокирующий HTTP вызов под локом
+    }
+}
+```
+
+Под `synchronized` нельзя делать долгих блокировок: остальные потоки висят.
+Если call не идемпотентен и не быстрый — вынести за лок или использовать
+`ReentrantLock.tryLock(timeout)`.
+
+Кейс 3. Где баг?
+
+```java
+public class Inventory {
+    private final Map<String, Integer> stock = new HashMap<>();
+
+    public synchronized void update(String item, int delta) {
+        stock.put(item, stock.getOrDefault(item, 0) + delta);
+    }
+
+    public Map<String, Integer> snapshot() {
+        return stock;   // утечка mutable map наружу
+    }
+}
+```
+
+`snapshot()` отдаёт ссылку на ту же HashMap. Внешний код может модифицировать
+её **без synchronization**. Лекарство: `return Map.copyOf(stock)` или
+`Collections.unmodifiableMap(new HashMap<>(stock))`.
+
+Кейс 4. Где баг?
+
+```java
+class Counter {
+    private long count;
+    public synchronized void inc() { count++; }
+    public long get() { return count; }   // не synchronized
+}
+```
+
+Без synchronized или volatile поток-читатель может видеть устаревшее значение.
+JMM не гарантирует видимость без HB.
+
+Кейс 5. Где баг?
+
+```java
+public synchronized Object getInstance() {
+    if (instance == null) {
+        instance = new Heavy();
+    }
+    return instance;
+}
+```
+
+Каждый вызов берёт лок, даже когда `instance` уже создан. Под нагрузкой —
+contention. Решение: Double-Checked Locking с volatile полем:
+
+```java
+private volatile Heavy instance;
+
+public Heavy getInstance() {
+    Heavy h = instance;
+    if (h == null) {
+        synchronized (this) {
+            h = instance;
+            if (h == null) {
+                instance = h = new Heavy();
+            }
+        }
+    }
+    return h;
+}
+```
+
+Лучше — `Holder idiom` (lazy class init):
+
+```java
+private static class Holder { static final Heavy INSTANCE = new Heavy(); }
+public Heavy getInstance() { return Holder.INSTANCE; }
+```
+
+JVM гарантирует thread-safe init статических полей при первом обращении.
+
+Кейс 6. Где баг (virtual threads, Java 21–23)?
+
+```java
+ExecutorService es = Executors.newVirtualThreadPerTaskExecutor();
+for (int i = 0; i < 10_000; i++) {
+    es.submit(() -> {
+        synchronized (sharedLock) {
+            Thread.sleep(1000);   // pinning!
+        }
+    });
+}
+```
+
+Virtual thread в `synchronized` блоке pin'ится к carrier thread. Pool carriers
+заканчивается, новые VT не могут начаться. В Java 21–23 решение —
+`ReentrantLock` вместо synchronized. В Java 24 (JEP 491) — synchronized
+исправлен.
+
+Кейс 7. Где баг (видимость)?
+
+```java
+class TaskRunner {
+    private boolean stopRequested = false;
+    public void start() {
+        new Thread(() -> {
+            while (!stopRequested) {
+                doWork();
+            }
+        }).start();
+    }
+    public void stop() { stopRequested = true; }
+}
+```
+
+`stopRequested` не volatile, поток `start()` может вечно крутиться: JIT
+эскалирует поле в регистр, не перечитывает из памяти. Фикс: `volatile boolean
+stopRequested` или `AtomicBoolean`.
+
+## Что почитать
+
+- *Java Concurrency in Practice*, Brian Goetz — глава 2 (Thread Safety), глава 10 (Avoiding Liveness Hazards).
+- [JLS §17.4 — Memory Model](https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html#jls-17.4) — формальная семантика synchronized.
+- [JEP 374: Disable and Deprecate Biased Locking](https://openjdk.org/jeps/374) — почему biased убрали в Java 15.
+- [JEP 491: Synchronize Virtual Threads without Pinning](https://openjdk.org/jeps/491) — фикс pinning в Java 24.
+- Aleksey Shipilёv, [«Java Lock Coarsening / Lock Elision»](https://shipilev.net/jvm/anatomy-quarks/13-lock-coarsening/) — про JIT-оптимизации синхронизации.
+- *Effective Java, 3rd Edition*, Joshua Bloch — **Item 78** (Synchronize access to shared mutable data), **Item 79** (Avoid excessive synchronization).
+
 ## Где в стеке
 
 **Уровень 2: Concurrency и JMM.** Самый «отсевочный» блок. JMM happens-before и контракт volatile различают junior от middle. На middle ожидают понимание ABA, ThreadPool параметров, и почему counter++ с volatile не атомарен.

@@ -128,6 +128,375 @@ CompletableFuture<T> — promise-style API, реализующий Future + Comp
 - Использовать commonPool для блокирующих IO задач
 - Забывать exceptionally — silent failure
 
+## Развёрнутое объяснение
+
+`CompletableFuture<T>` появился в Java 8 (2014). Это первая в JDK promise-style
+библиотека для асинхронного программирования: до неё был только `Future<T>` с
+блокирующим `.get()` без возможности компоновать асинхронные шаги. CF реализует
+два интерфейса:
+
+```
+Future<T>          — старый блокирующий API: cancel, isDone, get, get(timeout)
+CompletionStage<T> — новый non-blocking API: thenApply, thenCompose, thenCombine,
+                     exceptionally, handle, whenComplete, ...
+```
+
+**Главная идея — pipeline.** Вместо «дернуть .get() и ждать» — описать «когда
+это закончится, сделать вот это»:
+
+```java
+CompletableFuture<User> user = api.getUserAsync(id);            // async I/O
+CompletableFuture<Order[]> orders = user.thenComposeAsync(      // когда юзер пришёл
+    u -> api.getOrdersAsync(u.id()),
+    ioExecutor                                                   // на каком пуле
+);
+CompletableFuture<Report> report = orders.thenApplyAsync(this::buildReport, cpuExecutor);
+report.thenAccept(this::send);
+```
+
+Pipeline никогда не блокируется на промежуточных шагах. Только конечный
+`.get()` или `join()` блокирует — и обычно его НЕ делают, а отдают `CompletableFuture<...>`
+в Spring controller (через `WebMvcConfigurer` или `WebFluxConfigurer`).
+
+**Семейство методов — три варианта каждого:**
+
+| Sync | Async (commonPool) | Async (custom) |
+|---|---|---|
+| `thenApply(fn)` | `thenApplyAsync(fn)` | `thenApplyAsync(fn, executor)` |
+| `thenCompose(fn)` | `thenComposeAsync(fn)` | `thenComposeAsync(fn, executor)` |
+| `thenAccept(c)` | `thenAcceptAsync(c)` | `thenAcceptAsync(c, executor)` |
+
+- **`thenApply` (sync)**: лямбда выполнится в потоке, который завершил
+  предыдущий стейдж (или в caller, если стейдж уже completed). Для дешёвых
+  чистых функций (map, transform).
+- **`thenApplyAsync` без executor**: лямбда выполнится на `ForkJoinPool.commonPool()`.
+  Опасно для IO/блокирующих.
+- **`thenApplyAsync(fn, executor)`**: явный executor — идиоматичный вариант для
+  prod-кода.
+
+**`thenApply` vs `thenCompose`** — главный точечный вопрос:
+
+```java
+// thenApply (map): T → R
+CompletableFuture<User> futureUser;
+CompletableFuture<String> name = futureUser.thenApply(u -> u.name());   // String
+CompletableFuture<CompletableFuture<Order>> nested =
+    futureUser.thenApply(u -> api.getOrderAsync(u.id()));               // вложенный CF! плохо
+
+// thenCompose (flatMap): T → CompletionStage<R>
+CompletableFuture<Order> order =
+    futureUser.thenCompose(u -> api.getOrderAsync(u.id()));             // развёрнуто
+```
+
+Если функция возвращает `CompletableFuture` — используй `thenCompose`, иначе
+получишь `CompletableFuture<CompletableFuture<T>>` и придётся «развязывать» через
+`thenCompose(x -> x)`.
+
+**Комбинаторы:**
+
+```java
+// Два независимых, объединить:
+CompletableFuture<User> u = api.userAsync();
+CompletableFuture<Org> o = api.orgAsync();
+CompletableFuture<UserOrgPair> pair = u.thenCombine(o, UserOrgPair::new);
+
+// Все из N:
+List<CompletableFuture<X>> all = ...;
+CompletableFuture<Void> done = CompletableFuture.allOf(all.toArray(new CompletableFuture[0]));
+// чтобы собрать результаты — после allOf:
+CompletableFuture<List<X>> collected = done.thenApply(__ ->
+    all.stream().map(CompletableFuture::join).toList()
+);
+
+// Первый из N:
+CompletableFuture<Object> first = CompletableFuture.anyOf(all.toArray(new CompletableFuture[0]));
+```
+
+**Обработка ошибок:**
+
+```java
+.exceptionally(ex -> defaultValue)                  // recover: Throwable → T
+.exceptionallyCompose(ex -> retryAsync(...))        // recover async (Java 12+)
+.handle((res, ex) -> ex == null ? res : fallback)   // recover + map в одном
+.whenComplete((res, ex) -> log.info(...))           // peek: side-effect, не меняет
+```
+
+`exceptionally` ловит **любое** исключение из любой стадии цепочки. Если стадия
+`thenApply` бросила — следующая стадия получит `CompletionException(cause)` (не
+оригинальное!). Это важно — иначе `if (ex instanceof MyException)` не сработает.
+Решение: `Throwables.getRootCause(ex)` или явная распаковка.
+
+**Таймауты (Java 9+, JEP 266):**
+
+```java
+api.fetchAsync()
+   .orTimeout(2, TimeUnit.SECONDS)                  // через 2с → TimeoutException
+   .exceptionally(ex -> cachedFallback);
+
+api.fetchAsync()
+   .completeOnTimeout(defaultValue, 2, TimeUnit.SECONDS);  // через 2с → defaultValue
+```
+
+До Java 9 это городилось через `ScheduledExecutorService.schedule`.
+
+**Executor — главная ловушка.** По дефолту `*Async`-методы используют
+`ForkJoinPool.commonPool()`. Common pool — общий на JVM, рассчитан на короткие
+CPU-bound задачи. Если в нём блокирующий IO — он встанет, и parallel streams,
+другие CF, parallel sort тоже.
+
+```java
+// Антипаттерн:
+CompletableFuture.supplyAsync(() -> blockingHttpCall());   // commonPool!
+
+// Правильно:
+ExecutorService ioExecutor = Executors.newVirtualThreadPerTaskExecutor();  // Java 21+
+CompletableFuture.supplyAsync(() -> blockingHttpCall(), ioExecutor);
+```
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank, Альфа).** «Что такое CompletableFuture и зачем он?»
+
+Promise-style API в Java 8 для асинхронных операций. Заменил блокирующий
+`Future` с возможностью композиции через thenApply/thenCompose/thenCombine.
+Главные применения: parallel fetch от нескольких сервисов с aggregation,
+async pipeline без callback hell, recovery через exceptionally.
+
+Доводка: «чем отличается от Mono/Flux в Reactor?» — CF одноразовый (Future,
+выдаёт одно значение/ошибку). Mono тоже одноразовый, но lazy (subscribe-driven)
+с большим набором операторов и backpressure. Flux — несколько значений.
+В Spring 5+ оба интегрированы.
+
+**Вопрос 2 (Лига).** «В чём разница thenApply и thenCompose?»
+
+`thenApply(fn: T → R)` — обычный map. `thenCompose(fn: T → CompletionStage<R>)` —
+flatMap. Если функция возвращает CompletableFuture, нужен thenCompose, иначе
+получится `CompletableFuture<CompletableFuture<T>>`.
+
+```java
+// thenApply
+String → String → CompletableFuture<String>
+
+// thenCompose
+String → CompletableFuture<String> → CompletableFuture<String> (развёрнутый)
+```
+
+**Вопрос 3 (T-Bank).** «Что не так?»
+
+```java
+public List<Order> fetchAll(List<Long> ids) {
+    return ids.stream()
+        .map(id -> CompletableFuture.supplyAsync(() -> fetchOne(id)))
+        .map(CompletableFuture::join)
+        .toList();
+}
+```
+
+`map(CompletableFuture::join)` в том же stream'е — каждый join блокирующий,
+дожидается перед стартом следующего. Эффективно: последовательное исполнение.
+Решение: сначала запустить все, потом собрать:
+
+```java
+public List<Order> fetchAll(List<Long> ids) {
+    List<CompletableFuture<Order>> futures = ids.stream()
+        .map(id -> CompletableFuture.supplyAsync(() -> fetchOne(id), ioExecutor))
+        .toList();
+    return futures.stream().map(CompletableFuture::join).toList();
+}
+```
+
+**Вопрос 4 (Альфа).** «Как реализовать таймаут на CompletableFuture?»
+
+Java 9+: `cf.orTimeout(2, SECONDS).exceptionally(ex -> fallback)` или
+`cf.completeOnTimeout(default, 2, SECONDS)`. До Java 9 — через
+`ScheduledExecutorService.schedule(() -> cf.completeExceptionally(...), 2, SECONDS)`.
+
+## Один день из практики
+
+Тикет: «карточка товара /products/{id} грузится 3 секунды. Покажи план оптимизации».
+
+Старая реализация — последовательно:
+
+```java
+@GetMapping("/products/{id}")
+public ProductCard get(@PathVariable Long id) {
+    Product product = productSvc.find(id);              // 200мс
+    List<Review> reviews = reviewSvc.findByProduct(id); // 800мс
+    Inventory stock = inventorySvc.check(id);           // 500мс
+    PricePoint price = pricingSvc.calculate(id);        // 600мс
+    Recommendations recs = recoSvc.relatedTo(id);       // 800мс
+    return new ProductCard(product, reviews, stock, price, recs);
+    // total: 2.9 сек последовательно
+}
+```
+
+Все 5 запросов независимы. Запускаем параллельно:
+
+```java
+@GetMapping("/products/{id}")
+public CompletableFuture<ProductCard> get(@PathVariable Long id) {
+    CompletableFuture<Product> product = CompletableFuture.supplyAsync(
+        () -> productSvc.find(id), ioExecutor);
+    CompletableFuture<List<Review>> reviews = CompletableFuture.supplyAsync(
+        () -> reviewSvc.findByProduct(id), ioExecutor);
+    CompletableFuture<Inventory> stock = CompletableFuture.supplyAsync(
+        () -> inventorySvc.check(id), ioExecutor);
+    CompletableFuture<PricePoint> price = CompletableFuture.supplyAsync(
+        () -> pricingSvc.calculate(id), ioExecutor);
+    CompletableFuture<Recommendations> recs = CompletableFuture.supplyAsync(
+        () -> recoSvc.relatedTo(id), ioExecutor)
+        .orTimeout(500, MILLISECONDS)
+        .exceptionally(ex -> Recommendations.empty());   // recos некритичны
+
+    return CompletableFuture.allOf(product, reviews, stock, price, recs)
+        .thenApply(__ -> new ProductCard(
+            product.join(), reviews.join(), stock.join(), price.join(), recs.join()));
+}
+// total: max(200, 800, 500, 600, 500) = 800мс
+```
+
+Spring MVC сам обработает CompletableFuture-return: запрос освобождает HTTP-thread,
+а ответ отдаётся, когда CF complete. Подключить:
+
+```java
+@Configuration
+public class WebMvcConfig implements WebMvcConfigurer {
+    @Override
+    public void configureAsyncSupport(AsyncSupportConfigurer configurer) {
+        configurer.setDefaultTimeout(5_000)
+                  .setTaskExecutor(asyncMvcExecutor());
+    }
+}
+```
+
+ioExecutor сделан через `Executors.newVirtualThreadPerTaskExecutor()` (Java 21+),
+чтобы не упереться в native threads на пиках. До Java 21 — `ThreadPoolExecutor`
+с 50 потоками и bounded queue.
+
+Регресс-тест:
+
+```java
+@Test
+void product_card_parallelizes_fetches() {
+    StopWatch sw = StopWatch.createStarted();
+    ProductCard card = controller.get(42L).get();
+    sw.stop();
+    assertThat(sw.getTime()).isLessThan(1200);  // должно быть ~max, не sum
+    assertThat(card).isNotNull();
+}
+```
+
+После релиза p99 латенси `/products/{id}` упала с 3.2 сек до 950 мс. Урок:
+параллельные fetch'и — стандартный приём для composite endpoint'ов; CF делает
+его readable.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+CompletableFuture.supplyAsync(this::loadFromDb)
+    .thenApply(this::transform)
+    .thenAccept(this::send);
+// никто не обрабатывает ошибки
+```
+
+Если supplier бросит — `thenApply` и `thenAccept` пропускаются, исключение
+сохраняется в финальном CF, но без `.exceptionally` / `.handle` / `.whenComplete`
+оно проигнорировано — никто не узнает. Решение: `.exceptionally(ex -> {
+log.error(ex); return null; })` в конце цепочки.
+
+Кейс 2. Где баг?
+
+```java
+CompletableFuture<User> u = userSvc.findAsync(id);   // supplyAsync(..., commonPool)
+CompletableFuture<List<Order>> orders = u.thenComposeAsync(
+    user -> orderSvc.findAllAsync(user.id())          // тоже supplyAsync(..., commonPool)
+);
+```
+
+Все CF на commonPool. Под нагрузкой 100 parallel-юзеров commonPool забивается
+IO-задачами, parallel streams в этом же приложении встают. Лекарство: явный
+executor.
+
+Кейс 3. Где баг?
+
+```java
+CompletableFuture<X> future = serviceCall();
+X result = future.get();   // блокирующий, держит HTTP-thread
+return result;
+```
+
+Если внутри @GetMapping вернуть `X` через blocking `.get()` — async-преимущество
+утеряно. HTTP-thread заблокирован. Правильно: вернуть `CompletableFuture<X>`
+из контроллера — Spring сам обработает.
+
+Кейс 4. Где баг?
+
+```java
+CompletableFuture<User> userFuture = api.userAsync();
+CompletableFuture<CompletableFuture<Order>> nested = userFuture.thenApply(u -> api.orderAsync(u.id()));
+// придётся join дважды
+```
+
+Использовали thenApply, где функция возвращает CompletableFuture. Получили
+nested CF. Решение: `thenCompose`.
+
+Кейс 5. Где баг (exception unwrapping)?
+
+```java
+cf.exceptionally(ex -> {
+    if (ex instanceof MyBusinessException mbe) { ... }  // false — это CompletionException!
+});
+```
+
+В цепочке CompletableFuture любое exception оборачивается в `CompletionException`.
+Original — в `getCause()`. Правильно:
+
+```java
+.exceptionally(ex -> {
+    Throwable cause = ex instanceof CompletionException ce ? ce.getCause() : ex;
+    if (cause instanceof MyBusinessException mbe) { ... }
+});
+```
+
+Кейс 6. Где баг (timeout без cancel)?
+
+```java
+cf.orTimeout(2, SECONDS).exceptionally(ex -> fallback);
+```
+
+`orTimeout` НЕ отменяет background-операцию. Если поток в supplyAsync делает
+60-секундный HTTP — он продолжит дёргать удалённый сервис ещё минуту, даже
+после того, как мы вернули клиенту fallback. Лекарство: handle вручную с
+`cancel(true)`, или использовать `Future.cancel`-aware клиент (Apache HttpClient,
+JDK HttpClient).
+
+Кейс 7. Где баг (race в supplier)?
+
+```java
+private List<Item> cache;
+public CompletableFuture<List<Item>> getAll() {
+    return CompletableFuture.supplyAsync(() -> {
+        if (cache == null) cache = loadAll();
+        return cache;
+    });
+}
+```
+
+`cache` без volatile/synchronized. Под нагрузкой параллельные supplier'ы
+сделают N loadAll вызовов, последний перепишет cache. Лекарство: ConcurrentHashMap.computeIfAbsent
+или AtomicReference.
+
+## Что почитать
+
+- [Javadoc CompletableFuture](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/CompletableFuture.html) — справочник.
+- [JEP 266: More Concurrency Updates (Java 9)](https://openjdk.org/jeps/266) — orTimeout, completeOnTimeout, copy.
+- Tomasz Nurkiewicz, [«Java 8 CompletableFuture»](https://www.nurkiewicz.com/2013/05/java-8-definitive-guide-to.html) — классический введение.
+- *Modern Java in Action* (Urma/Fusco/Mycroft), глава 16 — CompletableFuture-fundamentals.
+- *Java Concurrency in Practice*, Brian Goetz — главы 6 и 7 (Task Execution, Cancellation).
+- [JEP 480: Structured Concurrency](https://openjdk.org/jeps/480) — современная альтернатива для scoped lifetime.
+
 ## Где в стеке
 
 **Уровень 2: Concurrency и JMM.** Самый «отсевочный» блок. JMM happens-before и контракт volatile различают junior от middle. На middle ожидают понимание ABA, ThreadPool параметров, и почему counter++ с volatile не атомарен.
