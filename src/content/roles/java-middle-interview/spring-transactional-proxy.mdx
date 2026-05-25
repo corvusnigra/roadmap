@@ -128,6 +128,436 @@ masteryQuiz:
 - Полагаться на default rollback для checked exceptions
 - @Transactional на private методе — Spring молча игнорирует
 
+## Развёрнутое объяснение
+
+`@Transactional` — самый часто задаваемый вопрос по Spring. Self-invocation
+ловушка приходит **в 100% собесов**. На middle ждут понимания механики proxy
++ контракта rollback.
+
+**Как работает @Transactional:**
+
+```
+1. Spring видит @Transactional на классе/методе → помечает класс для AOP.
+2. Bean создаётся (см. spring-bean-lifecycle).
+3. На шаге BeanPostProcessor.postProcessAfterInitialization
+   AbstractAutoProxyCreator оборачивает bean в прокси:
+   - Если есть interface — JDK Dynamic Proxy.
+   - Если нет interface (или class proxy явно) — CGLIB прокси (subclass).
+4. Все @Autowired/inject получают ссылку на ПРОКСИ, не на оригинал.
+5. Каждый внешний вызов method() → прокси.method() → перехват
+   TransactionInterceptor → открыть TX через PlatformTransactionManager →
+   вызвать оригинальный метод → commit/rollback.
+```
+
+```
+┌────────────┐
+│ Caller     │
+└─────┬──────┘
+      │ obj.method(...)
+      ▼
+┌────────────┐
+│ PROXY      │  ◄── вот это — то, что в @Autowired
+│ ┌────────┐ │
+│ │  if @Tx│ │     1. PlatformTransactionManager.begin()
+│ │  TX    │ │     2. вызвать target.method(...)
+│ │  log + │ │     3. PlatformTransactionManager.commit() или rollback()
+│ └────────┘ │
+└─────┬──────┘
+      │ target.method(...)
+      ▼
+┌────────────┐
+│ Target obj │     реальная логика
+└────────────┘
+```
+
+**Self-invocation — главный «trap»:**
+
+```java
+@Service
+public class UserService {
+    @Transactional
+    public void createUser(...) { ... }
+
+    public void bulkCreate(List<...> users) {
+        for (var u : users) {
+            createUser(u);     // ✗ this.createUser — мимо прокси!
+            // НЕТ транзакции на каждом createUser
+        }
+    }
+}
+```
+
+`this` указывает на target object, не на прокси. Внутренний вызов идёт напрямую,
+TransactionInterceptor не задействован. Никакой TX.
+
+**Решения self-invocation:**
+
+```java
+// 1. Разнести в два сервиса (самое чистое)
+@Service
+@RequiredArgsConstructor
+public class UserService {
+    private final UserCreator creator;
+    public void bulkCreate(List<...> users) {
+        users.forEach(creator::createUser);   // прокси
+    }
+}
+@Service
+public class UserCreator {
+    @Transactional
+    public void createUser(...) { ... }
+}
+
+// 2. Self-injection через ObjectProvider или явный bean
+@Service
+@RequiredArgsConstructor
+public class UserService {
+    private final ApplicationContext ctx;
+    @Transactional
+    public void createUser(...) { ... }
+    public void bulkCreate(List<...> users) {
+        UserService self = ctx.getBean(UserService.class);
+        users.forEach(self::createUser);
+    }
+}
+
+// 3. AopContext.currentProxy() (требует @EnableAspectJAutoProxy(exposeProxy = true))
+@EnableAspectJAutoProxy(exposeProxy = true)
+@SpringBootApplication
+public class App { ... }
+
+@Service
+public class UserService {
+    @Transactional
+    public void createUser(...) { ... }
+    public void bulkCreate(List<...> users) {
+        UserService self = (UserService) AopContext.currentProxy();
+        users.forEach(self::createUser);
+    }
+}
+```
+
+**Контракт rollback — вторая по частоте ошибка:**
+
+```java
+@Transactional
+public void doWork() throws IOException {
+    save(data);
+    if (Files.notExists(path)) {
+        throw new IOException("missing");   // ✗ checked — НЕ откатывает!
+    }
+}
+```
+
+По дефолту `@Transactional` откатывает **только** на:
+- `RuntimeException` и наследниках.
+- `Error` и наследниках.
+
+`Exception` и его checked-наследники (`IOException`, `SQLException`,
+`ClassNotFoundException`) — **не вызывают rollback**. Метод бросит исключение
+наружу, но `save(data)` будет закоммичен.
+
+Лекарство:
+
+```java
+@Transactional(rollbackFor = Exception.class)   // или Throwable.class
+public void doWork() throws IOException { ... }
+```
+
+Параметр `noRollbackFor` — обратное: коммитить даже на RuntimeException
+(редко нужно).
+
+**JDK Dynamic Proxy vs CGLIB:**
+
+```
+JDK Dynamic Proxy:
+- Требует, чтобы класс реализовал хотя бы один interface.
+- Прокси implements тот же interface.
+- @Autowired по interface получает прокси.
+- @Autowired по конкретному классу — НЕ работает (прокси не extends класс).
+- Быстрее CGLIB при создании.
+
+CGLIB (default в Spring Boot 2.x+):
+- Не нужен interface — прокси extends класс.
+- @Autowired по interface и по классу — оба работают.
+- final классы не проксируются (extends невозможно).
+- final методы не проксируются (override невозможно).
+- private методы не проксируются.
+```
+
+Spring Boot с 2.x по дефолту использует CGLIB (`spring.aop.proxy-target-class=true`).
+Это значит:
+- `final` класс с `@Transactional` → Spring проигнорирует, аннотация не сработает
+  (с Spring 6 даёт явный warning).
+- `final` метод с `@Transactional` → то же.
+- `private` метод с `@Transactional` → молча игнорится.
+
+**Параметры @Transactional:**
+
+```java
+@Transactional(
+    propagation = Propagation.REQUIRED,         // см. spring-transactional-propagation
+    isolation = Isolation.READ_COMMITTED,        // default зависит от БД
+    timeout = 5,                                  // секунды, бросит TX-rollback по таймауту
+    readOnly = true,                              // Hibernate FlushMode.MANUAL, ускорение чтения
+    rollbackFor = Exception.class,
+    noRollbackFor = BusinessExceedingException.class
+)
+public void method() { ... }
+```
+
+`readOnly = true` — важная оптимизация для чтения. Hibernate переключает
+FlushMode в MANUAL (не сбрасывает изменения в БД), JDBC может использовать
+read replica.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, Яндекс, Сбер — спросят с вероятностью
+100%).** «Что не так?»
+
+```java
+@Service
+public class UserService {
+    @Transactional
+    public void create(User u) { ... }
+
+    public void bulkCreate(List<User> users) {
+        for (User u : users) create(u);   // ?
+    }
+}
+```
+
+Self-invocation. `this.create(u)` идёт мимо прокси, транзакция не открывается
+для каждого вызова. Если `bulkCreate` без `@Transactional` — все save()
+происходят без TX (либо в default JDBC auto-commit). Если на `bulkCreate` есть
+свой `@Transactional` — все 1000 саве'й в одной транзакции (что может быть
+желаемо, может нет).
+
+Решения: разнести в два сервиса, AopContext, self-injection.
+
+**Вопрос 2 (Лига, T-Bank).** «Откатит ли @Transactional на IOException?»
+
+Нет (по умолчанию). `@Transactional` rollback'ит только на RuntimeException и
+Error. `IOException` extends `Exception` (checked) — `@Transactional`
+закоммитит транзакцию, потом исключение долетит наружу.
+
+Лекарство: `@Transactional(rollbackFor = Exception.class)` или явный
+`TransactionAspectSupport.currentTransactionStatus().setRollbackOnly()`.
+
+**Вопрос 3 (Альфа, VK).** «Чем JDK Dynamic Proxy отличается от CGLIB?»
+
+JDK — на interface (прокси implements). CGLIB — на класс (прокси extends).
+JDK быстрее создаётся, требует interface. CGLIB не требует interface, но
+не работает с final-классами/методами. Spring Boot 2.x+ по дефолту CGLIB.
+
+**Вопрос 4 (Сбер).** «`@Transactional` на private методе работает?»
+
+Нет. Прокси не может перехватить private (CGLIB не overrid'ит). Spring молча
+игнорит. Тоже про package-private (зависит от настроек). Должен быть `public`.
+
+**Вопрос 5 (Озон).** «Зачем `readOnly = true`?»
+
+Для read-only методов. Hibernate переключает FlushMode в MANUAL — не пытается
+сбросить ничего в БД, экономит время. JDBC-driver'ы могут использовать
+read replica если настроены. Микро-оптимизация, но важная в hot-path.
+
+## Один день из практики
+
+Тебя позвали в Лигу на собес. Live coding: «У меня в проекте audit log не
+сохраняется при exception. Помоги».
+
+Открываем код:
+
+```java
+@Service
+public class OrderService {
+    private final OrderRepository orderRepo;
+    private final AuditService auditService;
+    public OrderService(OrderRepository or, AuditService as) {
+        orderRepo = or; auditService = as;
+    }
+
+    @Transactional
+    public Order placeOrder(OrderRequest req) {
+        Order o = orderRepo.save(new Order(req));
+        try {
+            charge(o);                 // внешний платёж
+        } catch (PaymentException e) {
+            auditService.logFailure(o.id(), e.getMessage());   // ?
+            throw e;
+        }
+        return o;
+    }
+}
+
+@Service
+public class AuditService {
+    @Transactional
+    public void logFailure(Long orderId, String reason) {
+        // INSERT INTO audit_log ...
+    }
+}
+```
+
+Проблема: внешняя транзакция помечена rollback-only (по RuntimeException
+`PaymentException`). `auditService.logFailure` хоть и `@Transactional`, но из-за
+default propagation `REQUIRED` присоединяется к существующей TX, которая помечена
+к rollback. Аудит-запись делается, но при final rollback она исчезает вместе со
+всем.
+
+Решение: вынести audit в `REQUIRES_NEW`:
+
+```java
+@Service
+public class AuditService {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void logFailure(Long orderId, String reason) {
+        // ВЫНЕСЕНА в отдельную physical TX → commit независимо
+    }
+}
+```
+
+REQUIRES_NEW открывает **новый коннект**, suspend'ит outer transaction. Audit
+закоммитится, потом outer TX продолжит и сделает rollback своего save'а.
+Audit сохранится.
+
+Доводка от интервьюера: «но это связь между двумя коннектами — можно ли
+deadlock?» — Да, если REQUIRES_NEW лезет в ту же таблицу, что outer (например,
+проверяет order по id). Лекарство: audit таблица должна быть **изолированной**
+от business-таблиц.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+@Service
+public class UserService {
+    @Transactional
+    private void doSomething() { ... }
+}
+```
+
+`@Transactional` на private — не работает. Прокси не может перехватить.
+
+Кейс 2. Где баг?
+
+```java
+@Service
+public final class MyService {
+    @Transactional
+    public void doWork() { ... }
+}
+```
+
+`final` класс не проксируется CGLIB. С Spring 6 — warning + игнор аннотации.
+
+Кейс 3. Где баг?
+
+```java
+@Service
+public class UserService {
+    @Transactional
+    public void doWork() throws SQLException {
+        repo.save(...);
+        if (something) throw new SQLException("...");
+    }
+}
+```
+
+`SQLException` — checked. Default rollback не сработает. `save` закоммитится,
+наружу долетит SQLException, но БД останется с inserted user.
+
+Кейс 4. Где баг?
+
+```java
+@Transactional
+public void process(List<Item> items) {
+    for (Item i : items) {
+        externalApi.callFor(i);   // HTTP / 500мс
+    }
+}
+```
+
+Долгий @Transactional блок держит DB-connection (Hikari) занятым. Под нагрузкой
+пул исчерпывается, остальное приложение виснет. Лекарство: вынести external
+calls за TX, либо разбить на N маленьких TX (`REQUIRES_NEW` per-item).
+
+Кейс 5. Где баг?
+
+```java
+@Service
+public class A {
+    @Transactional
+    public void run() {
+        b.work();
+        throw new RuntimeException();   // rollback — но в b могла быть REQUIRES_NEW которая закоммитилась
+    }
+}
+```
+
+REQUIRES_NEW в b закоммитится независимо. Это **может** быть нужным
+поведением (audit), а может — багом (если b как-то меняет critical state).
+Понимать поведение пропагации.
+
+Кейс 6. Где баг?
+
+```java
+@Service
+public class Calc {
+    @Transactional
+    public BigDecimal computeAndSave(Input in) {
+        BigDecimal result = expensiveComputation(in);   // 5 секунд CPU-bound
+        repo.save(result);
+        return result;
+    }
+}
+```
+
+CPU-heavy работа под `@Transactional` держит DB connection во время вычислений.
+Лекарство: разделить:
+
+```java
+public BigDecimal compute(Input in) {
+    return expensiveComputation(in);
+}
+
+@Transactional
+public void save(BigDecimal result) {
+    repo.save(...);
+}
+
+@Service
+public class Orchestrator {
+    public BigDecimal process(Input in) {
+        BigDecimal r = calc.compute(in);
+        calc.save(r);
+        return r;
+    }
+}
+```
+
+Кейс 7. Где баг (Spring 6 / native)?
+
+```java
+@Configuration
+@EnableTransactionManagement(mode = AdviceMode.ASPECTJ)
+public class Config { ... }
+```
+
+AspectJ mode — compile-time weaving. Self-invocation тоже перехватывается!
+Но требует aspectj-runtime, aspectj-compiler, специальный build. Сложнее в
+поддержке. С Spring 6 + GraalVM native — частично deprecated, нужны проверки.
+
+## Что почитать
+
+- [Spring Framework Reference — Transaction Management](https://docs.spring.io/spring-framework/reference/data-access/transaction.html) — обязательно.
+- [Spring Framework Reference — @Transactional Settings](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html) — все параметры.
+- Vlad Mihalcea, [«Spring @Transactional Best Practices»](https://vladmihalcea.com/spring-transactional-annotation/) — практические разборы.
+- *Pro Spring 6*, Iuliana Cosmina — глава Transaction Management.
+- [JPA Specification](https://jakarta.ee/specifications/persistence/3.0/jakarta-persistence-spec-3.0.html#transactions) — про взаимодействие JPA TX и Spring.
+- Aleksey Shipilёv, [«How Java Method Dispatch Works»](https://shipilev.net/blog/2014/jit-monomorphism/) — как dispatch работает на JIT-уровне (важно для прокси).
+
 ## Где в стеке
 
 **Уровень 4: Spring и Spring Boot.** Любая работа с Java middle = Spring. Ключевая ловушка — self-invocation @Transactional/@Async через прокси: спросят с вероятностью 100%.

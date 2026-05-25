@@ -128,6 +128,433 @@ masteryQuiz:
 - @Async / @Transactional в init-методе — не работает (прокси ещё не готов)
 - Не вызывать @PreDestroy для ресурсов (соединения, threads, файлы)
 
+## Развёрнутое объяснение
+
+Жизненный цикл Spring bean — фундамент понимания «почему AOP/прокси работают
+именно так». На middle ждут, что вы помните **порядок шагов** и знаете, в
+какой момент бин становится прокси.
+
+**Полный путь bean'а от Class<?> до готового объекта:**
+
+```
+1. Scan / parse @Configuration / XML
+   → создаётся BeanDefinition (метаданные: класс, scope, dependencies,
+     init/destroy методы, autowire-mode, ...)
+   ↓
+2. BeanFactoryPostProcessor применяются к BeanDefinition
+   (например, PropertySourcesPlaceholderConfigurer резолвит ${...})
+   ↓
+3. Instantiation: рефлексия конструктора с DI-аргументами
+   ↓
+4. Property population: setter injection + @Autowired field injection
+   ↓
+5. Aware callbacks (если бин реализует интерфейсы):
+   - setBeanName(String)
+   - setBeanClassLoader(ClassLoader)
+   - setBeanFactory(BeanFactory)
+   - setEnvironment(Environment)
+   - setApplicationContext(ApplicationContext)   ← через ApplicationContextAware
+   ↓
+6. BeanPostProcessor.postProcessBeforeInitialization(bean, name)
+   — например, ApplicationContextAwareProcessor, AutowiredAnnotationBeanPostProcessor
+   ↓
+7. Initialization callbacks (порядок):
+   а) @PostConstruct (если есть) — JSR-250, портативно
+   б) InitializingBean.afterPropertiesSet() (Spring API, привязка)
+   в) @Bean(initMethod = "...") — кастомный
+   ↓
+8. BeanPostProcessor.postProcessAfterInitialization(bean, name)
+   ← !!! ЗДЕСЬ создаются AOP-прокси: @Transactional, @Async, @Cacheable !!!
+   — возвращает либо оригинальный бин, либо прокси
+   ↓
+9. Bean готов. Сохраняется в singleton cache (если scope=singleton)
+   ↓
+10. Ready event: ApplicationContext.publishEvent(ContextRefreshedEvent)
+    — все singleton-бины созданы; SmartLifecycle.start() вызывается
+   ↓
+... жизнь приложения ...
+   ↓
+11. ApplicationContext.close():
+    а) @PreDestroy (JSR-250)
+    б) DisposableBean.destroy() (Spring API)
+    в) @Bean(destroyMethod = "...")
+    г) SmartLifecycle.stop()
+```
+
+**Главный «выстрел в ногу» — AOP в init-методе.** На шаге 7 (когда выполняется
+`@PostConstruct`) бин ещё **не обёрнут в прокси**. Прокси создаётся на шаге 8.
+Если в `@PostConstruct` вы вызываете свой `@Transactional` метод — это
+self-invocation **через this**, минуя прокси, **без транзакции**.
+
+```java
+@Service
+public class MyService {
+    @Transactional
+    public void initData() { ... }
+
+    @PostConstruct
+    public void init() {
+        initData();   // ✗ this.initData() — без транзакции!
+    }
+}
+```
+
+Решение — `ApplicationRunner` или слушать `ApplicationReadyEvent` (этот event
+приходит **после** шага 8 + 10, когда уже все прокси готовы):
+
+```java
+@Service
+@RequiredArgsConstructor
+public class MyService {
+    @Transactional
+    public void initData() { ... }
+}
+
+@Component
+@RequiredArgsConstructor
+public class StartupRunner implements ApplicationRunner {
+    private final MyService myService;
+    @Override public void run(ApplicationArguments args) {
+        myService.initData();   // ✓ external call через прокси
+    }
+}
+
+// Альтернатива:
+@EventListener(ApplicationReadyEvent.class)
+public void onReady() {
+    myService.initData();
+}
+```
+
+**Aware-интерфейсы — устаревший паттерн.** Они создавались, когда DI был
+несовершенен. Сейчас используются редко, и почти всегда вместо них — constructor
+injection. Случаи, где Aware всё ещё уместен:
+- Кастомные scope-resolver'ы или factory'и (`BeanFactoryAware`).
+- Динамическая публикация событий (`ApplicationEventPublisherAware`) — но и тут
+  есть `ApplicationEventPublisher` через DI.
+
+**BeanPostProcessor — самый важный extension point.** Через него реализованы:
+- `AutowiredAnnotationBeanPostProcessor` — внедряет `@Autowired`.
+- `CommonAnnotationBeanPostProcessor` — обрабатывает `@PostConstruct`/`@PreDestroy`/`@Resource`.
+- `AbstractAutoProxyCreator` — создаёт AOP-прокси.
+- `ScheduledAnnotationBeanPostProcessor` — регистрирует `@Scheduled`-методы.
+
+Пример своего BPP — добавить логи на каждый init:
+
+```java
+@Component
+@Slf4j
+public class TimingBeanPostProcessor implements BeanPostProcessor {
+    @Override
+    public Object postProcessAfterInitialization(Object bean, String name) {
+        if (bean.getClass().isAnnotationPresent(Timed.class)) {
+            log.info("Wrapping {} with timing proxy", name);
+            return Proxy.newProxyInstance(...);  // или CGLIB
+        }
+        return bean;
+    }
+}
+```
+
+**SmartLifecycle для startup ordering.** Если у вас несколько компонентов,
+которые должны стартовать в строгом порядке (например, миграции БД до запуска
+HTTP-сервера), используйте `SmartLifecycle`:
+
+```java
+@Component
+public class MigrationRunner implements SmartLifecycle {
+    private volatile boolean running;
+
+    @Override public void start() {
+        runMigrations();
+        running = true;
+    }
+    @Override public void stop()    { running = false; }
+    @Override public boolean isRunning() { return running; }
+    @Override public int getPhase() { return Integer.MIN_VALUE; }  // стартует первым
+}
+```
+
+**`@PostConstruct` vs `InitializingBean.afterPropertiesSet`.** Семантически
+эквивалентны. Разница:
+- `@PostConstruct` (JSR-250) — портативный (работает в CDI, EJB), бин не
+  привязан к Spring API. Рекомендованный default.
+- `InitializingBean.afterPropertiesSet` — Spring-only, нужно implements
+  интерфейса. Допустим для библиотек, где хотят отказаться от annotation
+  processing.
+
+С Java EE 9 → Jakarta EE: пакет переехал из `javax.annotation` в
+`jakarta.annotation`. Если использует старый — `@PostConstruct` тихо игнорится
+в Spring Boot 3+.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, VK).** «Расскажи жизненный цикл Spring bean.»
+
+Структурированный ответ — последовательность 8 шагов (см. выше) с акцентом
+на:
+- BeanDefinition vs Bean.
+- DI происходит ДО init-методов.
+- BeanPostProcessor.postProcessAfterInitialization — ключевой момент:
+  создаются AOP-прокси.
+- @PostConstruct — на шаге 7, ПЕРЕД прокси.
+
+Доводка: «зачем это знать?» — чтобы понимать, почему `@Transactional` в
+`@PostConstruct` не работает.
+
+**Вопрос 2 (T-Bank, Альфа).** «Что не так?»
+
+```java
+@Service
+public class CacheLoader {
+    @Autowired DataSource ds;
+
+    @PostConstruct
+    @Transactional
+    public void preload() {
+        // загружает данные из БД
+    }
+}
+```
+
+Два бага:
+1. `@PostConstruct` выполняется до создания прокси. `@Transactional` на этом же
+   методе игнорится — нет транзакции.
+2. Field injection `@Autowired DataSource ds` — антипаттерн.
+
+Лекарство: переход на `ApplicationReadyEvent`:
+
+```java
+@Service
+@RequiredArgsConstructor
+public class CacheLoader {
+    private final DataSource ds;
+    private final CacheLoader self;  // для self-injection (или через ObjectProvider)
+
+    @Transactional
+    public void preload() { ... }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void onReady() {
+        preload();   // вызов идёт через DI'ed proxy
+    }
+}
+```
+
+**Вопрос 3 (Сбер).** «Чем `@PostConstruct` отличается от `InitializingBean`?»
+
+Семантика одинаковая (вызываются в шаге 7), но:
+- `@PostConstruct` — JSR-250, портативный (Spring/CDI/EJB).
+- `InitializingBean` — Spring API, привязка через `implements`.
+- Если оба есть — `@PostConstruct` вызовется первым.
+
+Современная практика — `@PostConstruct` (или `ApplicationReadyEvent` для
+post-context init).
+
+**Вопрос 4 (Озон).** «Что делает BeanPostProcessor? Приведи примеры из Spring.»
+
+BPP — hook, который вызывается **для каждого** бина перед и после init-методов.
+Примеры:
+- `AutowiredAnnotationBeanPostProcessor` — `@Autowired`.
+- `CommonAnnotationBeanPostProcessor` — `@PostConstruct`/`@PreDestroy`.
+- `AbstractAutoProxyCreator` — обёртка в AOP-прокси.
+- `ScheduledAnnotationBeanPostProcessor` — регистрация `@Scheduled`.
+
+Кастомные BPP — для аудита, метрик, динамической конфигурации.
+
+## Один день из практики
+
+Тебя позвали: «после migration на Spring Boot 3 один из бинов перестал работать.
+В логах ошибки нет, но миграция БД не запускается на старте». Открываем:
+
+```java
+@Component
+@RequiredArgsConstructor
+public class DbBootstrap {
+    private final DataSource ds;
+    private final MigrationService migrationService;
+
+    @PostConstruct
+    @Transactional
+    public void runMigrations() {
+        log.info("Running migrations...");
+        migrationService.apply();   // ничего не делает в проде, тест проходит
+    }
+}
+```
+
+Дешифровка проблемы:
+1. `@PostConstruct` — на шаге 7. `@Transactional` создаётся на шаге 8 → не
+   применяется на этом вызове.
+2. На Spring Boot 3 пакет `javax.annotation.PostConstruct` исчез — нужен
+   `jakarta.annotation.PostConstruct`. Если разработчик скопировал из старого
+   кода — аннотация молча игнорится, метод вообще не вызывается.
+
+Лекарство: явный fix импорта + перенос на `ApplicationRunner`:
+
+```java
+@Component
+@RequiredArgsConstructor
+public class DbBootstrap implements ApplicationRunner {
+    private final MigrationService migrationService;
+
+    @Override
+    public void run(ApplicationArguments args) {
+        migrationService.apply();   // через прокси, с транзакцией
+    }
+}
+
+@Service
+public class MigrationService {
+    @Transactional
+    public void apply() { ... }
+}
+```
+
+Проверка: `Liquibase`/`Flyway` (правильный путь для миграций) → меняем подход
+вообще, не пишем custom bootstrap. Custom — только если нужны вещи, которые
+миграционные тулзы не умеют.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+@Service
+public class Tasks {
+    @Scheduled(fixedDelay = 1000)
+    @PostConstruct
+    public void init() { ... }
+}
+```
+
+`@Scheduled` регистрируется через `ScheduledAnnotationBeanPostProcessor` на
+шаге 8. На шаге 7 (`@PostConstruct`) метод вызывается ВРУЧНУЮ, потом ещё раз
+по расписанию. Двойная инициализация. Решение: разделить методы.
+
+Кейс 2. Где баг?
+
+```java
+@Component
+public class Cache {
+    private Map<String, Item> data;
+
+    public Cache() {
+        data = loadFromDb();   // в конструкторе
+    }
+}
+```
+
+В конструкторе DI ещё не выполнен — все @Autowired-зависимости null. Если
+`loadFromDb` использует `repository`, NPE. Решение: `@PostConstruct` или
+`ApplicationRunner`.
+
+Кейс 3. Где баг?
+
+```java
+@Configuration
+public class AppConfig {
+    @Autowired DataSource ds;
+
+    @Bean
+    public ServiceA serviceA() {
+        return new ServiceA(ds);   // ds может быть null!
+    }
+}
+```
+
+`@Autowired` на поле `@Configuration` бина обрабатывается **отложенно**
+(BeanPostProcessor), но `@Bean`-метод может вызваться раньше. Лекарство:
+constructor injection в `@Configuration`:
+
+```java
+@Configuration
+@RequiredArgsConstructor
+public class AppConfig {
+    private final DataSource ds;
+    @Bean public ServiceA serviceA() { return new ServiceA(ds); }
+}
+```
+
+Кейс 4. Где баг (final + Spring)?
+
+```java
+@Service
+@Transactional
+public final class MyService {   // final
+    ...
+}
+```
+
+CGLIB не может проксировать `final` класс. Spring молча использует JDK Dynamic
+Proxy — но только если есть interface. Если interface нет — `@Transactional`
+не работает. С Spring 6 поведение более явное (error).
+
+Кейс 5. Где баг?
+
+```java
+@Component
+public class Worker implements DisposableBean {
+    @Override
+    public void destroy() {
+        // graceful shutdown
+    }
+}
+// при kill -9 контейнера destroy НЕ вызывается
+```
+
+`DisposableBean.destroy()` вызывается только при graceful shutdown (SIGTERM с
+`server.shutdown=graceful`). kill -9 (SIGKILL) — JVM убивается без shutdown
+hook. Решение для k8s: `terminationGracePeriodSeconds`, `preStop`-хук.
+
+Кейс 6. Где баг?
+
+```java
+@Service
+public class CacheLoader {
+    @Autowired
+    private CacheLoader self;   // ✗ Spring разрешает, но антипаттерн
+
+    @Transactional
+    public void load() { ... }
+
+    @PostConstruct
+    public void init() {
+        self.load();   // через прокси
+    }
+}
+```
+
+`self`-injection сейчас работает, но архитектурно скверно (циркуляр). Лекарство —
+`ApplicationRunner` или `@EventListener(ApplicationReadyEvent.class)`.
+
+Кейс 7. Где баг?
+
+```java
+@Configuration
+public class AppConfig {
+    @Bean(initMethod = "start", destroyMethod = "stop")
+    public KafkaConsumer kafkaConsumer() {
+        return new KafkaConsumer(...);
+    }
+}
+// при shutdown stop не успевает обработать batch
+```
+
+`destroyMethod` синхронный. Если consumer обрабатывает long-running task,
+shutdown зависнет на `spring.lifecycle.timeout-per-shutdown-phase` (default
+30s). Решение: внутри `stop()` использовать `awaitTermination` с явным
+timeout, или SmartLifecycle с фазами.
+
+## Что почитать
+
+- [Spring Framework Reference — Bean Lifecycle](https://docs.spring.io/spring-framework/reference/core/beans/factory-nature.html) — официальное описание.
+- [Spring Boot Reference — Application Events and Listeners](https://docs.spring.io/spring-boot/docs/current/reference/htmlsingle/#features.spring-application.application-events-and-listeners) — порядок событий, ApplicationReadyEvent.
+- *Pro Spring 6*, Iuliana Cosmina — главы 3–4 про IoC и lifecycle.
+- *Spring in Action*, Craig Walls — Lifecycle paterns.
+- [Javadoc BeanPostProcessor](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/beans/factory/config/BeanPostProcessor.html) — single most important extension point.
+- [Spring Boot 3 migration guide](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-3.0-Migration-Guide) — `jakarta.annotation` переход.
+
 ## Где в стеке
 
 **Уровень 4: Spring и Spring Boot.** Любая работа с Java middle = Spring. Ключевая ловушка — self-invocation @Transactional/@Async через прокси: спросят с вероятностью 100%.

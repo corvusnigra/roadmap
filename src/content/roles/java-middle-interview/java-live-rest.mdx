@@ -128,6 +128,509 @@ masteryQuiz:
 - Прокинуть Entity сразу в response — leak полей БД
 - Голый try-catch вокруг каждой операции — junior-почерк
 
+## Развёрнутое объяснение
+
+Live coding REST на Java middle — самая частая задача собеса. Интервьюер не
+ждёт сложной бизнес-логики; он смотрит на **архитектурные привычки**: где
+DTO, где валидация, как обрабатываете ошибки, на чём пишется тест.
+
+**Каноничная структура запроса** через 4 слоя:
+
+```
+HTTP Request
+   ↓
+[Controller] — @RestController, валидация (@Valid), routing
+   ↓ DTO
+[Service]   — бизнес-логика, транзакции (@Transactional)
+   ↓ Entity
+[Repository] — Spring Data JPA / JDBC
+   ↓ SQL
+Database
+```
+
+Каждый слой имеет свою ответственность:
+- **Controller** работает только с DTO. Не знает про `User` entity, не использует
+  `JpaRepository`.
+- **Service** делает работу. Открывает транзакцию (через @Transactional на
+  методе). Конвертит DTO → Entity (через MapStruct или вручную).
+- **Repository** — тонкая обёртка над JPA. Если запрос сложный — `@Query` или
+  Specification.
+
+**Минимально-правильный POST /users:**
+
+```java
+// 1. Request DTO — immutable, с валидацией
+public record CreateUserDto(
+    @NotBlank @Size(min = 2, max = 100) String name,
+    @NotBlank @Email String email,
+    @NotNull @Min(0) @Max(150) Integer age
+) {}
+
+// 2. Response DTO — без internal-полей entity (created_at, version, password)
+public record UserDto(Long id, String name, String email, Integer age) {
+    public static UserDto from(User u) {
+        return new UserDto(u.getId(), u.getName(), u.getEmail(), u.getAge());
+    }
+}
+
+// 3. Entity — НЕ в response!
+@Entity
+@Table(name = "users")
+public class User {
+    @Id @GeneratedValue Long id;
+    @Column(nullable = false) String name;
+    @Column(unique = true, nullable = false) String email;
+    Integer age;
+    @CreationTimestamp Instant createdAt;
+    @Version Long version;
+    // getters/setters
+}
+
+// 4. Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    boolean existsByEmail(String email);
+    Optional<User> findByEmail(String email);
+}
+
+// 5. Service — Constructor injection, @Transactional на write
+@Service
+public class UserService {
+    private final UserRepository repo;
+    public UserService(UserRepository repo) { this.repo = repo; }
+
+    @Transactional
+    public UserDto create(CreateUserDto dto) {
+        if (repo.existsByEmail(dto.email())) {
+            throw new ConflictException("Email already exists: " + dto.email());
+        }
+        User u = new User();
+        u.setName(dto.name());
+        u.setEmail(dto.email());
+        u.setAge(dto.age());
+        return UserDto.from(repo.save(u));
+    }
+
+    @Transactional(readOnly = true)
+    public UserDto findById(Long id) {
+        return repo.findById(id)
+            .map(UserDto::from)
+            .orElseThrow(() -> new NotFoundException("User " + id));
+    }
+}
+
+// 6. Controller — RestController, @Valid, корректные HTTP codes
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    private final UserService service;
+    public UserController(UserService service) { this.service = service; }
+
+    @PostMapping
+    public ResponseEntity<UserDto> create(@Valid @RequestBody CreateUserDto dto) {
+        UserDto created = service.create(dto);
+        return ResponseEntity
+            .created(URI.create("/api/users/" + created.id()))   // 201 + Location
+            .body(created);
+    }
+
+    @GetMapping("/{id}")
+    public UserDto get(@PathVariable Long id) {
+        return service.findById(id);
+    }
+}
+
+// 7. ExceptionHandler — глобальный
+@RestControllerAdvice
+@Slf4j
+public class GlobalExceptionHandler {
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<ApiError> handleNotFound(NotFoundException e) {
+        return ResponseEntity.status(404).body(new ApiError("NOT_FOUND", e.getMessage()));
+    }
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ApiError> handleConflict(ConflictException e) {
+        return ResponseEntity.status(409).body(new ApiError("CONFLICT", e.getMessage()));
+    }
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException e) {
+        String msg = e.getBindingResult().getFieldErrors().stream()
+            .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+            .collect(Collectors.joining("; "));
+        return ResponseEntity.status(400).body(new ApiError("VALIDATION", msg));
+    }
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> handleUnexpected(Exception e) {
+        log.error("Unhandled", e);
+        return ResponseEntity.status(500).body(new ApiError("INTERNAL", "Try again later"));
+    }
+}
+
+public record ApiError(String code, String message) {}
+```
+
+**Test:**
+
+```java
+@ExtendWith(MockitoExtension.class)
+class UserServiceTest {
+    @Mock UserRepository repo;
+    @InjectMocks UserService service;
+
+    @Test
+    void create_persists_and_returns_dto() {
+        CreateUserDto input = new CreateUserDto("Alice", "alice@acme.com", 30);
+        User saved = new User();
+        saved.setId(42L);
+        saved.setName("Alice");
+        saved.setEmail("alice@acme.com");
+        saved.setAge(30);
+        when(repo.existsByEmail("alice@acme.com")).thenReturn(false);
+        when(repo.save(any(User.class))).thenReturn(saved);
+
+        UserDto result = service.create(input);
+
+        assertEquals(42L, result.id());
+        assertEquals("Alice", result.name());
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(repo).save(captor.capture());
+        assertEquals("Alice", captor.getValue().getName());
+    }
+
+    @Test
+    void create_throws_when_email_exists() {
+        when(repo.existsByEmail("alice@acme.com")).thenReturn(true);
+        assertThrows(ConflictException.class, () ->
+            service.create(new CreateUserDto("Alice", "alice@acme.com", 30))
+        );
+    }
+}
+```
+
+**MockMvc для controller** (integration-level):
+
+```java
+@WebMvcTest(UserController.class)
+class UserControllerTest {
+    @Autowired MockMvc mvc;
+    @MockBean UserService service;
+
+    @Test
+    void post_400_on_invalid_body() throws Exception {
+        mvc.perform(post("/api/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"\", \"email\":\"not-email\"}"))
+           .andExpect(status().isBadRequest())
+           .andExpect(jsonPath("$.code").value("VALIDATION"));
+    }
+
+    @Test
+    void post_201_on_valid() throws Exception {
+        when(service.create(any())).thenReturn(new UserDto(1L, "Alice", "a@b.c", 30));
+        mvc.perform(post("/api/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Alice\",\"email\":\"a@b.c\",\"age\":30}"))
+           .andExpect(status().isCreated())
+           .andExpect(header().string("Location", "/api/users/1"))
+           .andExpect(jsonPath("$.id").value(1));
+    }
+}
+```
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, Альфа, T-Bank, Яндекс, Сбер, VK, Озон).** «Напиши POST /users
+с валидацией и тест.»
+
+Ожидают: DTO + entity отдельно, constructor injection, @Valid, @Transactional на
+сервисе, @RestControllerAdvice, MockMvc/Mockito тест с ArgumentCaptor. На
+30-минутном live coding нужно показать все 7 шагов выше.
+
+**Вопрос 2 (Альфа).** «Чем @RestController отличается от @Controller?»
+
+`@RestController = @Controller + @ResponseBody` на каждом методе. С `@Controller`
+без `@ResponseBody` Spring пытается резолвить ViewName (для шаблонизаторов
+типа Thymeleaf). С `@RestController` — сразу сериализует возвращаемый объект в
+JSON через Jackson. Для REST API всегда `@RestController`.
+
+**Вопрос 3 (T-Bank, Сбер).** «Что не так?»
+
+```java
+@RestController
+public class UserController {
+    @Autowired
+    private UserService service;     // field injection ✗
+
+    @GetMapping("/users/{id}")
+    public User get(@PathVariable Long id) {  // возвращает entity ✗
+        try {
+            return service.findById(id);
+        } catch (Exception e) {       // catch-all ✗
+            return null;              // 200 с пустым телом ✗
+        }
+    }
+}
+```
+
+Четыре проблемы:
+1. Field injection — нельзя тестировать без Spring.
+2. Возврат entity — leak DB-полей в API, проблемы с lazy associations.
+3. catch (Exception) — глотает всё, включая программные ошибки.
+4. Return null с 200 — должно быть 404 на not found.
+
+**Вопрос 4 (VK).** «Где разместить @Transactional — controller, service,
+repository?»
+
+На service-методах, которые делают бизнес-операцию (мульти-step write). На
+repository обычно не нужно (Spring Data сама обернёт `save` в транзакцию). На
+controller — никогда (controller не должен знать про БД). Default — `@Transactional`
+только на write-методах, для read-only — `@Transactional(readOnly = true)`
+(может оптимизировать через JDBC).
+
+## Один день из практики
+
+Тебя позвали на live coding в Лигу. Задание: «POST /accounts с валидацией +
+GET /accounts/{id}/balance. Покажи свой подход. 30 минут».
+
+Шаг 1 (5 мин). DTO + entity:
+
+```java
+public record CreateAccountDto(
+    @NotBlank @Size(min = 5, max = 50) String accountNumber,
+    @NotBlank String holderName,
+    @NotNull @PositiveOrZero BigDecimal initialBalance
+) {}
+
+public record AccountDto(Long id, String accountNumber, String holderName, BigDecimal balance) {
+    public static AccountDto from(Account a) { return new AccountDto(a.getId(), ...); }
+}
+
+public record BalanceDto(BigDecimal balance, String currency) {}
+
+@Entity
+public class Account {
+    @Id @GeneratedValue Long id;
+    @Column(unique = true) String accountNumber;
+    String holderName;
+    @Column(precision = 19, scale = 2) BigDecimal balance;
+    @Version Long version;          // optimistic locking
+    @CreationTimestamp Instant createdAt;
+}
+```
+
+Шаг 2 (5 мин). Repository:
+
+```java
+public interface AccountRepository extends JpaRepository<Account, Long> {
+    boolean existsByAccountNumber(String accountNumber);
+}
+```
+
+Шаг 3 (5 мин). Service:
+
+```java
+@Service
+public class AccountService {
+    private final AccountRepository repo;
+    public AccountService(AccountRepository repo) { this.repo = repo; }
+
+    @Transactional
+    public AccountDto create(CreateAccountDto dto) {
+        if (repo.existsByAccountNumber(dto.accountNumber())) {
+            throw new ConflictException("Account exists: " + dto.accountNumber());
+        }
+        Account a = new Account();
+        a.setAccountNumber(dto.accountNumber());
+        a.setHolderName(dto.holderName());
+        a.setBalance(dto.initialBalance());
+        return AccountDto.from(repo.save(a));
+    }
+
+    @Transactional(readOnly = true)
+    public BalanceDto balance(Long id) {
+        return repo.findById(id)
+            .map(a -> new BalanceDto(a.getBalance(), "USD"))
+            .orElseThrow(() -> new NotFoundException("Account " + id));
+    }
+}
+```
+
+Шаг 4 (5 мин). Controller + GlobalExceptionHandler (см. выше).
+
+Шаг 5 (10 мин). Тест:
+
+```java
+@ExtendWith(MockitoExtension.class)
+class AccountServiceTest {
+    @Mock AccountRepository repo;
+    @InjectMocks AccountService service;
+
+    @Test
+    void create_persists_account() {
+        var input = new CreateAccountDto("ACC-1", "Alice", new BigDecimal("100.00"));
+        Account saved = new Account();
+        saved.setId(1L);
+        saved.setAccountNumber("ACC-1");
+        saved.setBalance(new BigDecimal("100.00"));
+        when(repo.existsByAccountNumber("ACC-1")).thenReturn(false);
+        when(repo.save(any())).thenReturn(saved);
+
+        AccountDto result = service.create(input);
+
+        assertEquals(1L, result.id());
+        ArgumentCaptor<Account> cap = ArgumentCaptor.forClass(Account.class);
+        verify(repo).save(cap.capture());
+        assertEquals("ACC-1", cap.getValue().getAccountNumber());
+    }
+
+    @Test
+    void create_throws_on_duplicate() {
+        when(repo.existsByAccountNumber("ACC-1")).thenReturn(true);
+        assertThrows(ConflictException.class, () ->
+            service.create(new CreateAccountDto("ACC-1", "A", BigDecimal.ZERO))
+        );
+    }
+
+    @Test
+    void balance_returns_dto_when_found() {
+        Account a = new Account(); a.setId(1L); a.setBalance(new BigDecimal("42.00"));
+        when(repo.findById(1L)).thenReturn(Optional.of(a));
+        BalanceDto result = service.balance(1L);
+        assertEquals(new BigDecimal("42.00"), result.balance());
+    }
+}
+```
+
+Интервьюер видит: DTO ≠ entity, constructor injection, @Valid, нет catch-all,
+Optional.map().orElseThrow(), version-based optimistic lock, тесты с
+ArgumentCaptor.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+@RestController
+@RequestMapping("/users")
+public class UserController {
+    @Autowired UserService service;
+    @PostMapping
+    public User create(@RequestBody User user) {
+        return service.create(user);
+    }
+}
+```
+
+- field injection вместо constructor.
+- `User` entity и в request, и в response — leak полей БД (id, version, createdAt
+  принимаются от клиента), JSON может выставить флаги, к которым нет права.
+- Нет `@Valid` — validation не работает.
+
+Кейс 2. Где баг?
+
+```java
+@PostMapping("/orders")
+public ResponseEntity<?> create(@Valid @RequestBody CreateOrder dto) {
+    Order o = service.create(dto);
+    return ResponseEntity.ok(o);   // 200 на create
+}
+```
+
+POST с созданием ресурса — должно быть `201 Created` + Location header.
+
+```java
+return ResponseEntity.created(URI.create("/orders/" + o.id())).body(o);
+```
+
+Кейс 3. Где баг?
+
+```java
+@GetMapping("/{id}")
+public User get(@PathVariable Long id) {
+    User u = repo.findById(id).get();   // .get() на Optional
+    return u;
+}
+```
+
+`.get()` на пустом Optional бросит `NoSuchElementException` → 500. Должно быть
+404. Правильно: `.orElseThrow(() -> new NotFoundException(...))`, потом
+обработать в `@RestControllerAdvice`.
+
+Кейс 4. Где баг (lazy)?
+
+```java
+@Entity
+public class Order {
+    @ManyToOne(fetch = LAZY) User user;
+    @OneToMany(mappedBy = "order", fetch = LAZY) List<OrderItem> items;
+}
+
+@GetMapping("/orders/{id}")
+public Order get(@PathVariable Long id) {
+    return repo.findById(id).orElseThrow();
+}
+```
+
+Lazy collections + serialization вне транзакции = `LazyInitializationException`,
+или (с `spring.jpa.open-in-view=true` по дефолту) N+1 запросов. Лекарство: DTO
+вместо entity + `JOIN FETCH` или Entity Graph в repository.
+
+Кейс 5. Где баг?
+
+```java
+@GetMapping("/search")
+public List<User> search(@RequestParam String name) {
+    return repo.findByNameContaining(name);
+}
+```
+
+Нет валидации параметра, нет pagination. На большой таблице — таймаут или OOM.
+Должно быть:
+
+```java
+@GetMapping("/search")
+public Page<UserDto> search(
+        @RequestParam @Size(min = 2, max = 50) String name,
+        @PageableDefault(size = 20) Pageable pageable) {
+    return repo.findByNameContaining(name, pageable).map(UserDto::from);
+}
+```
+
+Кейс 6. Где баг (HTTP коды)?
+
+```java
+@DeleteMapping("/{id}")
+public ResponseEntity<String> delete(@PathVariable Long id) {
+    service.delete(id);
+    return ResponseEntity.ok("deleted");
+}
+```
+
+DELETE с success обычно `204 No Content` (без тела). `200 OK` тоже валиден, но
+тело должно быть пустым. `200 + "deleted"` строкой — нестандартно.
+
+Кейс 7. Где баг (idempotency)?
+
+```java
+@PostMapping("/payments")
+public PaymentDto pay(@Valid @RequestBody PaymentRequest req) {
+    return service.charge(req);
+}
+```
+
+POST не идемпотентен. При сетевой ошибке клиент retry'ит — двойное списание.
+Лекарство: `Idempotency-Key` header или request_id в теле + dedupe на сервере
+(unique index по `(client_id, request_id)`).
+
+## Что почитать
+
+- [Spring Boot Reference Documentation](https://docs.spring.io/spring-boot/docs/current/reference/htmlsingle/) — обязательный референс.
+- [Spring Framework — REST](https://docs.spring.io/spring-framework/reference/web/webmvc.html) — Web MVC, controllers, content negotiation.
+- *Spring in Action*, Craig Walls, 6th edition — самый практичный учебник.
+- [Bean Validation 3.0 (JSR-380)](https://beanvalidation.org/3.0/) — `@NotBlank`, `@Valid`, кастомные constraints.
+- *Designing APIs with Swagger and OpenAPI*, Josh Ponelat — лучшие практики REST.
+- [Microsoft REST API Guidelines](https://github.com/microsoft/api-guidelines/blob/master/Guidelines.md) — статус-коды, pagination, errors.
+
 ## Где в стеке
 
 **Уровень 6: System Design, Tools, DevOps.** Прикладная часть. На middle — концептуальное понимание Kafka ordering, Circuit Breaker состояний, Docker multi-stage. JUnit+Mockito — практика на live coding.

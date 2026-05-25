@@ -128,6 +128,449 @@ Scopes: singleton (default, один на ApplicationContext), prototype (нов
 - Полагаться на ApplicationContext.getBean() — coupling с Spring
 - Использовать prototype без необходимости — usually singleton хватает
 
+## Развёрнутое объяснение
+
+Scope бина в Spring — это «правило жизни»: сколько экземпляров и как долго.
+По умолчанию **singleton** — один экземпляр на ApplicationContext. На middle
+ждут понимания всех 5 стандартных scopes и **главной ловушки** — prototype в
+singleton.
+
+**Стандартные scopes:**
+
+| Scope | Один экземпляр на | Применение |
+|---|---|---|
+| `singleton` | ApplicationContext (default) | 99% бизнес-кода |
+| `prototype` | каждый `getBean` | stateful, краткоживущие компоненты |
+| `request` | HTTP request | per-request state в Web-приложениях |
+| `session` | HTTP session | shopping cart, user-specific state |
+| `application` | ServletContext (≈singleton) | global Web state |
+| `websocket` | WebSocket session | редко |
+
+Custom scopes через `Scope` интерфейс — для thread-local, для testing, для
+batch-job scopes.
+
+**Главная ловушка — prototype injected в singleton.**
+
+```java
+@Component
+@Scope("prototype")
+public class TaskExecutor {
+    private final Instant created = Instant.now();
+    public Instant created() { return created; }
+}
+
+@Service
+public class TaskService {
+    @Autowired
+    private TaskExecutor executor;   // ✗ один и тот же на всё время жизни TaskService
+
+    public void run() {
+        System.out.println(executor.created());   // всегда одно и то же
+    }
+}
+```
+
+Spring ВНЕДРЯЕТ зависимости один раз — на этапе init TaskService. `@Autowired
+TaskExecutor` сделает `getBean("taskExecutor")` один раз → один prototype-бин,
+который потом живёт всё время. Это **не баг**, это семантика DI.
+
+**Четыре способа правильно получать новый prototype каждый раз:**
+
+```java
+// 1. ApplicationContext.getBean() — anti-pattern, но иногда уместен
+@Service
+public class TaskService {
+    @Autowired ApplicationContext ctx;
+    public void run() {
+        TaskExecutor e = ctx.getBean(TaskExecutor.class);   // новый каждый раз
+        e.work();
+    }
+}
+
+// 2. ObjectFactory<T> / ObjectProvider<T> (Spring 4.3+) — лучший вариант
+@Service
+public class TaskService {
+    private final ObjectProvider<TaskExecutor> executorProvider;
+    public TaskService(ObjectProvider<TaskExecutor> p) { this.executorProvider = p; }
+    public void run() {
+        TaskExecutor e = executorProvider.getObject();   // новый каждый раз
+        e.work();
+    }
+}
+
+// 3. @Lookup на abstract методе — Spring переопределяет через CGLIB
+@Service
+public abstract class TaskService {
+    public void run() {
+        TaskExecutor e = createExecutor();   // CGLIB вернёт новый
+        e.work();
+    }
+    @Lookup
+    protected abstract TaskExecutor createExecutor();
+}
+
+// 4. Scoped proxy — каждое обращение к методу проксируется
+@Component
+@Scope(value = "prototype", proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class TaskExecutor { ... }
+
+@Service
+@RequiredArgsConstructor
+public class TaskService {
+    private final TaskExecutor executor;   // CGLIB-прокси, под капотом каждый вызов → новый prototype
+    public void run() {
+        executor.work();   // каждый вызов — новый
+    }
+}
+```
+
+`ObjectProvider` — рекомендованный современный вариант. Имеет дополнительные
+методы: `getIfAvailable()`, `getIfUnique()`, `stream()`, `orderedStream()`.
+
+**Request/Session scopes** — Web-only:
+
+```java
+// 1. Через scope proxy (рекомендованный)
+@Component
+@Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class RequestContext {
+    private final UUID requestId = UUID.randomUUID();
+    private String userId;
+    // getters/setters
+}
+
+@Service
+@RequiredArgsConstructor
+public class AuditService {
+    private final RequestContext ctx;   // прокси, под капотом — новый на каждый request
+    public void audit(String action) {
+        log.info("user={} request={} action={}", ctx.getUserId(), ctx.getRequestId(), action);
+    }
+}
+```
+
+**Когда prototype действительно нужен:**
+- Stateful компоненты, которые должны быть короткоживущими (один на use-case).
+- Компоненты с внутренним state, который надо изолировать.
+- Большие builder'ы, которые удобнее иметь через DI, но не singleton.
+
+**99% случаев — singleton.** Stateless + thread-safe + DI. Если у бина внутри
+`private int counter` — это запах. Stateless должен быть immutable либо
+state хранится во входных параметрах.
+
+**Application и Session scopes — следить за памятью.** `@Scope("session")` бин
+живёт до завершения user session — в крупном приложении с 10K активных
+пользователей это 10K экземпляров с накопленным state. Лекарство: TTL
+на session (`server.servlet.session.timeout`), явная инвалидация после
+определённых action'ов, не хранить в session больше нескольких килобайт.
+
+## Типичный вопрос на собесе
+
+**Вопрос 1 (Лига, T-Bank, Альфа, Сбер).** «Какие scope в Spring? Что значит
+default?»
+
+Стандартные: singleton (default), prototype, request, session, application,
+websocket. Singleton — один экземпляр на ApplicationContext, prototype — новый
+на каждый `getBean`. Request/session/application — Web-only.
+
+Доводка: «когда prototype нужен?» — stateful компоненты, изоляция state. 99%
+— singleton.
+
+**Вопрос 2 (Лига, Альфа, T-Bank).** «Что не так?»
+
+```java
+@Component
+@Scope("prototype")
+public class Worker {
+    private final Instant created = Instant.now();
+}
+
+@Service
+public class WorkerPool {
+    @Autowired
+    private Worker worker;
+
+    public Instant whenCreated() { return worker.created; }
+}
+```
+
+`Worker` инжектится в WorkerPool **один раз** при создании WorkerPool. Так что
+`worker.created` всегда одно значение, хотя scope `prototype`. Это типичная
+ловушка.
+
+Решение: `ObjectProvider<Worker>` + `getObject()` на каждый вызов:
+
+```java
+@Service
+@RequiredArgsConstructor
+public class WorkerPool {
+    private final ObjectProvider<Worker> workers;
+    public Instant whenCreated() {
+        return workers.getObject().created;
+    }
+}
+```
+
+**Вопрос 3 (Альфа).** «Чем `request` scope отличается от `prototype`?»
+
+- `prototype` — новый бин на каждый `getBean()`, **никем не managed после
+  init**. Spring не закроет, не убьёт — это ответственность caller'а.
+- `request` — новый бин на каждый HTTP request, **уничтожается** в конце
+  request (Spring вызовет destroy-callbacks). Привязан к Web-контексту.
+
+Если приложение non-web — `request` scope не работает.
+
+**Вопрос 4 (T-Bank, продвинутый).** «Что такое scope proxy?»
+
+Когда вы инжектите request/session/prototype в singleton, Spring создаёт
+**прокси-объект** (CGLIB или JDK Proxy), который делегирует каждый вызов
+актуальному target bean. Target определяется из context (current HTTP request /
+current session / новый prototype). Это позволяет «безопасно» инжектить
+short-lived в long-lived.
+
+```java
+@Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+@Component
+public class RequestContext { ... }
+```
+
+Без `proxyMode` — `BeanCreationException` при попытке инжектить request scope
+в singleton.
+
+## Один день из практики
+
+Тебя зовут на ревью: «у нас в audit logs `requestId` всегда null. Не понимаем
+почему». Открываем код:
+
+```java
+@Component
+public class RequestContext {
+    private String requestId;
+    public void setRequestId(String id) { requestId = id; }
+    public String getRequestId() { return requestId; }
+}
+
+@Component
+public class AuditFilter extends OncePerRequestFilter {
+    private final RequestContext ctx;
+    public AuditFilter(RequestContext ctx) { this.ctx = ctx; }
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, ...) {
+        ctx.setRequestId(req.getHeader("X-Request-ID"));   // ✗ один RequestContext на JVM
+        chain.doFilter(req, resp);
+    }
+}
+
+@Service
+public class UserService {
+    private final RequestContext ctx;
+    public UserService(RequestContext ctx) { this.ctx = ctx; }
+    public void deleteUser(Long id) {
+        log.info("Delete user={} request={}", id, ctx.getRequestId());
+    }
+}
+```
+
+Проблема: `RequestContext` — **singleton** (по дефолту). Все параллельные
+запросы пишут в один объект. Race condition: один поток выставил requestId,
+другой только что прочитал, третий перезаписал. Audit log врёт.
+
+Фикс — request-scoped через scope proxy:
+
+```java
+@Component
+@Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class RequestContext {
+    private String requestId;
+    // ...
+}
+```
+
+После этого:
+- AuditFilter и UserService инжектят `RequestContext` — но это **CGLIB-прокси**.
+- Каждое обращение `ctx.getRequestId()` → прокси берёт target из current
+  RequestAttributes, привязанных к HTTP thread.
+- Каждый request получает свой instance, в конце request — destroy.
+
+Регресс-тест:
+
+```java
+@Test
+void parallel_requests_have_independent_context() throws Exception {
+    CountDownLatch latch = new CountDownLatch(1);
+    Map<String, String> results = new ConcurrentHashMap<>();
+    var pool = Executors.newFixedThreadPool(50);
+    for (int i = 0; i < 50; i++) {
+        int idx = i;
+        pool.submit(() -> {
+            latch.await();
+            mvc.perform(delete("/users/" + idx)
+                .header("X-Request-ID", "req-" + idx))
+                .andDo(r -> results.put("req-" + idx, r.getResponse()...));
+        });
+    }
+    latch.countDown();
+    pool.shutdown(); pool.awaitTermination(30, SECONDS);
+    // 50 уникальных request ID в логах
+}
+```
+
+Альтернатива — `MDC` (Mapped Diagnostic Context) из SLF4J. Это thread-local,
+работает без Spring scope:
+
+```java
+@Component
+public class MdcFilter extends OncePerRequestFilter {
+    @Override
+    protected void doFilterInternal(...) throws ... {
+        try {
+            MDC.put("requestId", req.getHeader("X-Request-ID"));
+            chain.doFilter(req, resp);
+        } finally {
+            MDC.remove("requestId");   // обязательно — thread reused
+        }
+    }
+}
+
+// Log pattern в logback.xml:
+%X{requestId} — выведет requestId
+```
+
+MDC проще, но менее типизирован. Scope proxy — для типизированного API. На
+проекте обычно сочетают: MDC для логов, request scope для типизированного
+доступа.
+
+## Типичные провалы
+
+Кейс 1. Где баг?
+
+```java
+@Component
+@Scope("prototype")
+public class Worker {
+    @Autowired Repository repo;
+}
+
+@Service
+public class Pool {
+    @Autowired Worker worker;   // один и тот же
+}
+```
+
+См. главный пример выше. Лекарство: ObjectProvider.
+
+Кейс 2. Где баг?
+
+```java
+@Component
+@Scope("session")    // без proxyMode
+public class UserCart { ... }
+
+@Service
+public class CartService {
+    @Autowired UserCart cart;   // BeanCreationException на старте
+}
+```
+
+Без `proxyMode = ScopedProxyMode.TARGET_CLASS` Spring не может инжектить
+session scope в singleton. Лекарство: добавить proxyMode.
+
+Кейс 3. Где баг?
+
+```java
+@Component
+@Scope("prototype")
+public class Heavy {
+    public Heavy() { allocateBigResource(); }
+}
+
+@Service
+@RequiredArgsConstructor
+public class Service {
+    private final ObjectProvider<Heavy> heavyProvider;
+    public void run() {
+        Heavy h = heavyProvider.getObject();   // новый Heavy, никто не закроет
+        h.use();
+    }
+}
+```
+
+Spring **не управляет** prototype-бином после создания. `Heavy` останется в
+heap, пока есть ссылки. Если он держит ресурсы (connection, file) — leak.
+Лекарство: `try-with-resources` (если Heavy `AutoCloseable`) или явный
+`destroy()`.
+
+Кейс 4. Где баг?
+
+```java
+@Component
+@Scope("session")
+public class UserCart {
+    private List<Item> items = new ArrayList<>();
+    public void add(Item i) { items.add(i); }
+}
+```
+
+Без serialization-safety: на distributed session (Spring Session + Redis) бин
+должен implements Serializable, и поля тоже. Иначе session не сохранится.
+
+Кейс 5. Где баг?
+
+```java
+@Component
+@Scope("singleton")
+public class Counter {
+    private int count = 0;
+    public void inc() { count++; }
+}
+```
+
+Singleton с mutable state без synchronization. Под нагрузкой — race condition.
+Лекарство: `AtomicInteger`, `LongAdder`, либо переход на prototype + явный
+state.
+
+Кейс 6. Где баг?
+
+```java
+@Configuration
+public class AppConfig {
+    @Bean
+    @Scope("prototype")
+    public Heavy heavy() {
+        return new Heavy();
+    }
+
+    @Bean
+    public Service service() {
+        return new Service(heavy());   // один Heavy
+    }
+}
+```
+
+`heavy()` — обычный Java-call, без AOP. Прототип не сработает. Лекарство:
+ObjectProvider или scoped proxy.
+
+Кейс 7. Где баг (test)?
+
+```java
+@SpringBootTest
+class Test {
+    @Autowired Worker worker1;
+    @Autowired Worker worker2;   // если Worker — prototype, это разные!
+}
+```
+
+В тестах с `@Autowired` Spring каждый раз делает `getBean` — для prototype это
+новые. Если ожидался один — баг в тесте.
+
+## Что почитать
+
+- [Spring Framework Reference — Bean Scopes](https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html) — официальный обзор.
+- [Spring Framework Reference — Scoped Proxy](https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html#beans-factory-scopes-other-injection) — proxyMode TARGET_CLASS vs INTERFACES.
+- *Pro Spring 6*, Iuliana Cosmina — глава 4 (Bean Scopes and Lifecycle).
+- [ObjectProvider Javadoc](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/beans/factory/ObjectProvider.html) — современный API для prototype в singleton.
+- *Spring in Action*, Craig Walls — patterns для request/session scopes.
+
 ## Где в стеке
 
 **Уровень 4: Spring и Spring Boot.** Любая работа с Java middle = Spring. Ключевая ловушка — self-invocation @Transactional/@Async через прокси: спросят с вероятностью 100%.
