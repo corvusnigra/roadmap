@@ -60,3 +60,4 @@ Thumbs.db
 supabase/.temp/
 supabase/.branches/
 
+.env*
