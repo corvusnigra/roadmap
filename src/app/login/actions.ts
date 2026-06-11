@@ -4,14 +4,14 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { safeRedirectPath } from "@/lib/auth/safe-redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const signInSchema = z.object({
   email: z.string().email("Введите корректный email."),
-  next: z
-    .string()
-    .startsWith("/", "Путь редиректа должен быть внутренним.")
-    .optional(),
+  // Принимаем любую строку, точную валидацию делает safeRedirectPath —
+  // это защищает от protocol-relative редиректов вида //evil.com.
+  next: z.string().optional(),
 });
 
 async function buildRedirectUrl(next: string | undefined): Promise<string> {
@@ -20,7 +20,9 @@ async function buildRedirectUrl(next: string | undefined): Promise<string> {
     requestHeaders.get("origin") ??
     `http://${requestHeaders.get("host") ?? "localhost:3000"}`;
   const url = new URL("/auth/callback", origin);
-  if (next) url.searchParams.set("next", next);
+  // safeRedirectPath отклоняет protocol-relative (//evil.com) и абсолютные URL.
+  const safePath = safeRedirectPath(next);
+  if (safePath !== "/") url.searchParams.set("next", safePath);
   return url.toString();
 }
 

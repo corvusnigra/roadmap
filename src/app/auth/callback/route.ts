@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { safeRedirectPath } from "@/lib/auth/safe-redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
@@ -21,8 +22,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 export async function GET(request: NextRequest) {
   const url = request.nextUrl;
   const code = url.searchParams.get("code");
-  const nextParam = url.searchParams.get("next");
-  const next = nextParam?.startsWith("/") ? nextParam : "/";
+  // safeRedirectPath отклоняет protocol-relative (//evil.com) и /\evil.
+  const next = safeRedirectPath(url.searchParams.get("next"));
 
   if (code) {
     const supabase = await createSupabaseServerClient();
@@ -111,6 +112,10 @@ export async function GET(request: NextRequest) {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
+      // Минимальная CSP для страницы-моста: только inline-скрипт (нужен для
+      // чтения location.hash) + fetch к самому себе (POST на /auth/callback/set).
+      "Content-Security-Policy":
+        "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'",
     },
   });
 }

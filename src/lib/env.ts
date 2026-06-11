@@ -8,6 +8,8 @@ const serverSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),
   STRIPE_SECRET_KEY: z.string().min(1, "STRIPE_SECRET_KEY is required"),
   STRIPE_WEBHOOK_SECRET: z.string().min(1, "STRIPE_WEBHOOK_SECRET is required"),
+  /** Включить verbose-логгер Drizzle. Установить DB_LOG=true в .env.local для отладки SQL. */
+  DB_LOG: z.enum(["true", "false"]).optional(),
 });
 
 const clientSchema = z.object({
@@ -15,6 +17,8 @@ const clientSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1, "NEXT_PUBLIC_SUPABASE_ANON_KEY is required"),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().min(1, "NEXT_PUBLIC_POSTHOG_KEY is required"),
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().default("https://eu.i.posthog.com"),
+  /** "on" — гостевой демо-режим без логина. "off" (по умолчанию) — полный auth. */
+  NEXT_PUBLIC_DEMO_MODE: z.enum(["on", "off"]).default("off"),
 });
 
 const rawClient = {
@@ -22,6 +26,7 @@ const rawClient = {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
   NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+  NEXT_PUBLIC_DEMO_MODE: process.env.NEXT_PUBLIC_DEMO_MODE,
 };
 
 const parsedClient = clientSchema.safeParse(rawClient);
@@ -43,6 +48,7 @@ const parsedServer = isServer
       ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
       STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
       STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+      DB_LOG: process.env.DB_LOG,
     })
   : null;
 

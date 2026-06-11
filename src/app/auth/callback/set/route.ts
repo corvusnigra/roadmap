@@ -40,9 +40,12 @@ export async function POST(request: NextRequest) {
   });
 
   if (error) {
-    return new NextResponse(`Set session failed: ${error.message}`, {
-      status: 401,
-    });
+    // Не раскрываем детали ошибки клиенту — логируем на сервере.
+    console.error("[auth/callback/set] setSession failed:", error.message);
+    return new NextResponse(
+      "Не удалось установить сессию. Попробуйте получить новую ссылку.",
+      { status: 401 },
+    );
   }
 
   return new NextResponse(null, { status: 204 });
