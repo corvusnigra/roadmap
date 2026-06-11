@@ -25,6 +25,7 @@ import {
 } from "@/components/learn/mdx-components";
 import {
   NodeView,
+  type ClientFrontmatter,
   type InitialProgress,
   type LoadedCodeExercise,
 } from "@/components/learn/node-view";
@@ -202,10 +203,29 @@ export default async function NodePage({ params }: PageProps) {
     }),
   );
 
+  // Fix #1: перед отдачей фронтматтера клиенту вырезаем answerIndex и
+  // explanation из practice-MCQ и masteryQuiz, чтобы правильные ответы не
+  // утекали в клиентский бандл. Проверка происходит на сервере в
+  // gradePracticeMcq / submitMasteryQuiz.
+  const clientFrontmatter: ClientFrontmatter = {
+    ...loaded.frontmatter,
+    practice: loaded.frontmatter.practice.map((item) => {
+      if (item.kind !== "mcq") return item;
+      const { answerIndex: _a, explanation: _e, ...safe } = item;
+      void _a; void _e;
+      return safe;
+    }),
+    masteryQuiz: loaded.frontmatter.masteryQuiz.map((item) => {
+      const { answerIndex: _a, explanation: _e, ...safe } = item;
+      void _a; void _e;
+      return safe;
+    }),
+  };
+
   return (
     <NodeView
       roleSlug={slug}
-      frontmatter={loaded.frontmatter}
+      frontmatter={clientFrontmatter}
       initialProgress={initialProgress}
       theoryContent={theoryContent}
       tocItems={tocItems}

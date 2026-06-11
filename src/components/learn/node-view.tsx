@@ -10,18 +10,27 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Theory } from "@/components/learn/theory";
 import { PracticeMcq } from "@/components/learn/practice-mcq";
 import { CodeExercise } from "@/components/practice/code-exercise";
-import { MasteryQuiz } from "@/components/learn/mastery-quiz";
+import { MasteryQuiz, type SafeMcqItem } from "@/components/learn/mastery-quiz";
 import {
   Reinforcement,
   type ReinforcementCard,
 } from "@/components/learn/reinforcement";
 import { TutorPanel } from "@/components/tutor/tutor-panel";
 
-import type {
-  NodeFrontmatter,
-  PracticeMcq as McqItem,
-} from "@/lib/content/schema";
+import type { PracticeCode } from "@/lib/content/schema";
 import type { TutorTurn } from "@/app/api/tutor/types";
+
+// Fix #1 / Fix #10: тип фронтматтера, который получает клиент — без
+// answerIndex и explanation в MCQ-items (они вырезаны в page.tsx).
+export interface ClientFrontmatter {
+  slug: string;
+  title: string;
+  summary: string;
+  estimatedMinutes: number;
+  learningOutcomes: string[];
+  practice: Array<SafeMcqItem | PracticeCode>;
+  masteryQuiz: SafeMcqItem[];
+}
 
 export interface InitialProgress {
   status: "locked" | "in_progress" | "mastered";
@@ -50,7 +59,7 @@ export interface TocItem {
 
 interface NodeViewProps {
   roleSlug: string;
-  frontmatter: NodeFrontmatter;
+  frontmatter: ClientFrontmatter;
   initialProgress: InitialProgress;
   theoryContent: ReactNode;
   tocItems: TocItem[];
@@ -76,7 +85,7 @@ export function NodeView({
   const [masteryOpen, setMasteryOpen] = useState(false);
 
   const mcqItems = frontmatter.practice.filter(
-    (item): item is McqItem => item.kind === "mcq",
+    (item): item is SafeMcqItem => item.kind === "mcq",
   );
 
   const allMcqsCorrect =
@@ -91,6 +100,14 @@ export function NodeView({
     allMcqsCorrect &&
     allCodeExercisesPassed &&
     (frontmatter.masteryQuiz?.length ?? 0) >= 5;
+
+  // Fix #10: ворота закрепления — используем серверный статус в первую
+  // очередь; masteryScore как запасной вариант для in_progress-записей,
+  // когда FSRS-gate ещё не сработал. masteryScore хранится как 0..1.
+  const reinforcementEnabled =
+    masteryPassed ||
+    status === "mastered" ||
+    (initialProgress.masteryScore !== null && initialProgress.masteryScore >= 0.8);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8">
@@ -256,11 +273,7 @@ export function NodeView({
         <TabsContent value="reinforcement">
           <Reinforcement
             cards={reinforcementCards}
-            enabled={
-              masteryPassed ||
-              status === "mastered" ||
-              (initialProgress.masteryScore ?? 0) >= 0.8
-            }
+            enabled={reinforcementEnabled}
             onMastered={() => setStatus("mastered")}
           />
         </TabsContent>

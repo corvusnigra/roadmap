@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { gradeCard } from "@/app/review/actions";
 import { Badge } from "@/components/ui/badge";
@@ -34,12 +36,23 @@ export function ReviewQueue({ items }: ReviewQueueProps) {
   const [graded, setGraded] = useState(0);
   const [pending, startTransition] = useTransition();
 
+  // Fix #7: храним pending в ref, чтобы keydown-замыкание видело актуальное
+  // значение без необходимости добавлять pending в deps (что вызывало
+  // пересоздание listener'а на каждый transition-тик).
+  const pendingRef = useRef(pending);
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
+
   const current = queue[0];
 
-  // Keyboard: Space reveals, 1–4 grade.
+  // Keyboard: Space/Enter reveals, 1–4 grade.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
         return;
       }
       if (!current) return;
@@ -48,7 +61,8 @@ export function ReviewQueue({ items }: ReviewQueueProps) {
         setRevealed(true);
         return;
       }
-      if (revealed && ["1", "2", "3", "4"].includes(e.key)) {
+      // Fix #7: блокируем клавиатурное оценивание пока pending.
+      if (revealed && !pendingRef.current && ["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault();
         const rating = Number(e.key) as 1 | 2 | 3 | 4;
         void doGrade(rating);
@@ -60,7 +74,7 @@ export function ReviewQueue({ items }: ReviewQueueProps) {
   }, [current?.cardId, revealed]);
 
   function doGrade(rating: 1 | 2 | 3 | 4) {
-    if (!current) return;
+    if (!current || pendingRef.current) return;
     startTransition(async () => {
       try {
         await gradeCard({ cardId: current.cardId, rating });
@@ -107,9 +121,13 @@ export function ReviewQueue({ items }: ReviewQueueProps) {
       >
         <p className="text-base font-medium leading-snug">{current.prompt}</p>
         {revealed ? (
-          <p className="rounded-md border-l-2 border-primary bg-primary/5 p-3 text-sm">
-            {current.answerMarkdown}
-          </p>
+          /* Fix #8: рендерим answerMarkdown через ReactMarkdown + remarkGfm,
+             как в tutor-panel.tsx, а не как plain text. */
+          <div className="prose prose-sm max-w-none dark:prose-invert rounded-md border-l-2 border-primary bg-primary/5 p-3 prose-p:my-1 prose-pre:my-1 prose-pre:bg-muted prose-code:before:content-none prose-code:after:content-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {current.answerMarkdown}
+            </ReactMarkdown>
+          </div>
         ) : (
           <Button
             variant="outline"

@@ -2,13 +2,20 @@ import "server-only";
 
 import { and, count, eq } from "drizzle-orm";
 
-import { db } from "@/lib/db";
+import { db, type Database } from "@/lib/db";
 import {
+  skillCards,
+  userCardState,
   userEvents,
   userNodeProgress,
   type NewUserNodeProgress,
 } from "@/db/schema";
 import { captureEvent } from "@/lib/analytics/posthog";
+import { decideMastery, type CardRecallInfo } from "@/lib/progress-core";
+
+// Drizzle transaction handle — same shape as `db` itself.
+type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
+type DbOrTx = Database | Tx;
 
 /**
  * Insert a userEvents row. Verb naming is consistent across the codebase —
@@ -21,8 +28,9 @@ export async function logEvent(
   objectType: string,
   objectId: string,
   payload: Record<string, unknown> = {},
+  dbHandle: DbOrTx = db,
 ): Promise<void> {
-  await db.insert(userEvents).values({
+  await dbHandle.insert(userEvents).values({
     userId,
     verb,
     objectType,
@@ -39,8 +47,9 @@ export async function upsertProgress(
   userId: string,
   nodeId: string,
   patch: Partial<NewUserNodeProgress>,
+  dbHandle: DbOrTx = db,
 ): Promise<void> {
-  await db
+  await dbHandle
     .insert(userNodeProgress)
     .values({
       userId,
@@ -57,41 +66,84 @@ export async function upsertProgress(
     });
 }
 
-async function eventCount(
+/**
+ * Загружает состояния всех карточек узла, нужные для подсчёта retrievability.
+ * Карточки без строки в userCardState возвращаются как {stability:null, lastReviewAt:null}.
+ */
+async function loadCardRecallInfos(
   userId: string,
-  verb: string,
-  objectId: string,
-): Promise<number> {
-  const row = await db
+  nodeId: string,
+  dbHandle: DbOrTx = db,
+): Promise<CardRecallInfo[]> {
+  const rows = await dbHandle
+    .select({
+      cardId: skillCards.id,
+      stability: userCardState.stability,
+      lastReviewAt: userCardState.lastReviewAt,
+    })
+    .from(skillCards)
+    .leftJoin(
+      userCardState,
+      and(
+        eq(userCardState.cardId, skillCards.id),
+        eq(userCardState.userId, userId),
+      ),
+    )
+    .where(eq(skillCards.nodeId, nodeId));
+
+  return rows.map((r) => ({
+    stability: r.stability ?? null,
+    lastReviewAt: r.lastReviewAt ?? null,
+  }));
+}
+
+/**
+ * Проверяет, сдан ли итоговый тест (есть ли хотя бы одна запись mastery_passed).
+ */
+async function hasMasteryPassed(
+  userId: string,
+  nodeId: string,
+  dbHandle: DbOrTx = db,
+): Promise<boolean> {
+  const row = await dbHandle
     .select({ n: count() })
     .from(userEvents)
     .where(
       and(
         eq(userEvents.userId, userId),
-        eq(userEvents.verb, verb),
-        eq(userEvents.objectId, objectId),
+        eq(userEvents.verb, "mastery_passed"),
+        eq(userEvents.objectId, nodeId),
       ),
     );
-  return row[0]?.n ?? 0;
+  return (row[0]?.n ?? 0) > 0;
 }
 
 /**
- * Promote a node to `mastered` iff the user has at least one mastery_passed
- * AND one card_reviewed event for it. Returns true if the row flipped.
+ * Promote a node to `mastered` iff:
+ *  1. User has at least one mastery_passed event for the node.
+ *  2. All cards of the node have been reviewed at least once.
+ *  3. Min FSRS retrievability across all cards ≥ 0.85.
+ *
+ * Returns true if the row flipped.
  */
 export async function maybeFlipMastered(
   userId: string,
   nodeId: string,
+  dbHandle: DbOrTx = db,
 ): Promise<boolean> {
-  const [passes, reviews] = await Promise.all([
-    eventCount(userId, "mastery_passed", nodeId),
-    eventCount(userId, "card_reviewed", nodeId),
+  const [masteryPassed, cards] = await Promise.all([
+    hasMasteryPassed(userId, nodeId, dbHandle),
+    loadCardRecallInfos(userId, nodeId, dbHandle),
   ]);
-  if (passes > 0 && reviews > 0) {
-    await upsertProgress(userId, nodeId, {
-      status: "mastered",
-      masteredAt: new Date(),
-    });
+
+  const decision = decideMastery({ masteryPassed, cards });
+  if (decision.mastered) {
+    await upsertProgress(
+      userId,
+      nodeId,
+      { status: "mastered", masteredAt: new Date() },
+      dbHandle,
+    );
     return true;
   }
   return false;

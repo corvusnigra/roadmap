@@ -3,20 +3,25 @@
 import { useState, useTransition } from "react";
 import { CheckCircle2, XCircle } from "lucide-react";
 
-import { recordPracticeCorrect } from "@/app/roles/[slug]/nodes/[nodeSlug]/actions";
+import { gradePracticeMcq } from "@/app/roles/[slug]/nodes/[nodeSlug]/actions";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 
-import type { PracticeMcq as McqItem } from "@/lib/content/schema";
+// Клиент получает MCQ без answerIndex/explanation.
+interface SafeMcqItem {
+  kind: "mcq";
+  prompt: string;
+  options: string[];
+}
 
 interface PracticeMcqProps {
   roleSlug: string;
   nodeSlug: string;
   itemKey: string;
   index: number;
-  item: McqItem;
+  item: SafeMcqItem;
   onCorrect: () => void;
   alreadyCorrect: boolean;
 }
@@ -36,24 +41,35 @@ export function PracticeMcq({
   const [verdict, setVerdict] = useState<Verdict>(
     alreadyCorrect ? "correct" : "unanswered",
   );
+  // explanation приходит с сервера только после правильного ответа.
+  const [explanation, setExplanation] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const handleCheck = () => {
-    if (selected === null) return;
-    const chosen = Number(selected);
-    if (chosen === item.answerIndex) {
-      setVerdict("correct");
-      startTransition(async () => {
-        try {
-          await recordPracticeCorrect({ roleSlug, nodeSlug, itemKey });
+    if (selected === null || pending) return;
+    const chosenIndex = Number(selected);
+
+    startTransition(async () => {
+      try {
+        // Fix #1: проверяем на сервере, answerIndex не хранится на клиенте.
+        const result = await gradePracticeMcq({
+          roleSlug,
+          nodeSlug,
+          itemKey,
+          chosenIndex,
+        });
+        if (result.correct) {
+          setVerdict("correct");
+          setExplanation(result.explanation);
           onCorrect();
-        } catch {
-          // Best effort — UI already shows correct.
+        } else {
+          setVerdict("incorrect");
         }
-      });
-    } else {
-      setVerdict("incorrect");
-    }
+      } catch {
+        // Ошибка сети / сервера — показываем neutral "попробуй ещё раз".
+        setVerdict("incorrect");
+      }
+    });
   };
 
   const isLocked = verdict === "correct";
@@ -120,7 +136,7 @@ export function PracticeMcq({
             onClick={handleCheck}
             data-testid={`practice-mcq-${index}-check`}
           >
-            Проверить
+            {pending ? "Проверяем…" : "Проверить"}
           </Button>
         </div>
       ) : null}
@@ -137,7 +153,9 @@ export function PracticeMcq({
           <p className="font-medium text-emerald-700 dark:text-emerald-300">
             Правильно
           </p>
-          <p className="text-muted-foreground">{item.explanation}</p>
+          {explanation ? (
+            <p className="text-muted-foreground">{explanation}</p>
+          ) : null}
         </div>
       ) : null}
     </article>

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { gradeCard } from "@/app/review/actions";
 import { Button } from "@/components/ui/button";
@@ -70,13 +72,16 @@ export function Reinforcement({
   }
 
   const handleGrade = (rating: 1 | 2 | 3 | 4) => {
+    // Fix #9: сбрасываем revealed и продвигаем очередь синхронно, до await,
+    // чтобы предыдущий revealed не мелькал на следующей карточке.
+    setRevealed(false);
+    setQueue((q) => q.slice(1));
+    setGradedCount((n) => n + 1);
+
     startTransition(async () => {
       try {
         const result = await gradeCard({ cardId: card.cardId, rating });
-        setGradedCount((n) => n + 1);
         if (result.mastered) onMastered();
-        setRevealed(false);
-        setQueue((q) => q.slice(1));
       } catch {
         /* best-effort UI */
       }
@@ -101,9 +106,13 @@ export function Reinforcement({
       >
         <p className="text-sm font-medium leading-snug">{card.prompt}</p>
         {revealed ? (
-          <p className="rounded-md border-l-2 border-primary bg-primary/5 p-3 text-sm">
-            {card.answerMarkdown}
-          </p>
+          /* Fix #8: рендерим answerMarkdown через ReactMarkdown + remarkGfm,
+             как в tutor-panel.tsx, а не как plain text. */
+          <div className="prose prose-sm max-w-none dark:prose-invert rounded-md border-l-2 border-primary bg-primary/5 p-3 prose-p:my-1 prose-pre:my-1 prose-pre:bg-muted prose-code:before:content-none prose-code:after:content-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {card.answerMarkdown}
+            </ReactMarkdown>
+          </div>
         ) : (
           <Button
             variant="outline"

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
@@ -10,6 +10,7 @@ import {
   roles as rolesTable,
   skillCards,
   userCardState,
+  userNodeProgress,
 } from "@/db/schema";
 import { DEMO_MODE } from "@/lib/auth/demo-mode";
 import { reviewCard, type CardStateRow } from "@/lib/fsrs/scheduler";
@@ -67,6 +68,26 @@ export async function gradeCard(
     .then((rows) => rows[0]);
   if (!card) throw new Error(`Unknown card: ${input.cardId}`);
 
+  // Fix #4: карточку можно оценивать только если узел начат или освоен
+  // данным пользователем — такая же проверка, как в getDueCards.
+  const nodeProgress = await db
+    .select({ status: userNodeProgress.status })
+    .from(userNodeProgress)
+    .where(
+      and(
+        eq(userNodeProgress.userId, user.id),
+        eq(userNodeProgress.nodeId, card.nodeId),
+        inArray(userNodeProgress.status, ["in_progress", "mastered"] as const),
+      ),
+    )
+    .limit(1)
+    .then((rows) => rows[0]);
+  if (!nodeProgress) {
+    throw new Error(
+      "Cannot grade a card for a node that is not in progress or mastered.",
+    );
+  }
+
   const prev = await db
     .select({
       stability: userCardState.stability,
@@ -90,22 +111,14 @@ export async function gradeCard(
   const now = new Date();
   const next = reviewCard(prev, rating, now);
 
-  await db
-    .insert(userCardState)
-    .values({
-      userId: user.id,
-      cardId: input.cardId,
-      stability: next.stability,
-      difficulty: next.difficulty,
-      dueAt: next.dueAt,
-      reps: next.reps,
-      lapses: next.lapses,
-      lastReviewAt: next.lastReviewAt,
-      state: next.state,
-    })
-    .onConflictDoUpdate({
-      target: [userCardState.userId, userCardState.cardId],
-      set: {
+  // Fix #5: три записи в одной транзакции.
+  let mastered = false;
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(userCardState)
+      .values({
+        userId: user.id,
+        cardId: input.cardId,
         stability: next.stability,
         difficulty: next.difficulty,
         dueAt: next.dueAt,
@@ -113,17 +126,36 @@ export async function gradeCard(
         lapses: next.lapses,
         lastReviewAt: next.lastReviewAt,
         state: next.state,
+      })
+      .onConflictDoUpdate({
+        target: [userCardState.userId, userCardState.cardId],
+        set: {
+          stability: next.stability,
+          difficulty: next.difficulty,
+          dueAt: next.dueAt,
+          reps: next.reps,
+          lapses: next.lapses,
+          lastReviewAt: next.lastReviewAt,
+          state: next.state,
+        },
+      });
+
+    await logEvent(
+      user.id,
+      "card_reviewed",
+      "node",
+      card.nodeId,
+      {
+        cardId: input.cardId,
+        rating,
+        dueAt: next.dueAt.toISOString(),
+        state: next.state,
       },
-    });
+      tx,
+    );
 
-  await logEvent(user.id, "card_reviewed", "node", card.nodeId, {
-    cardId: input.cardId,
-    rating,
-    dueAt: next.dueAt.toISOString(),
-    state: next.state,
+    mastered = await maybeFlipMastered(user.id, card.nodeId, tx);
   });
-
-  const mastered = await maybeFlipMastered(user.id, card.nodeId);
 
   revalidatePath("/review");
   revalidatePath(`/roles/${card.roleSlug}`);
