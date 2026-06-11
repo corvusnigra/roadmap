@@ -10,7 +10,7 @@ export default function Loading() {
           aria-hidden="true"
           className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-foreground"
         />
-        <span>Loading roadmap…</span>
+        <span>Загрузка карты…</span>
       </div>
     </div>
   );

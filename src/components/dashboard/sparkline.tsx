@@ -75,8 +75,9 @@ export function Sparkline({ data, width = 240, height = 56 }: SparklineProps) {
       {/* Last bucket axis ticker — small text under the rightmost point. */}
       <text
         x={width - padX}
-        y={height - 0}
+        y={height - 2}
         textAnchor="end"
+        dominantBaseline="text-after-edge"
         className="fill-muted-foreground text-[9px]"
       >
         сегодня

@@ -50,14 +50,32 @@ export function RoadmapNode({ data }: NodeProps<RoadmapNodeData>) {
     ? `Сначала пройдите: ${data.unmetPrerequisiteTitles.join(", ")}`
     : undefined;
 
+  // Enter/Space → синтетический click, который всплывает до обёртки React Flow
+  // и триггерит onNodeClick в canvas — узлы доступны с клавиатуры.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      e.currentTarget.click();
+    }
+  };
+
+  const ariaLabel = [data.title, `${data.estimatedMinutes} мин`, badgeLabel, tooltip]
+    .filter(Boolean)
+    .join(". ");
+
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={ariaLabel}
+      onKeyDown={handleKeyDown}
       title={tooltip}
       data-status={data.status}
       data-available={isAvailable ? "true" : "false"}
       data-node-slug={data.slug}
       className={cn(
         "w-[260px] cursor-pointer rounded-lg border-2 px-4 py-3 transition-colors",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
         style.container,
       )}
     >

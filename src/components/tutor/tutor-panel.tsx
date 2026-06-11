@@ -47,6 +47,7 @@ export function TutorPanel({
   const [pending, startTransition] = useTransition();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const asideRef = useRef<HTMLElement | null>(null);
 
   // Keep the latest message in view when new turns arrive.
   useEffect(() => {
@@ -54,6 +55,41 @@ export function TutorPanel({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [history, open]);
+
+  // A11y: при открытии — фокус в поле ввода; Escape закрывает панель;
+  // Tab не выходит за пределы диалога (простой focus trap).
+  useEffect(() => {
+    if (!open) return;
+    textareaRef.current?.focus();
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+      if (e.key !== "Tab" || !asideRef.current) return;
+      const focusables = asideRef.current.querySelectorAll<HTMLElement>(
+        'button, textarea, input, select, a[href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last?.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first?.focus();
+      } else if (active && !asideRef.current.contains(active)) {
+        // Фокус сбежал наружу (например, после клика по backdrop) — вернуть.
+        e.preventDefault();
+        first?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
 
   // Inline-bridge: внешний компонент (SelectionTutor) выделяет текст и
   // диспатчит ASK_TUTOR_EVENT. Открываем панель с уже заполненным
@@ -115,6 +151,7 @@ export function TutorPanel({
         <div
           className="fixed inset-0 z-40 flex justify-end bg-black/30 backdrop-blur-sm"
           role="dialog"
+          aria-modal="true"
           aria-label={`Наставник по ${nodeTitle}`}
           data-testid="tutor-panel"
           onClick={(e) => {
@@ -122,7 +159,10 @@ export function TutorPanel({
             if (e.target === e.currentTarget) setOpen(false);
           }}
         >
-          <aside className="flex h-full w-full max-w-md flex-col border-l bg-background shadow-xl">
+          <aside
+            ref={asideRef}
+            className="flex h-full w-full max-w-md flex-col border-l bg-background shadow-xl"
+          >
             <header className="flex items-center justify-between border-b px-4 py-3">
               <div className="flex items-center gap-2">
                 <Bot className="h-4 w-4" />

@@ -68,13 +68,20 @@ export function SelectionTutor({
   // Guards: чтобы при медленном LLM-ответе и быстром повторном клике
   // не показать «свежий» ответ для старого запроса.
   const requestIdRef = useRef(0);
+  // Зеркала состояния для глобальных слушателей: эффект монтируется один
+  // раз ([]), а не пересоздаёт 4 document-слушателя на каждое открытие
+  // поповера; и no-op setState на каждый scroll-тик не нужен.
+  const popoverRef = useRef<PopoverState | null>(null);
+  popoverRef.current = popover;
+  const floaterRef = useRef<FloaterPos | null>(null);
+  floaterRef.current = floater;
 
   useEffect(() => {
     function onSelectionChange() {
       // Если поповер уже открыт — не перехватываем выделение, иначе
       // нажатие на текст внутри поповера сразу перекинет нас обратно
       // на плавающую кнопку.
-      if (popover) return;
+      if (popoverRef.current) return;
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
         setFloater(null);
@@ -109,7 +116,10 @@ export function SelectionTutor({
       setFloater(null);
     }
     function onScroll() {
-      setFloater(null);
+      // Поповер позиционирован fixed-координатами момента клика — при
+      // скролле он «отвязывается» от текста, поэтому закрываем и его.
+      if (floaterRef.current) setFloater(null);
+      if (popoverRef.current) setPopover(null);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -128,7 +138,7 @@ export function SelectionTutor({
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("keydown", onKey);
     };
-  }, [popover]);
+  }, []);
 
   const requestExplanation = useCallback(
     async (text: string, x: number, y: number) => {
@@ -153,6 +163,18 @@ export function SelectionTutor({
         });
         // Если за это время пользователь успел открыть другой — игнор.
         if (requestIdRef.current !== myId) return;
+        if (res.needsAuth) {
+          // Гость в демо-режиме, кэша нет: LLM для анонимов не вызываем.
+          setPopover({
+            x,
+            y,
+            concept: text,
+            explanation: null,
+            cached: false,
+            error: "войдите, чтобы получать новые объяснения. Уже объяснённые понятия доступны без входа.",
+          });
+          return;
+        }
         setPopover({
           x,
           y,

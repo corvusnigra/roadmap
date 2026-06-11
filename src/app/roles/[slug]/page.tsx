@@ -72,7 +72,9 @@ export default async function RoleRoadmapPage({ params }: PageProps) {
             nodeId: nodePrerequisites.nodeId,
             prerequisiteNodeId: nodePrerequisites.prerequisiteNodeId,
           })
-          .from(nodePrerequisites),
+          .from(nodePrerequisites)
+          .innerJoin(nodesTable, eq(nodesTable.id, nodePrerequisites.nodeId))
+          .where(eq(nodesTable.roleId, role.id)),
     user
       ? db
           .select({

@@ -47,10 +47,15 @@ export async function setActiveRole(formData: FormData): Promise<void> {
     throw new Error(`Роль "${parsed.data.roleSlug}" недоступна.`);
   }
 
+  // Upsert: для пользователей, созданных до триггера profile-on-signup,
+  // строки может не быть — UPDATE молча обновил бы 0 строк.
   await db
-    .update(profiles)
-    .set({ activeRoleSlug: role.slug })
-    .where(eq(profiles.id, user.id));
+    .insert(profiles)
+    .values({ id: user.id, activeRoleSlug: role.slug })
+    .onConflictDoUpdate({
+      target: profiles.id,
+      set: { activeRoleSlug: role.slug },
+    });
 
   revalidatePath("/dashboard");
 }
@@ -82,10 +87,14 @@ export async function setExploreMode(formData: FormData): Promise<void> {
     throw new Error("Некорректный параметр.");
   }
 
+  const exploreMode = parsed.data.enabled === "on";
   await db
-    .update(profiles)
-    .set({ exploreMode: parsed.data.enabled === "on" })
-    .where(eq(profiles.id, user.id));
+    .insert(profiles)
+    .values({ id: user.id, exploreMode })
+    .onConflictDoUpdate({
+      target: profiles.id,
+      set: { exploreMode },
+    });
 
   revalidatePath("/dashboard");
   revalidatePath("/roles/[slug]", "page");
