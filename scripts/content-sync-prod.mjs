@@ -13,6 +13,18 @@
  *
  * Делает full sync для каждой роли с `_role.json` в `src/content/roles/*\/`.
  * Старые роли без `_role.json` пропускаются (легаси-путь через db:seed).
+ *
+ * Карточки: flashcard (из frontmatter.flashcards) + mcq (из masteryQuiz
+ * и practice[kind=mcq]). Форматирование MCQ идентично функции formatMcqAnswer
+ * в src/lib/content/sync.ts — при изменении формата обновлять оба файла.
+ *
+ * Стратегия обновления карточек (Fix 6 — diff-sync):
+ *   1. Upsert карточек через PostgREST on_conflict=node_id,prompt,kind
+ *      (Prefer: resolution=merge-duplicates) — вставляем новые, обновляем
+ *      изменённые, не трогаем неизменившиеся.
+ *   2. После upsert удаляем только «stale» строки — те, чьего prompt+kind
+ *      нет в текущем наборе MDX.
+ *   Нет «wipe then reinsert» — нет деструктивного окна.
  */
 import { resolve, dirname } from "node:path";
 import { readFile, readdir, access, constants } from "node:fs/promises";
@@ -68,12 +80,57 @@ function positionFor(level, idx) {
   return { x: 120 + level * 280, y: 80 + idx * 140 };
 }
 
+/**
+ * Форматирует ответ MCQ в Markdown.
+ * ВАЖНО: логика идентична src/lib/content/sync.ts → formatMcqAnswer.
+ * При изменении формата обновлять оба файла.
+ *
+ * Правильный вариант помечается жирным + ✓; остальные — простой li.
+ * Затем через пустую строку идёт explanation.
+ */
+function formatMcqAnswer(options, answerIndex, explanation) {
+  const opts = options
+    .map((o, i) => (i === answerIndex ? `**${o}** ✓` : o))
+    .join("\n- ");
+  return `- ${opts}\n\n${explanation}`;
+}
+
+/**
+ * Проецирует frontmatter MDX-узла в плоский список card-объектов.
+ * ВАЖНО: логика идентична src/lib/content/sync.ts → projectMdxToCards.
+ */
+function projectMdxToCards(nodeId, fm) {
+  const cards = [];
+  for (const c of fm.flashcards ?? []) {
+    cards.push({ node_id: nodeId, prompt: c.front, answer_markdown: c.back, kind: "flashcard" });
+  }
+  for (const m of fm.masteryQuiz ?? []) {
+    cards.push({
+      node_id: nodeId,
+      prompt: m.prompt,
+      answer_markdown: formatMcqAnswer(m.options, m.answerIndex, m.explanation),
+      kind: "mcq",
+    });
+  }
+  for (const p of fm.practice ?? []) {
+    if (p.kind !== "mcq") continue;
+    if (!p.prompt || !p.options || p.answerIndex === undefined || !p.explanation) continue;
+    cards.push({
+      node_id: nodeId,
+      prompt: p.prompt,
+      answer_markdown: formatMcqAnswer(p.options, p.answerIndex, p.explanation),
+      kind: "mcq",
+    });
+  }
+  return cards;
+}
+
 const CONTENT_ROOT = resolve(root, "src/content/roles");
 const roleSlugs = (await readdir(CONTENT_ROOT, { withFileTypes: true }))
   .filter((e) => e.isDirectory())
   .map((e) => e.name);
 
-const stats = { roles: 0, nodes: 0, edges: 0, cards: 0 };
+const stats = { roles: 0, nodes: 0, edges: 0, cards: 0, cardsDeleted: 0 };
 
 for (const roleSlug of roleSlugs) {
   const metaPath = resolve(CONTENT_ROOT, roleSlug, "_role.json");
@@ -109,6 +166,8 @@ for (const roleSlug of roleSlugs) {
       level: fm.level ?? 0,
       prerequisites: fm.prerequisites ?? [],
       flashcards: fm.flashcards ?? [],
+      masteryQuiz: fm.masteryQuiz ?? [],
+      practice: fm.practice ?? [],
     });
   }
 
@@ -164,27 +223,69 @@ for (const roleSlug of roleSlugs) {
   stats.edges += edges.length;
   console.log(`  ✓ ${edges.length} edges`);
 
-  // 6. Flashcards — wipe + reinsert per node (proven pattern против flaky pooler)
-  const allCards = [];
+  // 6. Diff-sync карточек (flashcard + mcq) — Fix 6.
+  //
+  // Алгоритм:
+  //   a) Upsert всех карточек через on_conflict=node_id,prompt,kind
+  //      (merge-duplicates обновляет answer_markdown если изменился).
+  //   b) Получаем текущий список карточек из БД для этой роли.
+  //   c) Удаляем только те, чей (prompt, kind) не присутствует в новом наборе.
+  //
+  // Это безопаснее wipe+reinsert: нет окна, когда карточки исчезают.
+
+  const allNewCards = [];
   for (const n of loaded) {
     const nodeId = slugToId.get(n.slug);
     if (!nodeId) continue;
-    for (const c of n.flashcards) {
-      allCards.push({ node_id: nodeId, prompt: c.front, answer_markdown: c.back, kind: "flashcard" });
-    }
+    allNewCards.push(...projectMdxToCards(nodeId, n));
   }
-  // Snapshot existing card prompts via PostgREST select, чтобы знать что удалить
+
+  // a) Upsert новых/изменившихся карточек чанками по 50
+  let cardUpsertCount = 0;
+  for (let i = 0; i < allNewCards.length; i += 50) {
+    const chunk = allNewCards.slice(i, i + 50);
+    await rest(
+      "POST",
+      "skill_cards?on_conflict=node_id,prompt,kind",
+      chunk,
+      "resolution=merge-duplicates,return=minimal",
+    );
+    cardUpsertCount += chunk.length;
+  }
+
+  // b) Читаем текущие карточки из БД для всех узлов этой роли
   const nodeIds = [...slugToId.values()].map((id) => `"${id}"`).join(",");
-  await rest("DELETE", `skill_cards?node_id=in.(${nodeIds})&kind=eq.flashcard`, null, "return=minimal");
-  // Insert chunks of 50 (network friendly)
-  for (let i = 0; i < allCards.length; i += 50) {
-    const chunk = allCards.slice(i, i + 50);
-    await rest("POST", "skill_cards", chunk, "return=minimal");
+  const existingCards = await rest(
+    "GET",
+    `skill_cards?node_id=in.(${nodeIds})&select=id,node_id,prompt,kind`,
+    null,
+    "return=representation",
+  );
+
+  // c) Определяем stale: те, чей prompt+kind не в новом наборе
+  // Строим Set ключей нового набора: "nodeId::kind::prompt"
+  const newCardKeys = new Set(
+    allNewCards.map((c) => `${c.node_id}::${c.kind}::${c.prompt}`),
+  );
+  const staleIds = (existingCards ?? [])
+    .filter((c) => !newCardKeys.has(`${c.node_id}::${c.kind}::${c.prompt}`))
+    .map((c) => `"${c.id}"`);
+
+  if (staleIds.length > 0) {
+    await rest(
+      "DELETE",
+      `skill_cards?id=in.(${staleIds.join(",")})`,
+      null,
+      "return=minimal",
+    );
+    stats.cardsDeleted += staleIds.length;
+    console.log(`  ✓ ${staleIds.length} stale cards deleted`);
   }
-  stats.cards += allCards.length;
-  console.log(`  ✓ ${allCards.length} flashcards (wipe+reinsert)`);
+
+  stats.cards += cardUpsertCount;
+  console.log(`  ✓ ${cardUpsertCount} cards upserted (flashcard + mcq)`);
 }
 
 console.log(
-  `\n✓ done: roles=${stats.roles}, nodes=${stats.nodes}, edges=${stats.edges}, flashcards=${stats.cards}`,
+  `\n✓ done: roles=${stats.roles}, nodes=${stats.nodes}, edges=${stats.edges}, cards=${stats.cards}, stale_deleted=${stats.cardsDeleted}`,
 );

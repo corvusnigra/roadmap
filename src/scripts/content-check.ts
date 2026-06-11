@@ -5,7 +5,7 @@
  *
  * What it enforces (on top of the existing zod frontmatter schema):
  *   - `status: published` nodes must meet stricter floors:
- *       · ≥ 8 mastery quiz items (random pick is actually random)
+ *       · ≥ 6 mastery quiz items (random pick is actually random)
  *       · ≥ 6 flashcards
  *       · ≥ 1 practice item
  *       · no remaining "TODO" markers in body or frontmatter strings
@@ -67,6 +67,43 @@ async function listNodeSlugs(roleSlug: string): Promise<string[]> {
 function countTodos(text: string): number {
   const matches = text.match(/TODO/g);
   return matches ? matches.length : 0;
+}
+
+/**
+ * Проверяет prereq-граф роли на наличие циклов (DAG check).
+ * Возвращает список строк с описанием каждого найденного цикла.
+ * Использует DFS с раскраской: white=0, gray=1 (в стеке), black=2 (завершён).
+ */
+function detectPrerequisiteCycles(
+  slugToPrereqs: Map<string, string[]>,
+): string[] {
+  const errors: string[] = [];
+  const color = new Map<string, 0 | 1 | 2>();
+  const stack: string[] = [];
+
+  function dfs(slug: string): void {
+    color.set(slug, 1);
+    stack.push(slug);
+    for (const dep of slugToPrereqs.get(slug) ?? []) {
+      if (color.get(dep) === 1) {
+        // Нашли back-edge → цикл
+        const cycleStart = stack.indexOf(dep);
+        const cycle = [...stack.slice(cycleStart), dep];
+        errors.push(`cycle: ${cycle.join(" → ")}`);
+      } else if (!color.has(dep) || color.get(dep) === 0) {
+        dfs(dep);
+      }
+    }
+    stack.pop();
+    color.set(slug, 2);
+  }
+
+  for (const slug of slugToPrereqs.keys()) {
+    if (!color.has(slug) || color.get(slug) === 0) {
+      dfs(slug);
+    }
+  }
+  return errors;
 }
 
 async function checkNode(
@@ -135,6 +172,14 @@ async function checkNode(
   const todoCount =
     countTodos(parsed.content) + countTodos(JSON.stringify(fm));
 
+  // Предупреждение: published-узел без level не получит правильную позицию
+  // на canvas при content:sync (упадёт в L0, смешается с другими узлами).
+  if (isPublished && fm.level === undefined) {
+    report.warnings.push(
+      `published node is missing "level" in frontmatter — will default to 0 on sync`,
+    );
+  }
+
   if (isPublished) {
     if (fm.flashcards.length < 6) {
       report.errors.push(
@@ -179,9 +224,28 @@ async function main() {
   }
 
   const reports: NodeReport[] = [];
+  const cycleErrors: string[] = [];
+
   for (const roleSlug of roleSlugs) {
     const nodeSlugs = await listNodeSlugs(roleSlug);
     const siblingSet = new Set(nodeSlugs);
+
+    // Собираем prereq-граф для DAG-проверки
+    const slugToPrereqs = new Map<string, string[]>();
+    for (const nodeSlug of nodeSlugs) {
+      const file = path.join(CONTENT_ROOT, roleSlug, `${nodeSlug}.mdx`);
+      const raw = await readFile(file, "utf8");
+      const parsed = matter(raw);
+      const fm = parsed.data as { prerequisites?: string[] };
+      slugToPrereqs.set(nodeSlug, fm.prerequisites ?? []);
+    }
+
+    // Проверяем на циклы
+    const roleCycles = detectPrerequisiteCycles(slugToPrereqs);
+    for (const cycle of roleCycles) {
+      cycleErrors.push(`${roleSlug}: ${cycle}`);
+    }
+
     for (const nodeSlug of nodeSlugs) {
       reports.push(await checkNode(roleSlug, nodeSlug, siblingSet));
     }
@@ -189,7 +253,13 @@ async function main() {
 
   for (const r of reports) printReport(r);
 
-  const totalErrors = reports.reduce((n, r) => n + r.errors.length, 0);
+  // Выводим ошибки циклов отдельно
+  for (const ce of cycleErrors) {
+    console.log(`✗ ${ce}`);
+  }
+
+  const totalErrors =
+    reports.reduce((n, r) => n + r.errors.length, 0) + cycleErrors.length;
   const totalWarnings = reports.reduce((n, r) => n + r.warnings.length, 0);
   const drafts = reports.filter((r) =>
     r.info.some((i) => i.startsWith("status: draft")),

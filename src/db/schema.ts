@@ -141,18 +141,31 @@ export const nodePrerequisites = pgTable(
   }),
 );
 
-export const skillCards = pgTable("skill_cards", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  nodeId: uuid("node_id")
-    .notNull()
-    .references(() => nodes.id, { onDelete: "cascade" }),
-  prompt: text("prompt").notNull(),
-  answerMarkdown: text("answer_markdown").notNull(),
-  kind: skillCardKindEnum("kind").notNull().default("flashcard"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const skillCards = pgTable(
+  "skill_cards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    prompt: text("prompt").notNull(),
+    answerMarkdown: text("answer_markdown").notNull(),
+    kind: skillCardKindEnum("kind").notNull().default("flashcard"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    // Один (узел, prompt, kind) = одна карточка. Без этого ограничения
+    // параллельные прогоны seed/sync создавали дубли — особенно при
+    // наличии нескольких prod-путей (seed-java-middle-prod.mjs + content-sync-prod.mjs).
+    nodePromptKindUnique: unique("skill_cards_node_id_prompt_kind_unique").on(
+      table.nodeId,
+      table.prompt,
+      table.kind,
+    ),
+  }),
+);
 
 export const userNodeProgress = pgTable(
   "user_node_progress",
